@@ -21,6 +21,10 @@ class FakeOmnichannelPool {
     if (normalized.includes("'outbound','ai'")) return { rows: [{ id: 'ai-message-1' }] }
     return { rows: [] }
   }
+
+  async connect() {
+    return { query: this.query.bind(this), release() {} }
+  }
 }
 
 const env = {
@@ -173,5 +177,27 @@ describe('Omnichannel AI conversation loop', () => {
     expect(String(aiInsert?.params[3])).toContain('garantia de resultado')
     const handoff = pool.queries.find(query => query.sql.includes('INSERT INTO public.handoff_events'))
     expect(handoff?.params[1]).toBe('brand_guardrail_blocked')
+  })
+
+  it('persists unsupported audio and hands it to a person without invoking the agent runtime', async () => {
+    const pool = new FakeOmnichannelPool('automatic')
+    const runtimeFetch = vi.fn()
+    vi.stubGlobal('fetch', runtimeFetch)
+
+    const result = await handleInboundMessage(pool as never, env, {
+      eventId: 'event-audio', organizationId: 'org-1', connectionId: 'connection-1',
+      inbound: {
+        contact: { externalId: '5543999990000', phone: '+5543999990000' },
+        message: {
+          externalMessageId: 'wamid-audio', contentType: 'audio', body: undefined,
+          metadata: { originalMessageType: 'audio', requiresHumanReview: true, unsupportedMedia: 'audio' },
+        },
+      },
+    })
+
+    expect(result).toMatchObject({ runtime: { skipped: true, reason: 'unsupported_media_handed_to_human' } })
+    expect(runtimeFetch).not.toHaveBeenCalled()
+    expect(pool.queries.some(query => query.sql.includes("'unsupported_whatsapp_media'"))).toBe(true)
+    expect(pool.queries.some(query => query.sql.includes("SET status = 'waiting_human'"))).toBe(true)
   })
 })

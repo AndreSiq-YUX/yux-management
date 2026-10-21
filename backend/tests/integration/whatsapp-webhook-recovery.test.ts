@@ -30,9 +30,9 @@ it('persiste webhook assinado com Redis indisponível e entrega uma única mensa
     const firstResponse = await rig.rawRequest('POST', '/api/webhooks/meta/channel-event', rawBody, headers)
     const duplicateResponse = await rig.rawRequest('POST', '/api/webhooks/meta/channel-event', rawBody, headers)
     expect(firstResponse.statusCode).toBe(200)
-    expect(firstResponse.body).toMatchObject({ accepted: true, duplicate: false })
+    expect(firstResponse.body).toMatchObject({ accepted: true, persisted: 1, duplicates: 0 })
     expect(duplicateResponse.statusCode).toBe(200)
-    expect(duplicateResponse.body).toMatchObject({ accepted: true, duplicate: true })
+    expect(duplicateResponse.body).toMatchObject({ accepted: true, persisted: 1, duplicates: 1 })
 
     const persisted = await rig.sql(
       `SELECT event.id, event.status, domain_event.dispatch_status
@@ -63,6 +63,7 @@ it('persiste webhook assinado com Redis indisponível e entrega uma única mensa
     )).rows[0].status).toBe('processed')
   } finally {
     if (redisStopped) await rig.startRedis().catch(() => undefined)
+    await cleanupConnection(rig, phoneNumberId)
     await rig.close()
   }
 })
@@ -130,9 +131,16 @@ it('retoma o consumidor após timeout posterior à mensagem sem duplicar convers
       [event.id],
     )).rows[0]).toMatchObject({ status: 'completed', attempt_count: 2 })
   } finally {
+    await cleanupConnection(rig, phoneNumberId)
     await rig.close()
   }
 })
+
+async function cleanupConnection(rig: Awaited<ReturnType<typeof createIntegrationRig>>, phoneNumberId: string) {
+  // Processing may create immutable audit rows. Preserve the test evidence and
+  // deactivate only this fixture instead of cascading through its audit trail.
+  await rig.sql(`UPDATE public.channel_connections SET is_active=FALSE WHERE phone_number_id=$1`, [phoneNumberId])
+}
 
 async function insertWhatsAppConnection(
   rig: Awaited<ReturnType<typeof createIntegrationRig>>,

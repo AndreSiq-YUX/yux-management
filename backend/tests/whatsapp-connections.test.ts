@@ -12,7 +12,13 @@ class FakeClient {
   constructor(
     private readonly options: {
       active?: Array<{ id: string; organization_id: string }>
-      existing?: Array<{ id: string }>
+      existing?: Array<{
+        id: string
+        assistant_id?: string | null
+        team_id?: string | null
+        queue_id?: string | null
+        response_mode_override?: 'automatic' | 'assisted' | 'manual' | null
+      }>
       binding?: { assistant_ok: boolean; team_ok: boolean; queue_ok: boolean }
       insertError?: unknown
     } = {},
@@ -121,6 +127,28 @@ describe('upsertVerifiedWhatsAppConnection', () => {
     expect(result.id).toBe('connection-old')
     expect(pool.clients[0].calls.some(call => call.sql.includes('INSERT INTO public.channel_connections'))).toBe(false)
     expect(pool.clients[0].calls.some(call => call.sql.includes('UPDATE public.channel_connections'))).toBe(true)
+  })
+
+  it('preserves each selected binding when reconnecting the targeted number', async () => {
+    const pool = new FakePool({
+      active: [{ id: 'connection-a1', organization_id: 'org-a' }],
+      existing: [{
+        id: 'connection-a1',
+        assistant_id: 'assistant-a1',
+        team_id: 'team-a1',
+        queue_id: 'queue-a1',
+        response_mode_override: 'assisted',
+      }],
+    })
+
+    const result = await upsertVerifiedWhatsAppConnection(pool as never, {
+      ...baseInput,
+      expectedConnectionId: 'connection-a1',
+    })
+    const update = pool.clients[0].calls.find(call => call.sql.includes('UPDATE public.channel_connections'))
+
+    expect(result.id).toBe('connection-a1')
+    expect(update?.params?.slice(7, 11)).toEqual(['assistant-a1', 'team-a1', 'queue-a1', 'assisted'])
   })
 
   it('rejects an active number owned by another organization', async () => {

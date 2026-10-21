@@ -132,12 +132,24 @@ async function consumeStrategyIngestion(
 }
 
 async function consumeOmnichannelInbound(
-  pool: Pick<pg.Pool, 'query'>,
+  pool: Pick<pg.Pool, 'query' | 'connect'>,
   env: AppEnv,
   event: Awaited<ReturnType<typeof getDomainEvent>>,
   attempt: number,
-  queue?: { add(name: 'omnichannel.dispatchOutbound', data: Record<string, unknown>): Promise<unknown> },
+  queue?: { add(name: 'omnichannel.dispatchOutbound', data: Record<string, unknown>, options?: { jobId?: string }): Promise<unknown> },
 ) {
+  if (event.eventType === 'omnichannel.outbound.requested' && event.aggregateType === 'message') {
+    const messageId = stringValue(event.payload.messageId)
+    if (!messageId || messageId !== event.aggregateId) throw new Error('omnichannel_outbound_message_reference_required')
+    const message = await pool.query<{ id: string }>(`SELECT m.id FROM public.messages m
+      JOIN public.conversations c ON c.id=m.conversation_id
+      WHERE m.id=$1 AND c.organization_id=$2 AND m.connection_id=c.connection_id AND m.direction='outbound'`,
+    [messageId, event.organizationId])
+    if (!message.rows[0]) throw new Error('omnichannel_outbound_message_binding_invalid')
+    if (!queue) throw new Error('omnichannel_outbound_queue_required')
+    await queue.add('omnichannel.dispatchOutbound', { messageId }, { jobId: createBullMqJobId('omnichannel-outbound', messageId) })
+    return { queued: true, messageId }
+  }
   if (event.eventType !== 'omnichannel.inbound.received' || event.aggregateType !== 'channel_webhook_event') {
     throw new Error('omnichannel_domain_event_type_required')
   }

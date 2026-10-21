@@ -13,12 +13,14 @@ export type VerifiedWhatsAppConnection = {
   wabaId: string
   phoneNumberId: string
   displayPhoneNumber: string
+  verifiedName?: string | null
   accessToken: string
   expiresAt: string | null
   assistantId?: string | null
   teamId?: string | null
   queueId?: string | null
   responseModeOverride?: ResponseMode | null
+  expectedConnectionId?: string
 }
 
 export type WhatsAppConnectionResult = {
@@ -26,6 +28,13 @@ export type WhatsAppConnectionResult = {
   organizationId: string
   phoneNumberId: string
   state: 'pending' | 'connected'
+}
+
+export type WhatsAppConnectionSettings = {
+  assistantId: string | null
+  teamId: string | null
+  queueId: string | null
+  responseModeOverride: ResponseMode | null
 }
 
 function required(value: unknown, label: string) {
@@ -102,16 +111,18 @@ export async function upsertVerifiedWhatsAppConnection(
   const wabaId = required(input.wabaId, 'waba_id')
   const phoneNumberId = required(input.phoneNumberId, 'phone_number_id')
   const displayPhoneNumber = required(input.displayPhoneNumber, 'display_phone_number')
+  const verifiedName = typeof input.verifiedName === 'string' && input.verifiedName.trim()
+    ? input.verifiedName.trim()
+    : displayPhoneNumber
   const accessToken = required(input.accessToken, 'access_token')
-  const assistantId = optionalUuid(input.assistantId, 'assistant_id')
-  const teamId = optionalUuid(input.teamId, 'team_id')
-  const queueId = optionalUuid(input.queueId, 'queue_id')
-  const responseModeOverride = optionalResponseMode(input.responseModeOverride)
+  const requestedAssistantId = input.assistantId === undefined ? undefined : optionalUuid(input.assistantId, 'assistant_id')
+  const requestedTeamId = input.teamId === undefined ? undefined : optionalUuid(input.teamId, 'team_id')
+  const requestedQueueId = input.queueId === undefined ? undefined : optionalUuid(input.queueId, 'queue_id')
+  const requestedResponseModeOverride = input.responseModeOverride === undefined ? undefined : optionalResponseMode(input.responseModeOverride)
 
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    await validateOrganizationBindings(client, { organizationId, assistantId, teamId, queueId })
 
     const active = await client.query<{ id: string; organization_id: string }>(
       `SELECT id, organization_id
@@ -122,8 +133,14 @@ export async function upsertVerifiedWhatsAppConnection(
     )
     if (active.rows[0] && active.rows[0].organization_id !== organizationId) throw connectionConflictError()
 
-    const existing = await client.query<{ id: string }>(
-      `SELECT id
+    const existing = await client.query<{
+      id: string
+      assistant_id: string | null
+      team_id: string | null
+      queue_id: string | null
+      response_mode_override: ResponseMode | null
+    }>(
+      `SELECT id, assistant_id, team_id, queue_id, response_mode_override
        FROM public.channel_connections
        WHERE organization_id = $1 AND channel = 'whatsapp' AND phone_number_id = $2
        ORDER BY is_active DESC, updated_at DESC
@@ -131,6 +148,17 @@ export async function upsertVerifiedWhatsAppConnection(
        FOR UPDATE`,
       [organizationId, phoneNumberId],
     )
+    const existingRow = existing.rows[0]
+    if (input.expectedConnectionId && existingRow?.id !== input.expectedConnectionId) {
+      throw Object.assign(new Error('whatsapp_reconnect_target_changed'), { statusCode: 409 })
+    }
+    const assistantId = requestedAssistantId === undefined ? existingRow?.assistant_id || null : requestedAssistantId
+    const teamId = requestedTeamId === undefined ? existingRow?.team_id || null : requestedTeamId
+    const queueId = requestedQueueId === undefined ? existingRow?.queue_id || null : requestedQueueId
+    const responseModeOverride = requestedResponseModeOverride === undefined
+      ? existingRow?.response_mode_override || null
+      : requestedResponseModeOverride
+    await validateOrganizationBindings(client, { organizationId, assistantId, teamId, queueId })
 
     const connectionName = `WhatsApp ${phoneNumberId}`
     const connectionId = existing.rows[0]?.id || (await client.query<{ id: string }>(
@@ -141,12 +169,12 @@ export async function upsertVerifiedWhatsAppConnection(
          health_status, fallback_mode, assistant_id, team_id, queue_id, response_mode_override,
          connected_by_user_id, connected_at
        ) VALUES ($1, 'whatsapp', $2, TRUE, 'meta_whatsapp', $3,
-         $4, $5, $6, $7, $7, $8, 'verified', 'connected', 'connected', 'official',
-         $9, $10, $11, $12, $13, NOW())
+         $4, $5, $6, $7, $8, $9, 'verified', 'connected', 'connected', 'official',
+         $10, $11, $12, $13, $14, NOW())
        RETURNING id`,
       [
         organizationId, connectionName, inboundTokenHash(), wabaId, phoneNumberId,
-        phoneNumberId, displayPhoneNumber, [...whatsappScopes], assistantId, teamId,
+        phoneNumberId, displayPhoneNumber, verifiedName, [...whatsappScopes], assistantId, teamId,
         queueId, responseModeOverride, userId,
       ],
     )).rows[0]?.id
@@ -158,15 +186,15 @@ export async function upsertVerifiedWhatsAppConnection(
         `UPDATE public.channel_connections
          SET name = $2, is_active = TRUE, adapter_key = 'meta_whatsapp',
              provider_account_id = $3, provider_asset_id = $4, phone_number_id = $4,
-             display_phone_number = $5, provider_display_name = $5, provider_scopes = $6,
+             display_phone_number = $5, provider_display_name = $6, provider_scopes = $7,
              provider_verify_state = 'verified', token_state = 'connected',
              health_status = 'connected', health_summary = NULL, fallback_mode = 'official',
-             assistant_id = $7, team_id = $8, queue_id = $9, response_mode_override = $10,
-             connected_by_user_id = $11, connected_at = COALESCE(connected_at, NOW()),
+             assistant_id = $8, team_id = $9, queue_id = $10, response_mode_override = $11,
+             connected_by_user_id = $12, connected_at = COALESCE(connected_at, NOW()),
              disconnected_at = NULL, updated_at = NOW()
          WHERE id = $1`,
         [
-          connectionId, connectionName, wabaId, phoneNumberId, displayPhoneNumber,
+          connectionId, connectionName, wabaId, phoneNumberId, displayPhoneNumber, verifiedName,
           [...whatsappScopes], assistantId, teamId, queueId, responseModeOverride, userId,
         ],
       )
@@ -198,6 +226,53 @@ export async function upsertVerifiedWhatsAppConnection(
   } catch (error) {
     await client.query('ROLLBACK').catch(() => undefined)
     if (isUniquePhoneConflict(error)) throw connectionConflictError()
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+export async function updateWhatsAppConnectionSettings(pool: pg.Pool, input: {
+  organizationId: string
+  connectionId: string
+  settings: WhatsAppConnectionSettings
+}) {
+  const organizationId = required(input.organizationId, 'organization_id')
+  const connectionId = required(input.connectionId, 'connection_id')
+  const assistantId = optionalUuid(input.settings.assistantId, 'assistant_id')
+  const teamId = optionalUuid(input.settings.teamId, 'team_id')
+  const queueId = optionalUuid(input.settings.queueId, 'queue_id')
+  const responseModeOverride = optionalResponseMode(input.settings.responseModeOverride)
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await validateOrganizationBindings(client, { organizationId, assistantId, teamId, queueId })
+    const result = await client.query<{
+      id: string
+      assistant_id: string | null
+      team_id: string | null
+      queue_id: string | null
+      response_mode_override: ResponseMode | null
+    }>(
+      `UPDATE public.channel_connections
+          SET assistant_id = $3, team_id = $4, queue_id = $5,
+              response_mode_override = $6, updated_at = NOW()
+        WHERE id = $1 AND organization_id = $2 AND channel = 'whatsapp'
+        RETURNING id, assistant_id, team_id, queue_id, response_mode_override`,
+      [connectionId, organizationId, assistantId, teamId, queueId, responseModeOverride],
+    )
+    const row = result.rows[0]
+    if (!row) throw Object.assign(new Error('whatsapp_connection_not_found'), { statusCode: 404 })
+    await client.query('COMMIT')
+    return {
+      id: row.id,
+      assistantId: row.assistant_id,
+      teamId: row.team_id,
+      queueId: row.queue_id,
+      responseModeOverride: row.response_mode_override,
+    }
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined)
     throw error
   } finally {
     client.release()

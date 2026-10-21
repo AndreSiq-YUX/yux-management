@@ -5,6 +5,7 @@ import { hashSessionToken } from '../../auth/session.js'
 import { requireAuth, requireInternalRole } from '../../http/guards.js'
 import { dataQuerySchema } from '../data/routes.js'
 import { createScopedTableRules, executeScopedDataQuery } from '../data/scoped-query.js'
+import { updateWhatsAppConnectionSettings } from './whatsapp-connections.js'
 import {
   assignConversation,
   createMessageAttachment,
@@ -62,6 +63,14 @@ const simulationSchema = z.object({
 const channelConnectionsQuerySchema = z.object({
   organizationId: z.string().uuid(),
   channels: z.string().optional(),
+})
+
+const channelConnectionSettingsSchema = z.object({
+  organizationId: z.string().uuid(),
+  assistantId: z.string().uuid().nullable(),
+  teamId: z.string().uuid().nullable(),
+  queueId: z.string().uuid().nullable(),
+  responseModeOverride: z.enum(['automatic', 'assisted', 'manual']).nullable(),
 })
 
 const queryAllowedTables = new Set([
@@ -245,6 +254,26 @@ export async function registerOmnichannelRoutes(app: FastifyInstance) {
     )
 
     return result.rows
+  })
+
+  app.patch('/channel-connections/:id/settings', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = idParams.safeParse(request.params)
+    const parsed = channelConnectionSettingsSchema.safeParse(request.body)
+    if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_channel_connection_settings' })
+    if (!['client_admin', 'yux_admin', 'yux_operator'].includes(user.role)) return reply.code(403).send({ error: 'forbidden' })
+    await requireOrganizationAccess(app.pg, user, parsed.data.organizationId)
+    return updateWhatsAppConnectionSettings(app.pg, {
+      organizationId: parsed.data.organizationId,
+      connectionId: params.data.id,
+      settings: {
+        assistantId: parsed.data.assistantId,
+        teamId: parsed.data.teamId,
+        queueId: parsed.data.queueId,
+        responseModeOverride: parsed.data.responseModeOverride,
+      },
+    })
   })
 
   app.get('/conversations', async (request, reply) => {

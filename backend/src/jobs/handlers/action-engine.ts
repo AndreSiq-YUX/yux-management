@@ -178,9 +178,9 @@ export async function handleActionEngineSchedule(pool: Pool, queue: AppJobQueue,
   return scheduleReadyActions(pool as never, queue, missionId)
 }
 
-export async function handleActionEngineDecisionNotification(pool: Pool, queue: AppJobQueue, data: Record<string, unknown>, enabled = true) {
+export async function handleActionEngineDecisionNotification(pool: Pool, queue: AppJobQueue, data: Record<string, unknown>, enabled = true, graphVersion?: string) {
   if (!enabled) return { skipped: 'mission_decision_notifications_disabled' }
-  return deliverDecisionNotification(pool as never, queue, data)
+  return deliverDecisionNotification(pool as never, queue, data, { graphVersion })
 }
 
 export async function handleActionEngineDecisionNotificationDispatch(pool: Pool, queue: AppJobQueue, data: Record<string, unknown>, enabled = true) {

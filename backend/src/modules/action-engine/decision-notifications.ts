@@ -4,6 +4,7 @@ import { createBullMqJobId } from '../../jobs/queue.js'
 import { queueEmailRequest } from '../email-delivery/service.js'
 import { loadProviderSecretFromPool } from '../../lib/edge-compat/providerSecrets.js'
 import { sendWhatsAppOperationalNotification } from '../../lib/edge-compat/whatsappProvider.js'
+import { evaluateWhatsAppDispatchPolicy } from '../omnichannel/whatsapp-dispatch-policy.js'
 
 export type DecisionNotificationStage = 'created' | '4h' | '24h'
 export type DecisionNotificationChannel = 'in_product' | 'email' | 'whatsapp'
@@ -32,6 +33,14 @@ export type DecisionNotificationPayload = {
   summary: string
   expiresAt: string | null
   href: string
+}
+
+class WhatsAppNotificationBlockedError extends Error {
+  constructor(readonly reason: string) { super(reason) }
+}
+
+class WhatsAppNotificationAmbiguousError extends Error {
+  constructor() { super('whatsapp_notification_result_ambiguous') }
 }
 
 export async function persistDecisionNotificationSchedule(db: Queryable, input: {
@@ -123,7 +132,8 @@ export async function deliverDecisionNotification(
   data: Record<string, unknown>,
   dependencies: {
     queueEmail?: typeof queueDecisionEmail
-    sendWhatsApp?: typeof sendDecisionWhatsApp
+    sendWhatsApp?: (pool: Queryable, row: DecisionRow, payload: DecisionNotificationPayload, graphVersion?: string) => Promise<unknown>
+    graphVersion?: string
     now?: Date
   } = {},
 ) {
@@ -161,11 +171,21 @@ export async function deliverDecisionNotification(
         await finishDelivery(pool, notificationId, 'queued', requestId)
         results.push({ channel, status: 'queued' })
       } else {
-        await (dependencies.sendWhatsApp ?? sendDecisionWhatsApp)(pool, row, payload)
+        const response = await (dependencies.sendWhatsApp ?? sendDecisionWhatsApp)(pool, row, payload, dependencies.graphVersion)
+        if (record(response).outcome === 'ambiguous') throw new WhatsAppNotificationAmbiguousError()
         await finishDelivery(pool, notificationId, 'delivered')
         results.push({ channel, status: 'delivered' })
       }
     } catch (error) {
+      if (error instanceof WhatsAppNotificationBlockedError) {
+        await skipDelivery(pool, notificationId, error.reason)
+        results.push({ channel, status: 'skipped' })
+        continue
+      }
+      if (error instanceof WhatsAppNotificationAmbiguousError) {
+        await markDecisionDeliveryAmbiguous(pool, notificationId)
+        throw error
+      }
       await failDelivery(pool, notificationId, error)
       throw error
     }
@@ -221,6 +241,20 @@ async function failDelivery(pool: Queryable, notificationId: string, error: unkn
   await pool.query(`UPDATE public.action_decision_notifications SET status = 'failed', last_error = $2, updated_at = NOW() WHERE id = $1`, [notificationId, safeError])
 }
 
+async function skipDelivery(pool: Queryable, notificationId: string, reason: string) {
+  await pool.query(
+    `UPDATE public.action_decision_notifications SET status = 'skipped', last_error = $2, updated_at = NOW() WHERE id = $1`,
+    [notificationId, reason.slice(0, 500)],
+  )
+}
+
+async function markDecisionDeliveryAmbiguous(pool: Queryable, notificationId: string) {
+  await pool.query(
+    `UPDATE public.action_decision_notifications SET status = 'ambiguous', last_error = 'whatsapp_notification_result_ambiguous', updated_at = NOW() WHERE id = $1`,
+    [notificationId],
+  )
+}
+
 async function queueDecisionEmail(pool: Queryable, row: DecisionRow, payload: DecisionNotificationPayload, stage: DecisionNotificationStage) {
   if (!row.recipient_email) throw new Error('decision_notification_email_missing')
   const request = await queueEmailRequest(pool, {
@@ -236,24 +270,62 @@ async function queueDecisionEmail(pool: Queryable, row: DecisionRow, payload: De
   return request.id
 }
 
-async function sendDecisionWhatsApp(pool: Queryable, row: DecisionRow, payload: DecisionNotificationPayload) {
+async function sendDecisionWhatsApp(pool: Queryable, row: DecisionRow, payload: DecisionNotificationPayload, graphVersion?: string) {
   if (!row.whatsapp_phone || !row.whatsapp_consent_at) throw new Error('whatsapp_notification_consent_required')
-  const connection = await pool.query<{ phone_number_id: string | null; protected_metadata_references: Record<string, unknown> }>(
-    `SELECT phone_number_id, protected_metadata_references FROM public.channel_connections
-      WHERE organization_id = $1 AND channel = 'whatsapp' AND is_active = true
-      ORDER BY updated_at DESC LIMIT 1`,
-    [row.organization_id],
+  const connection = await pool.query<{
+    id: string; organization_id: string; channel: string; is_active: boolean; token_state: string
+    phone_number_id: string | null; protected_metadata_references: Record<string, unknown>; inside_customer_window: boolean
+  }>(
+    `SELECT connection.id, connection.organization_id, connection.channel, connection.is_active,
+            connection.token_state, connection.phone_number_id, connection.protected_metadata_references,
+            EXISTS (
+              SELECT 1 FROM public.conversations conversation
+              JOIN public.omnichannel_contacts contact ON contact.id = conversation.contact_id
+              JOIN public.messages inbound ON inbound.conversation_id = conversation.id AND inbound.direction = 'inbound'
+             WHERE conversation.organization_id = connection.organization_id
+               AND conversation.connection_id = connection.id AND conversation.channel = 'whatsapp'
+               AND regexp_replace(COALESCE(contact.phone,''), '[^0-9]', '', 'g') = regexp_replace($2, '[^0-9]', '', 'g')
+               AND inbound.created_at >= NOW() - INTERVAL '24 hours'
+            ) AS inside_customer_window
+       FROM public.channel_connections connection
+      WHERE connection.organization_id = $1 AND connection.channel = 'whatsapp'
+        AND connection.is_active = TRUE
+      ORDER BY inside_customer_window DESC, connection.updated_at DESC LIMIT 1`,
+    [row.organization_id, row.whatsapp_phone],
   )
   const selected = connection.rows[0]
   const reference = selected?.protected_metadata_references?.accessTokenReference
-  if (!selected?.phone_number_id || typeof reference !== 'string') throw new Error('whatsapp_connection_required')
+  if (!selected?.phone_number_id || typeof reference !== 'string') throw new WhatsAppNotificationBlockedError('whatsapp_connection_required')
+  const policyBlock = evaluateWhatsAppDispatchPolicy({
+    connectionActive: selected.is_active && selected.token_state === 'connected',
+    connectionMatchesConversation: true,
+    connectionMatchesMessage: true,
+    tenantMatches: selected.organization_id === row.organization_id && selected.channel === 'whatsapp',
+    inCustomerWindow: selected.inside_customer_window,
+    consentGranted: Boolean(row.whatsapp_consent_at),
+    optedOut: false,
+    permissionRevoked: false,
+    contentType: 'text',
+    purpose: 'transactional',
+  })
+  if (policyBlock) throw new WhatsAppNotificationBlockedError(policyBlock)
   const secret = await loadProviderSecretFromPool(pool, reference)
   if (secret.expired) throw new Error('whatsapp_access_token_expired')
+  const activeNow = await pool.query<{ id: string }>(
+    `SELECT id FROM public.channel_connections
+      WHERE id = $1 AND organization_id = $2 AND channel = 'whatsapp'
+        AND phone_number_id = $3 AND is_active = TRUE AND token_state = 'connected'
+      LIMIT 1`,
+    [selected.id, row.organization_id, selected.phone_number_id],
+  )
+  if (!activeNow.rows[0]) throw new WhatsAppNotificationBlockedError('whatsapp_connection_unavailable')
   const response = await sendWhatsAppOperationalNotification({
     to: row.whatsapp_phone, body: `${payload.missionTitle}\n${payload.summary}\n${payload.href}`,
-    consentGranted: true, phoneNumberId: selected.phone_number_id, accessToken: secret.value,
+    consentGranted: true, phoneNumberId: selected.phone_number_id, accessToken: secret.value, graphVersion,
   })
+  if (response.outcome === 'ambiguous') throw new WhatsAppNotificationAmbiguousError()
   if (!response.ok) throw new Error(response.error || `whatsapp_provider_http_${response.status}`)
+  return response
 }
 
 function record(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {} }

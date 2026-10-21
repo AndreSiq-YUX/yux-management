@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -7,6 +7,7 @@ import path from 'node:path'
 import { promisify } from 'node:util'
 import type { FastifyInstance } from 'fastify'
 import pg from 'pg'
+import { Redis } from 'ioredis'
 import { createContextAwarePool } from '../../../src/db/client.js'
 import { buildServer, type AppJobQueue } from '../../../src/server.js'
 import { loadEnv } from '../../../src/config/env.js'
@@ -15,7 +16,7 @@ import { QUEUE_NAMES, createQueue, createRedisConnection, createWorker, type Job
 import { createRoutedJobQueue } from '../../../src/jobs/router.js'
 import { applyMigrations } from '../../../scripts/apply-migrations.js'
 import { fixtureIds, fixturePassword, fixtureUsers, integrationRolePassword, provisionIntegrationServiceRoles, seedIntegrationFixtures } from './fixtures.js'
-import { createTestProviderServer, type ProviderCall } from './provider-server.js'
+import { createTestProviderServer, type ProviderCall, type ProviderMode } from './provider-server.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -40,6 +41,7 @@ export type IntegrationRig = {
   stopRedis(): Promise<void>
   startRedis(): Promise<void>
   providerCalls(): Promise<ProviderCall[]>
+  setProviderMode(mode: ProviderMode): void
   providerBaseUrl: string
   serviceDatabaseUrl(role: 'yux_api'|'yux_worker'|'yux_runtime'): string
   storageRoot: string
@@ -54,7 +56,7 @@ export function getIntegrationDatabaseUrl() {
   return databaseUrl
 }
 
-export async function createIntegrationRig(options: { corsOrigin?: string; queueMode?: 'redis' | 'stub' } = {}): Promise<IntegrationRig> {
+export async function createIntegrationRig(options: { corsOrigin?: string; queueMode?: 'redis' | 'stub'; metaOAuth?: boolean; metaTestPhoneNumberId?: string } = {}): Promise<IntegrationRig> {
   const databaseUrl = getIntegrationDatabaseUrl()
   const redisUrl = process.env.YUX_INTEGRATION_REDIS_URL
     || 'redis://:yux_test_redis_password@127.0.0.1:56379/0'
@@ -95,7 +97,18 @@ export async function createIntegrationRig(options: { corsOrigin?: string; queue
     ACTION_ENGINE_MUTATION_LEASE_SECRET: 'integration-mutation-lease-secret-32-chars',
     ACTION_ENGINE_TELEMETRY_REDACTION_KEY: 'integration-redaction-key-secret-32-chars',
     META_APP_SECRET: 'integration-meta-app-secret',
+    ...(options.metaOAuth ? {
+      META_APP_ID: '123456789012345',
+      META_GRAPH_VERSION: 'v25.0',
+      META_MARKETING_OAUTH_REDIRECT_URI: 'https://hub.yux.com.br/oauth/meta/callback',
+      META_WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID: '345678901234567',
+      OAUTH_ALLOWED_REDIRECT_URIS: 'https://hub.yux.com.br/oauth/meta/callback',
+    } : {}),
     META_WEBHOOK_VERIFY_TOKEN: 'integration-meta-verify-token',
+    ...(options.metaTestPhoneNumberId ? {
+      META_WHATSAPP_TEST_ORGANIZATION_ID: fixtureIds.internalOrg,
+      META_WHATSAPP_TEST_PHONE_NUMBER_ID: options.metaTestPhoneNumberId,
+    } : {}),
     META_GRAPH_BASE_URL: provider.baseUrl,
     PROVIDER_SECRET_ENCRYPTION_KEY_B64: 'BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=',
     YUX_AGENT_RUNTIME_URL: process.env.YUX_AGENT_RUNTIME_URL,
@@ -155,9 +168,10 @@ export async function createIntegrationRig(options: { corsOrigin?: string; queue
       cookies.clear()
       app = await createApp(apiPool, appQueue, env)
     },
-    stopRedis: () => controlRedis('stop'),
-    startRedis: () => controlRedis('start'),
+    stopRedis: () => controlRedis('stop', redisUrl),
+    startRedis: () => controlRedis('start', redisUrl),
     providerCalls: async () => provider.calls(),
+    setProviderMode: mode => provider.setMode(mode),
     providerBaseUrl: provider.baseUrl,
     serviceDatabaseUrl: (role) => serviceDatabaseUrl(databaseUrl, role),
     storageRoot,
@@ -227,7 +241,39 @@ async function waitForQueuesToDrain(queues: Array<ReturnType<typeof createQueue>
   throw new Error('integration_worker_tick_timeout')
 }
 
-async function controlRedis(action: 'start' | 'stop') {
+async function controlRedis(action: 'start' | 'stop', redisUrl: string) {
+  const executable = process.env.YUX_INTEGRATION_REDIS_EXECUTABLE
+  if (executable) {
+    const url = new URL(redisUrl)
+    if (!['127.0.0.1', 'localhost'].includes(url.hostname) || url.port !== '56379' || !path.isAbsolute(executable)) {
+      throw new Error('unsafe_integration_redis_control_target')
+    }
+    const connect = () => {
+      const redis = new Redis(redisUrl, { lazyConnect: true, maxRetriesPerRequest: 1, retryStrategy: () => null, connectTimeout: 1000 })
+      redis.on('error', () => undefined)
+      return redis
+    }
+    if (action === 'stop') {
+      const redis = connect()
+      try {
+        await redis.connect()
+        await redis.shutdown('NOSAVE').catch(error => { if (!(error instanceof Error && error.message === 'Connection is closed.')) throw error })
+      } finally { redis.disconnect() }
+      return
+    }
+    const child = spawn(executable, ['--bind', '127.0.0.1', '--port', '56379', '--requirepass', decodeURIComponent(url.password), '--appendonly', 'no'], {
+      cwd: path.dirname(executable), detached: true, windowsHide: true, stdio: 'ignore',
+    })
+    await new Promise<void>((resolve, reject) => { child.once('error', reject); child.once('spawn', resolve) })
+    child.unref()
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const redis = connect()
+      try { await redis.connect(); if (await redis.ping() === 'PONG') return } catch { /* wait for the isolated service */ }
+      finally { redis.disconnect() }
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+    throw new Error('integration_local_redis_start_timeout')
+  }
   const project = process.env.YUX_INTEGRATION_COMPOSE_PROJECT
   if (!project) throw new Error('integration_redis_control_requires_YUX_INTEGRATION_COMPOSE_PROJECT')
   const composeFile = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../docker-compose.integration.yml')

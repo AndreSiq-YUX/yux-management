@@ -1,7 +1,7 @@
 # WhatsApp — registro de homologação SaaS
 
 Data de abertura: 20/09/2026 19:11 -03:00
-Status: tarefa 0 em andamento; nenhum envio real, publicação ou alteração de produção executado.
+Status em 21/10/2026: preparação local de transporte verificada; publicação, credenciais e envio real pelo YUX pendentes. O envio anterior ocorreu somente no painel Meta.
 
 Este registro acompanha a homologação do WhatsApp Cloud API da YUX. Os valores abaixo não incluem tokens, App Secret, números de telefone pessoais ou outras credenciais protegidas.
 
@@ -84,3 +84,17 @@ Esta evidência comprova apenas o transporte básico dentro do ambiente de teste
 ## Regra de evidência
 
 Um teste só será marcado como homologado quando houver caso, horário, versão, organização, conexão, resultado esperado, resultado obtido e evidência sanitizada. HTTP 200, existência de tela ou token configurado localmente não são, isoladamente, prova de envio, recebimento, isolamento ou onboarding SaaS.
+
+## Retomada — 21/10/2026
+
+- Ambiente dedicado local: PostgreSQL 17 em `127.0.0.1:55432` e Redis 8.10.2 em `127.0.0.1:56379`; sem alteração dos serviços do sistema. O bloqueio anterior de infraestrutura de testes foi resolvido.
+- Suítes completas locais: backend 777 testes e frontend 618 testes aprovados, após as correções da revisão. Backend type-check aprovado. A composição local inclui alterações de outras frentes; a candidata isolada sobre `origin/main` terá verificação própria antes de publicação.
+- Integração com PostgreSQL/Redis reais: 5 arquivos, 9 testes aprovados em 21/10 às 20:06 -03. Casos: isolamento SaaS, recuperação de webhook, provisionamento interno restrito, envio transacional/outbox, indisponibilidade Redis, reinício, janela de 24h, resultado ambíguo e concorrência de dois workers. A Meta foi substituída por servidor HTTP controlado: **não comprova envio real**.
+- Revisão independente encontrou e motivou três correções verificadas por testes que falharam antes da correção: resultado incerto não vira falha reenviável quando a gravação falha; duas execuções de saída disputam uma única tentativa sob trava transacional; retentativa de requisição do formulário preserva os dados e o identificador após resposta perdida.
+- Navegador local: formulário exige confirmação, acompanha mensagem pelo fluxo normal, distingue aceitação de entrega e não reenvia automaticamente após aceitação. Desktop e celular (390px) sem overflow horizontal. Destinatário de fixture fictício; nenhum envio Meta nessa validação.
+- Diagnóstico remoto implementado para token/app/permissões, número e inscrição da WABA; envio e recebimento permanecem explicitamente não comprovados. Provisionamento de teste limitado por organização e Phone Number ID no servidor, apenas para administrador interno, com token criptografado.
+- Painel Meta consultado: empresa aprovada, App Review em análise. Configurações básicas ainda apontam ícone, Política de Privacidade e categoria ausentes; não editar ou reenviar a análise pendente sem esclarecer seu estado. A leitura da chave do app exigiu confirmação da senha pelo titular.
+- Produção consultada: health identificou `0a665d19125999d61177c1916fb08d8559da91ac`; webhook respondeu `503 webhook_not_configured`. Configurações Meta ausentes no serviço, chave de criptografia existente. Nenhuma configuração de produção alterada nesta retomada.
+- `origin/main` está em `67655019fe46eaeefe663d2c186c5f7c28df59b6`, com avanços Radar posteriores à branch local. Preparação isolada em worktree próprio para preservar esses avanços e não incluir alterações Project Delivery do usuário.
+- Destinatário humano confirmado para uma única mensagem de teste. Não registrar seu telefone nem credenciais neste documento. Ainda não enviado.
+- Próximos critérios: integrar candidata na base atual, verificar migrations/backup/reversão, configurar segredos no servidor, validar webhook assinado, receber mensagem real e responder pelo portal. Modo automático, transferência humana e onboarding externo continuam nas tarefas 7–9.

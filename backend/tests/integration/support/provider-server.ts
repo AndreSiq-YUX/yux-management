@@ -10,14 +10,16 @@ export type ProviderMode = 'success' | 'timeout' | 'rate-limit' | 'error' | 'los
 export type TestProviderServer = {
   baseUrl: string
   calls(): ProviderCall[]
+  setMode(mode: ProviderMode): void
   close(): Promise<void>
 }
 
 export async function createTestProviderServer(): Promise<TestProviderServer> {
   const recorded: ProviderCall[] = []
+  let defaultMode: ProviderMode = 'success'
   const server = createServer(async (request, response) => {
     const payload = await readPayload(request)
-    const mode = readMode(request)
+    const mode = request.headers['x-test-provider-mode'] ? readMode(request) : defaultMode
     const intentId = request.headers['x-yux-intent-id']?.toString()
       || (isRecord(payload) && typeof payload.intentId === 'string' ? payload.intentId : '')
     recorded.push({ intentId, payload })
@@ -66,6 +68,7 @@ export async function createTestProviderServer(): Promise<TestProviderServer> {
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
     calls: () => recorded.map(call => ({ ...call })),
+    setMode: mode => { defaultMode = mode },
     close: () => closeServer(server),
   }
 }

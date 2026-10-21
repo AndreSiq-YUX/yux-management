@@ -83,6 +83,34 @@ describe('Mission decision notifications', () => {
     expect(sendWhatsApp).toHaveBeenCalledTimes(1)
   })
 
+  it('blocks an automatic repeat after WhatsApp acceptance becomes ambiguous', async () => {
+    const database = new NotificationDatabase(decisionRow())
+    const sendWhatsApp = vi.fn().mockResolvedValue({ outcome: 'ambiguous' })
+    const add = vi.fn().mockResolvedValue({ id: 'email-job' })
+    const dependencies = { sendWhatsApp, queueEmail: vi.fn().mockResolvedValue('email-request-1'), now: new Date('2026-08-22T12:00:00Z') }
+
+    await expect(deliverDecisionNotification(database as never, { add } as never, { approvalId, stage: 'created' }, dependencies))
+      .rejects.toThrow('whatsapp_notification_result_ambiguous')
+    const retry = await deliverDecisionNotification(database as never, { add } as never, { approvalId, stage: 'created' }, dependencies)
+
+    expect(database.updates.some(sql => sql.includes("status = 'ambiguous'"))).toBe(true)
+    expect(retry.results?.every(result => result.status === 'duplicate')).toBe(true)
+    expect(sendWhatsApp).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips decision WhatsApp when there is no active connection or eligible customer window', async () => {
+    const database = new NotificationDatabase(decisionRow({ email_enabled: false }))
+    const result = await deliverDecisionNotification(database as never, { add: vi.fn() } as never, { approvalId, stage: 'created' }, {
+      now: new Date('2026-08-22T12:00:00Z'),
+    })
+
+    expect(result.results).toEqual([
+      { channel: 'in_product', status: 'delivered' },
+      { channel: 'whatsapp', status: 'skipped' },
+    ])
+    expect(database.updates.some(sql => sql.includes("status = 'skipped'"))).toBe(true)
+  })
+
   it.each(['approved', 'rejected', 'cancelled', 'expired'])('does not deliver reminders after approval status becomes %s', async approvalStatus => {
     const queue = { add: vi.fn() }
     const result = await deliverDecisionNotification(new NotificationDatabase(decisionRow({ approval_status: approvalStatus })) as never, queue as never, { approvalId, stage: '4h' })
@@ -112,6 +140,7 @@ function decisionRow(overrides: Record<string, unknown> = {}) {
 
 class NotificationDatabase {
   private claims = new Set<string>()
+  readonly updates: string[] = []
   constructor(private row: ReturnType<typeof decisionRow>) {}
 
   async query(sql: string, params: unknown[] = []) {
@@ -122,6 +151,7 @@ class NotificationDatabase {
       this.claims.add(key)
       return { rows: [{ id: `notification-${this.claims.size}` }] }
     }
+    if (sql.includes('UPDATE public.action_decision_notifications')) this.updates.push(sql)
     return { rows: [] }
   }
 }

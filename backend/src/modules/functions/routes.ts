@@ -3,7 +3,9 @@ import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
 import { requireAuth, requireInternalRole, requireMembership } from '../../http/guards.js'
 import type { JobName } from '../../jobs/queue.js'
-import { completeMetaChannelOAuth, disconnectMetaChannel, refreshMetaChannelHealth, startMetaChannelOAuth, testMetaChannel } from '../../lib/meta-channel-oauth.js'
+import { completeMetaChannelOAuth, disconnectMetaChannel, refreshMetaChannelHealth, startMetaChannelOAuth } from '../../lib/meta-channel-oauth.js'
+import { prepareWhatsAppTestSend, whatsAppTestSendSchema } from '../omnichannel/whatsapp-test-send.js'
+import { provisionWhatsAppTestNumber, whatsAppTestProvisionSchema } from '../omnichannel/whatsapp-test-provision.js'
 import {
   markStrategyAdminChatQueueFailure,
   prepareStrategyAdminChat,
@@ -24,6 +26,7 @@ export const FUNCTION_POLICIES: Record<string, FunctionPolicy> = {
   'disconnect-meta-channel': { minRole: 'client_admin', organization: 'channel_connection' },
   'refresh-meta-channel-health': { minRole: 'client_admin', organization: 'channel_connection' },
   'send-meta-channel-test': { minRole: 'client_admin', organization: 'channel_connection' },
+  'provision-whatsapp-test-number': { minRole: 'internal', organization: 'body' },
   'execute-wordpress-publishing': { minRole: 'client_admin', organization: 'publishing_run' },
   'execute-marketing-publishing': { minRole: 'client_admin', organization: 'publishing_run' },
 }
@@ -103,17 +106,34 @@ export async function registerFunctionRoutes(app: FastifyInstance) {
     // OAuth state and code exchange must be performed synchronously: the browser
     // needs the authorization URL and no credential may ever enter a BullMQ job.
     if (params.data.name === 'start-meta-channel-connect') {
-      return startMetaChannelOAuth(app.pg, app.config, { organizationId: organizationId!, userId: ctx.userId, channel: body.channel })
+      const connectionId = body.connectionId === undefined ? undefined : readUuid(body, 'connectionId')
+      if (body.connectionId !== undefined && !connectionId) return reply.code(400).send({ error: 'invalid_connection_id' })
+      return startMetaChannelOAuth(app.pg, app.config, {
+        organizationId: organizationId!, userId: ctx.userId, channel: body.channel, connectionId: connectionId ?? undefined,
+      })
     }
     if (params.data.name === 'complete-meta-channel-connect') {
       return completeMetaChannelOAuth(app.pg, app.config, {
         organizationId: organizationId!, userId: ctx.userId, channel: body.channel,
         state: body.state, code: body.code, assets: body.assets,
+        wabaId: body.wabaId, phoneNumberIds: body.phoneNumberIds,
+        registrationPin: body.registrationPin,
       })
     }
     if (params.data.name === 'disconnect-meta-channel') return disconnectMetaChannel(app.pg, organizationId!, String(body.connectionId || ''))
-    if (params.data.name === 'refresh-meta-channel-health') return refreshMetaChannelHealth(app.pg, organizationId!, String(body.connectionId || ''))
-    if (params.data.name === 'send-meta-channel-test') return testMetaChannel(app.pg, organizationId!, String(body.connectionId || ''))
+    if (params.data.name === 'refresh-meta-channel-health') return refreshMetaChannelHealth(app.pg, organizationId!, String(body.connectionId || ''), app.config)
+    if (params.data.name === 'send-meta-channel-test') {
+      const test = whatsAppTestSendSchema.safeParse(body)
+      if (!test.success) return reply.code(400).send({ error: 'invalid_whatsapp_test_request' })
+      const message = await prepareWhatsAppTestSend(app.pg, organizationId!, ctx.userId, test.data)
+      // The outbox is committed with the message; Redis outages cannot lose it.
+      return reply.code(202).send(message)
+    }
+    if (params.data.name === 'provision-whatsapp-test-number') {
+      const provision = whatsAppTestProvisionSchema.safeParse(body)
+      if (!provision.success) return reply.code(400).send({ error: 'invalid_whatsapp_test_provision_request' })
+      return provisionWhatsAppTestNumber(app.pg, app.config, ctx.userId, provision.data)
+    }
 
     if (params.data.name === 'run-strategy-admin-chat') {
       const chatRequest = strategyAdminChatRequestSchema.safeParse(body)

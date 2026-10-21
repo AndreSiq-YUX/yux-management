@@ -46,6 +46,70 @@ class FakePool {
   async end() { return undefined }
 }
 
+class BatchWebhookPool {
+  readonly calls: Array<{ sql: string; params: unknown[] }> = []
+  readonly connections = [
+    { id: '00000000-0000-4000-8000-000000000101', organization_id: '00000000-0000-4000-8000-000000000201', phone_number_id: 'phone-a', is_active: false },
+    { id: '00000000-0000-4000-8000-000000000102', organization_id: '00000000-0000-4000-8000-000000000202', phone_number_id: 'phone-b', is_active: true },
+  ]
+  readonly webhookEvents = new Map<string, { id: string; connectionId: string | null; payload: unknown }>()
+  readonly domainEvents = new Map<string, Record<string, unknown>>()
+  rejectedCount = 0
+  commits = 0
+
+  async query(sql: string, params: unknown[] = []) { return this.runQuery(sql, params) }
+  async connect() {
+    return {
+      query: this.runQuery.bind(this),
+      release() {},
+    }
+  }
+
+  private async runQuery(sql: string, params: unknown[] = []) {
+    this.calls.push({ sql, params })
+    if (sql.includes('FROM public.channel_connections') && sql.includes('phone_number_id = ANY')) {
+      const requested = params[0] as string[]
+      return { rows: this.connections.filter(connection => requested.includes(connection.phone_number_id)) }
+    }
+    if (sql === 'BEGIN' || sql === 'ROLLBACK') return { rows: [] }
+    if (sql === 'COMMIT') { this.commits += 1; return { rows: [] } }
+    if (sql.includes("event_type, idempotency_key, sanitized_payload, status, protected_error_text")) {
+      this.rejectedCount += 1
+      return { rows: [] }
+    }
+    if (sql.includes('INSERT INTO public.channel_webhook_events')) {
+      const [, externalEventId, , idempotencyKey, payload] = params as [string, string, string, string, string]
+      const existing = this.webhookEvents.get(idempotencyKey)
+      if (existing) return { rows: [] }
+      const id = `00000000-0000-4000-8000-${String(this.webhookEvents.size + 1).padStart(12, '0')}`
+      this.webhookEvents.set(idempotencyKey, { id, connectionId: String(params[0]), payload: JSON.parse(payload) })
+      void externalEventId
+      return { rows: [{ id }] }
+    }
+    if (sql.includes('FROM public.channel_webhook_events') && sql.includes('idempotency_key = $1')) {
+      const existing = this.webhookEvents.get(String(params[0]))
+      return { rows: existing ? [{ id: existing.id }] : [] }
+    }
+    if (sql.includes('INSERT INTO public.domain_events')) {
+      const [id, organizationId, crmInstanceId, eventType, , aggregateType, aggregateId, leadId, correlationId, causationId, depth, actor, occurredAt, automationTrace, payload] = params
+      const event = {
+        id, organization_id: organizationId, crm_instance_id: crmInstanceId, event_type: eventType,
+        aggregate_type: aggregateType, aggregate_id: aggregateId, lead_id: leadId,
+        correlation_id: correlationId, causation_id: causationId, depth, actor,
+        occurred_at: occurredAt, automation_trace: automationTrace, payload,
+      }
+      if (this.domainEvents.has(String(id))) return { rows: [] }
+      this.domainEvents.set(String(id), event)
+      return { rows: [event] }
+    }
+    if (sql.includes('FROM public.domain_events') && sql.includes('WHERE id = $1')) {
+      const event = this.domainEvents.get(String(params[0]))
+      return { rows: event ? [event] : [] }
+    }
+    throw new Error(`Unexpected SQL: ${sql}`)
+  }
+}
+
 const jobQueue: AppJobQueue = {
   async add() { return { id: 'job-1' } },
   async close() { return undefined },
@@ -97,6 +161,58 @@ describe('Meta webhook routes', () => {
     })
     expect(response.statusCode).toBe(500)
     expect(response.json()).not.toMatchObject({ accepted: true, ignored: 'unsupported_payload' })
+  })
+
+  it('persists every valid message and receipt in a multi-tenant batch and deduplicates redelivery', async () => {
+    const pool = new BatchWebhookPool()
+    app = await buildServer(env, { pool: pool as never, jobQueue })
+    const requestPayload = JSON.stringify({
+      object: 'whatsapp_business_account',
+      entry: [
+        { id: 'waba-a', changes: [
+          { field: 'messages', value: { messaging_product: 'whatsapp', metadata: { phone_number_id: 'phone-a' }, messages: [
+            { id: 'wamid-a1', from: '5511999990001', timestamp: '1780507200', type: 'text', text: { body: 'Olá 1' } },
+            { id: 'wamid-a2', from: '5511999990002', timestamp: '1780507201', type: 'text', text: { body: 'Olá 2' } },
+          ] } },
+          { field: 'messages', value: { messaging_product: 'whatsapp', metadata: { phone_number_id: 'phone-a' }, statuses: [
+            { id: 'wamid-same', recipient_id: '5511999990001', timestamp: '1780507202', status: 'sent' },
+            { id: 'wamid-same', recipient_id: '5511999990001', timestamp: '1780507203', status: 'delivered' },
+          ] } },
+        ] },
+        { id: 'waba-b', changes: [{ field: 'messages', value: { messaging_product: 'whatsapp', metadata: { phone_number_id: 'phone-b' }, messages: [
+          { id: 'wamid-b1', from: '5511999990003', timestamp: '1780507204', type: 'text', text: { body: 'Olá empresa B' } },
+          { from: '5511999990004', timestamp: 'invalid', type: 'text', text: { body: 'item inválido' } },
+        ] } }] },
+      ],
+    })
+    const signature = createHmac('sha256', env.META_APP_SECRET).update(requestPayload).digest('hex')
+    const request = {
+      method: 'POST' as const,
+      url: '/api/webhooks/meta/channel-event',
+      payload: requestPayload,
+      headers: { 'content-type': 'application/json', 'x-hub-signature-256': `sha256=${signature}` },
+    }
+
+    const first = await app.inject(request)
+    const second = await app.inject(request)
+    expect(first.statusCode, JSON.stringify(first.json())).toBe(200)
+    expect(first.json()).toMatchObject({
+      accepted: true,
+      persisted: 5,
+      duplicates: 0,
+      ignored: 0,
+      rejected: [{ index: 'entry[1].changes[0].messages[1]', reason: 'item_invalid' }],
+    })
+    expect(second.json()).toMatchObject({ accepted: true, persisted: 5, duplicates: 5 })
+    expect(pool.webhookEvents.size).toBe(5)
+    expect([...pool.webhookEvents.values()].filter(event => event.connectionId === pool.connections[0].id)).toHaveLength(4)
+    const connectionLookup = pool.calls.find(call => call.sql.includes('FROM public.channel_connections') && call.sql.includes('phone_number_id = ANY'))
+    expect(connectionLookup?.sql).toContain('ORDER BY phone_number_id, is_active DESC, updated_at DESC')
+    expect(connectionLookup?.sql).not.toMatch(/AND\s+is_active\s*=\s*TRUE/i)
+    expect(pool.domainEvents.size).toBe(5)
+    expect(pool.rejectedCount).toBe(2)
+    expect(pool.commits).toBe(2)
+    expect(pool.calls.filter(call => call.sql.includes('INSERT INTO public.domain_events'))).toHaveLength(10)
   })
 
   it('stores SMTP2GO bounce events only with its webhook secret', async () => {

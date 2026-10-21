@@ -143,7 +143,7 @@ export const jobRegistry = {
   'action-engine.generateLearning': registered('maintenance', 180_000, ({ pool }, data) => handleActionEngineLearning(pool, data)),
   'action-engine.enforceRetention': registered('maintenance', 180_000, ({ pool }) => handleActionEngineRetention(pool)),
   'action-engine.evaluateMission': registered('interactive', 120_000, ({ pool, queue }, data) => handleActionEngineEvaluation(pool, data, queue)),
-  'action-engine.deliverDecisionNotification': registered('external', 120_000, ({ pool, env, queue }, data) => handleActionEngineDecisionNotification(pool, queue, data, env.MISSION_DECISION_NOTIFICATIONS_ENABLED !== false)),
+  'action-engine.deliverDecisionNotification': registered('external', 120_000, ({ pool, env, queue }, data) => handleActionEngineDecisionNotification(pool, queue, data, env.MISSION_DECISION_NOTIFICATIONS_ENABLED !== false, env.META_GRAPH_VERSION || 'v25.0')),
   'action-engine.dispatchDecisionNotifications': registered('maintenance', 120_000, ({ pool, env, queue }, data) => handleActionEngineDecisionNotificationDispatch(pool, queue, data, env.MISSION_DECISION_NOTIFICATIONS_ENABLED !== false)),
   'crm.sequence.dispatchDue': registered('maintenance', 120_000, ({ pool, env }) => runCrmSequenceScheduler(pool, crmOptions(env))),
   'crm.sequence.processExecution': registered('interactive', 120_000, ({ pool, env, queue }, data) => {
@@ -152,8 +152,8 @@ export const jobRegistry = {
     return processSequenceExecution(pool, executionId, { ...crmOptions(env), emailJobQueue: queue, whatsappJobQueue: queue })
   }),
   'omnichannel.processMessage': registered('interactive', 180_000, ({ pool, env, queue }, data) => handleInboundMessage(pool, env, data, queue)),
-  'omnichannel.dispatchOutbound': registered('external', 120_000, ({ pool, env }, data) => handleOutboundMessage(pool, data, { graphBaseUrl: env.META_GRAPH_BASE_URL, providerSecretEncryptionKey: env.PROVIDER_SECRET_ENCRYPTION_KEY_B64 })),
-  'omnichannel.retryOutbound': registered('external', 120_000, ({ pool, env }, data) => handleOutboundMessage(pool, data, { graphBaseUrl: env.META_GRAPH_BASE_URL, providerSecretEncryptionKey: env.PROVIDER_SECRET_ENCRYPTION_KEY_B64 })),
+  'omnichannel.dispatchOutbound': registered('external', 120_000, ({ pool, env }, data) => handleOutboundMessage(pool, data, { graphVersion: env.META_GRAPH_VERSION || 'v25.0', graphBaseUrl: env.META_GRAPH_BASE_URL, providerSecretEncryptionKey: env.PROVIDER_SECRET_ENCRYPTION_KEY_B64 })),
+  'omnichannel.retryOutbound': registered('external', 120_000, ({ pool, env }, data) => handleOutboundMessage(pool, data, { graphVersion: env.META_GRAPH_VERSION || 'v25.0', graphBaseUrl: env.META_GRAPH_BASE_URL, providerSecretEncryptionKey: env.PROVIDER_SECRET_ENCRYPTION_KEY_B64 })),
   'omnichannel.requestScheduling': registered('interactive', 30_000, ({ pool }, data) => handleOmnichannelSchedulingFallback(pool, data), schedulingPayload),
   'omnichannel.simulateChannelEvent': registered('interactive', 30_000, ({ pool }, data) => handleSandboxChannelSimulation(pool, data), simulationPayload, true),
   'provider.functionInvoke': registered('external', 180_000, ({ pool, env, signal }, data) => handleProviderFunction(pool, data, {
