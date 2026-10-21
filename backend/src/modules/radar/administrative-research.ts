@@ -41,7 +41,7 @@ async function analyses(pool:Pick<pg.Pool,'query'>,input:Scope,ids?:string[]){
   JOIN public.radar_campaigns campaign ON campaign.id=run.campaign_id AND campaign.organization_id=run.organization_id
   LEFT JOIN LATERAL(SELECT transport_outcome,validation_outcome,billing_outcome,failure_code,provider,model_snapshot,usage,response_body FROM public.radar_effect_receipts effect
    WHERE effect.analysis_receipt_id=receipt.id AND effect.organization_id=receipt.organization_id ORDER BY effect.attempt DESC LIMIT 1) effect ON TRUE
-  WHERE receipt.organization_id=$1 AND run.campaign_id=$2 AND receipt.action IN('radar_presence_resolution','radar_business_qualification','radar_initial_triage','radar_next_action','radar_quality_gate','radar_deep_research')
+  WHERE receipt.organization_id=$1 AND run.campaign_id=$2 AND receipt.action IN('radar_presence_resolution','radar_business_qualification','radar_initial_triage','radar_next_action','radar_quality_gate','radar_fit_gate','radar_deep_research')
    AND (($3::uuid[] IS NULL AND receipt.status<>'completed') OR receipt.id=ANY($3::uuid[]))
   ORDER BY receipt.created_at DESC,receipt.id DESC`,[input.organizationId,input.campaignId,ids??null])).rows
 }

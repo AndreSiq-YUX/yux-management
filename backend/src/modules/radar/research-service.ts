@@ -45,6 +45,14 @@ import type {DecisionContextV1} from './decision-contracts.js'
 import {planRadarAdaptiveResearch,RadarAdaptiveTurnYield,rethrowRadarAdaptiveYield} from './adaptive-research.js'
 import {researchRadarGaps} from './deep-research.js'
 import {inspectRadarBusinessSite} from './b2b-site-inspection.js'
+import {runRadarFunnelDiscovery,isRadarFunnelAgentEligible,type RadarFunnelResearchState,type RadarFunnelDecision} from './funnel-discovery.js'
+import {evaluateRadarRegistryRules,type RadarRegistryGateResult} from './registry-gate.js'
+import type {RadarEmailDomainPolicy} from './email-domain.js'
+import type {RadarFunnelOverride} from './funnel-gates.js'
+import {radarPurposeEnrichmentUrls,selectRadarQualificationEvidence} from './funnel-enrichment.js'
+import {buildRadarFunnelEvidence,radarFunnelDecisionCriteria} from './funnel-context.js'
+import {applyRadarFunnelRegistryGate,applyRadarFunnelGateDecision,applyRadarFunnelNextAction,markRadarFunnelInitialGate,radarScopedFunnelOverrides} from './funnel-gate-application.js'
+import {loadRadarEmailDomainPolicy} from './email-domain-policy.js'
 
 export type RadarQualification = { targetStatus: 'confirmed'|'review'|'not_target'|'insufficient'; productFit:'high'|'possible'|'low'|'unknown';
   claims?:Array<{reason:string;evidenceId:string;excerpt:string}>;
@@ -62,6 +70,7 @@ function validatedQualificationProfile(result:RadarQualification,pages:RadarSite
  return result
 }
 export type RadarResearchDossier = { discovery: RadarPresenceDiscovery; pages: RadarSiteEvidence[]; contacts: RadarContactEvidence[];
+  funnel?:RadarFunnelResearchState;
   deepResearchCompleted?:boolean;deepResearchStop?:string;
   decisionExcluded?:boolean;decisionReview?:boolean;
   historicalDerivedConclusions?:{presenceResolution?:RadarPresenceResolution;qualification?:RadarQualification;profile?:RadarCompanyProfile;sizeAssessment?:ReturnType<typeof assessRadarCompanySize>};
@@ -78,7 +87,12 @@ type Output = Partial<RadarResearchDossier> & { deepResearchCompleted?:boolean;d
 type PipelineDependencies = { local?: () => Promise<RadarWebHit[]>; web: (query: string,source?:RadarWebSearchSource) => Promise<RadarWebHit[]>;
   deepResearch?:(gaps:string[],pages:RadarSiteEvidence[])=>Promise<RadarWebHit[]>;
   decisionMemo?:Map<DecisionContextV1['task'],{action:string}>;
-  decide?:(task:DecisionContextV1['task'],pages:RadarSiteEvidence[],options:DecisionContextV1['options'])=>Promise<{action:string}>;
+  decide?:(task:DecisionContextV1['task'],pages:RadarSiteEvidence[],options:DecisionContextV1['options'],meta?:{step?:number;associatedWebsite?:string})=>Promise<RadarFunnelDecision>;
+  registryPayload?:Record<string,unknown>;targetCnaes?:string[];emailPolicy?:RadarEmailDomainPolicy;
+  funnelOverrides?:RadarFunnelOverride[];configurationRevision?:number;
+  onRegistryGate?:(result:RadarRegistryGateResult,blocked:boolean)=>Promise<boolean>;
+  onInitialGate?:(blocked:boolean)=>Promise<void>;
+  sourceCostsBrl?:Partial<Record<RadarSearchSource,number>>;maxDecisionCalls?:number;
   searchCapacity?:()=>RadarSearchCapacity;searchAttempted?:(source:RadarSearchSource,query:string)=>boolean;
   resolvePresence?:(evidence:RadarPresenceEvidence[],evidenceHash:string,version:RadarEvidenceVersion)=>Promise<unknown>;
   collect?: typeof collectRadarSiteEvidence; qualify?: (pages: RadarSiteEvidence[],evidenceHash:string,version:RadarEvidenceVersion) => Promise<RadarQualification>;
@@ -175,6 +189,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     output.pages=output.pages.filter(page=>!isRetryableRadarPage(page));output.readingComplete=false
   }
   const limits: string[] = []
+  const funnel=configuration.funnel.enabled&&!output.analysisOnly
   const checkpoint = async (stage: string) => { dependencies.signal?.throwIfAborted(); await dependencies.checkpoint(stage, output) }
   const decisionMemo=dependencies.decisionMemo??new Map<DecisionContextV1['task'],{action:string}>()
   const decide=async(task:DecisionContextV1['task'],material:RadarSiteEvidence[],options:DecisionContextV1['options'])=>{
@@ -183,14 +198,35 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     return decisionMemo.get(task)
   }
   let pages = [...(output.pages ?? [])]
-  const triageDecision=await decide('radar_initial_triage',pages,[])
+  const exclude=async(gate:'g0'|'g1'|'g5')=>{
+    output.funnel={...output.funnel,blockedGate:gate}
+    const excluded:RadarResearchDossier={...output,decisionExcluded:true,discovery:output.discovery??{hits:[],suggestions:[],queries:0,association:'review',limitations:[]},pages,contacts:output.contacts??[],siteAssociation:output.siteAssociation??'review',activity:output.activity??assessRadarBusinessActivity([],[]),limitations:['A atividade comprovada não atende ao público configurado; a classificação pode ser revista.']}
+    Object.assign(output,excluded);await checkpoint('review');return excluded
+  }
+  if(funnel){
+    output.funnel??={}
+    const registry=evaluateRadarRegistryRules({payload:dependencies.registryPayload??{},targetCnaes:dependencies.targetCnaes??[],configuration})
+    const override=dependencies.funnelOverrides?.some(item=>item.gate==='g0'&&item.configurationRevision===dependencies.configurationRevision)
+    const proposed=configuration.funnel.g0.mode==='enforce'&&registry.outcome==='block'&&!override
+    const blocked=await dependencies.onRegistryGate?.(registry,proposed)??proposed
+    if(blocked)return exclude('g0')
+    const triage=configuration.funnel.g1.mode==='off'?{action:'continue',effectiveMode:'off'}:await dependencies.decide?.('radar_initial_triage',[],[])
+    output.funnel.initial=triage??{action:'continue',effectiveMode:'shadow'}
+    const excluded=configuration.funnel.g1.mode==='enforce'&&triage?.effectiveMode==='enforce'&&triage.action==='exclude'
+    await dependencies.onInitialGate?.(excluded)
+    if(excluded)return exclude('g1')
+    // An old gate result must not survive a scoped reopening.
+    output.decisionExcluded=false;output.funnel.blockedGate=undefined
+    await checkpoint('discovery')
+  }
+  const triageDecision=funnel?undefined:await decide('radar_initial_triage',pages,[])
   if(triageDecision?.action==='exclude'){
     const excluded:RadarResearchDossier={...output,decisionExcluded:true,discovery:output.discovery??{hits:[],suggestions:[],queries:0,association:'review',limitations:[]},pages,contacts:output.contacts??[],siteAssociation:output.siteAssociation??'review',activity:output.activity??assessRadarBusinessActivity([],[]),limitations:['A atividade comprovada não atende ao público configurado; a classificação pode ser revista.']}
     Object.assign(output,excluded);await checkpoint('review');return excluded
   }
   const sourceOptions=configuration.research.webSearchEnabled?configuration.research.webSearchProviders.filter(source=>!dependencies.searchCapacity||hasRadarSearchCapacity(dependencies.searchCapacity(),source)).map(source=>({id:source,description:`Pesquisa web elegível: ${source}; usar apenas a capacidade e licenças já autorizadas.`})):[]
   const readOptions=pages.filter(page=>!page.limitation).slice(0,Math.max(0,8-sourceOptions.length)).map(page=>({id:`read_${radarDecisionHash(page.url).slice(0,16)}`,description:`Priorizar leitura da página pública ${page.url}`}))
-  const nextDecision=await decide('radar_next_action',pages,[...sourceOptions,...readOptions])
+  const nextDecision=funnel?undefined:await decide('radar_next_action',pages,[...sourceOptions,...readOptions])
   const decisionSource=sourceOptions.some(item=>item.id===nextDecision?.action)?nextDecision!.action as RadarWebSearchSource:undefined
   const search=(query:string,source?:RadarWebSearchSource)=>{
     const selected=decisionSource&&(!dependencies.searchCapacity||hasRadarSearchCapacity(dependencies.searchCapacity(),decisionSource))&&!dependencies.searchAttempted?.(decisionSource,query)?decisionSource:source
@@ -200,6 +236,17 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     output.readingComplete=false
   const mentionsIdentity=(text:string)=>!cnpjConflict(identity,text,true)&&[identity.name,identity.legalName].some(name=>!!name&&normalizeRadarText(name).length>=5&&normalizeRadarText(text).includes(normalizeRadarText(name)))
   const directlyOwns=(page:RadarSiteEvidence)=>!page.limitation&&matchRadarBusinessIdentity(identity,page.text)==='confirmed'&&hasRadarOwnershipSignal(page.url,identity,page)
+  if(funnel){
+    await runRadarFunnelDiscovery(identity,configuration,output,{
+      web:dependencies.web,local:dependencies.local,collect:dependencies.collect,deepResearch:dependencies.deepResearch,
+      registryPayload:dependencies.registryPayload,emailPolicy:dependencies.emailPolicy,sourceCostsBrl:dependencies.sourceCostsBrl,
+      searchCapacity:dependencies.searchCapacity,searchAttempted:dependencies.searchAttempted,maxDecisionCalls:dependencies.maxDecisionCalls,
+      signal:dependencies.signal,tlsOptions:dependencies.tlsOptions,deadlineAt:readingDeadline,
+      choose:dependencies.decide?(material,options,step)=>dependencies.decide!('radar_next_action',material,options,{step}):undefined,
+      checkpoint:()=>checkpoint('discovery'),
+    })
+    pages=[...(output.pages??[])]
+  }
   if (!output.discovery || !output.discoveryLocked && output.discovery.limitations.length) {
     output.discovery = await discoverRadarBusinessPresence(identity, configuration.research, {
       search, local: dependencies.local, initialHits: output.discoveryHits ?? output.discovery?.hits, initialQueries: output.discoveryQueries,
@@ -232,7 +279,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
   const deferAmbiguousDepth=configuration.research.presenceResolutionEnabled
     &&!pages.some(directlyOwns)
     &&new Set(pages.filter(page=>!page.limitation&&isRadarInstitutionalSource(page.url,{text:page.text})&&!cnpjConflict(identity,page.text,true)).map(page=>new URL(page.url).origin)).size>1
-  if (!output.readingComplete) {
+  if (!output.readingComplete&&!funnel) {
     const candidates = [website,...discovery.suggestions.map(item=>item.url)].filter((value):value is string => !!value && !isRadarReferenceUrl(value))
     const pending=pendingRadarReadUrls([...discovery.hits,...discovery.suggestions,...(website?[{url:website,title:identity.name,snippets:[],observedAt:''}]:[])],pages,configuration.research.maxPagesPerCandidate)
     const pendingUrls=pending.flatMap(value=>{const root=new URL('/',value).toString();return pages.some(page=>canonicalRadarReadUrl(page.url)===root)?[value]:[root,value]})
@@ -298,7 +345,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     }else limits.push(presenceEvidence.some(item=>item.kind==='institutional_candidate')?'radar_presence_service_unavailable':'radar_presence_waiting_public_read')
   }
   const selectedWebsite=directlyAssociated?.url??presenceResolution?.websiteUrl
-  if((deferAmbiguousDepth||configuration.research.presenceResolutionEnabled&&!saved.readingComplete||readerUpgrade)&&selectedWebsite&&!output.analysisOnly){
+  if(!funnel&&(deferAmbiguousDepth||configuration.research.presenceResolutionEnabled&&!saved.readingComplete||readerUpgrade)&&selectedWebsite&&!output.analysisOnly){
     const origin=new URL(selectedWebsite).origin,prior=pages.filter(page=>new URL(page.url).origin===origin)
     const other=pages.filter(page=>new URL(page.url).origin!==origin)
     const maximum=configuration.research.maxPagesPerCandidate-other.filter(page=>!page.limitation).length
@@ -330,13 +377,30 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
   }
   const associatedOrigin=directlyAssociated?.url??presenceResolution?.websiteUrl
   const associated=!!associatedOrigin
+  if(funnel){
+    const fit=configuration.funnel.g5.mode==='off'?{action:'continue',effectiveMode:'off'}:await dependencies.decide?.('radar_fit_gate',pages,[],{associatedWebsite:presenceResolution?.scope==='group'?undefined:associatedOrigin})
+    output.funnel!.fit=fit??{action:'continue',effectiveMode:'shadow'}
+    if(configuration.funnel.g5.mode==='enforce'&&fit?.effectiveMode==='enforce'&&fit.action==='exclude'&&associatedOrigin&&presenceResolution?.scope!=='group')return exclude('g5')
+    const short=output.funnel!.initial?.action==='short_investigation'&&output.funnel!.initial.effectiveMode==='enforce'||fit?.action==='short_investigation'&&fit.effectiveMode==='enforce'
+    if(!short&&associatedOrigin){
+      output.funnel!.enrichmentUrls??=[]
+      for(const url of radarPurposeEnrichmentUrls(associatedOrigin,pages,configuration.research.contactPurpose)){
+        if(output.funnel!.enrichmentUrls.includes(url))continue
+        if(pages.filter(page=>!page.limitation).length>=configuration.research.maxPagesPerCandidate||pages.length>=configuration.research.maxPagesPerCandidate*2)break
+        const collected=await(dependencies.collect??collectRadarSiteEvidence)(url,{maxPagesPerCandidate:1,maxAttemptsPerCandidate:1},{signal:dependencies.signal,tlsOptions:dependencies.tlsOptions,deadlineAt:readingDeadline,checkpoint:async value=>{output.pages=uniqueRadarPages([...pages,...value]);await checkpoint('reading')}})
+        pages=uniqueRadarPages([...pages,...collected]);output.pages=pages;output.funnel!.enrichmentUrls.push(url)
+        await checkpoint('reading')
+      }
+    }
+  }
   const associatedPages=pages.filter(page=>associatedOrigin && new URL(page.url).origin===new URL(associatedOrigin).origin
     &&isRadarInstitutionalSource(page.url,{text:page.text})&&!cnpjConflict(identity,page.text,presenceResolution?.scope==='group'))
   // Recompute from preserved facts; do not retain an obsolete identity association from a previous run.
   const sameInstitutionalOrigin=(url:string)=>!!associatedOrigin&&isRadarInstitutionalSource(url)&&new URL(url).origin===new URL(associatedOrigin).origin
   const candidatePage=(page:RadarSiteEvidence)=>!page.limitation&&isRadarInstitutionalSource(page.url,{text:page.text})&&!cnpjConflict(identity,page.text,true)
     &&(!associatedOrigin||sameRadarOrigin(page.url,associatedOrigin))
-  if(configuration.research.inspectLinkedSocialProfiles&&!output.analysisOnly) {
+  const shortFit=funnel&&(output.funnel!.initial?.effectiveMode==='enforce'&&output.funnel!.initial.action==='short_investigation'||output.funnel!.fit?.effectiveMode==='enforce'&&output.funnel!.fit.action==='short_investigation')
+  if(configuration.research.inspectLinkedSocialProfiles&&!output.analysisOnly&&!shortFit) {
     const social=await(dependencies.collectSocial??collectRadarPublicSocialEvidence)({linkedPages:associated?pages.filter(candidatePage):[],
       remainingPages:Math.max(0,configuration.research.maxPagesPerCandidate-pages.filter(page=>!page.limitation).length),
       remainingAttempts:Math.max(0,configuration.research.maxPagesPerCandidate*2-pages.length),deadlineAt:readingDeadline,existingPages:pages},
@@ -373,7 +437,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
   for (const hit of trustedSearchHits) contacts.push(...extractRadarContacts({ url:hit.url, text:`${hit.title} ${hit.snippets.join(' ')}`, observedAt:hit.observedAt }, 'confirmed')
     .map(contact=>({...contact,scope:presenceResolution?.scope??'establishment' as const})))
   const uniqueContacts = consolidateRadarContacts(contacts,configuration.research.contactPurpose)
-  if(configuration.research.completion.enabled&&!output.analysisOnly&&associatedOrigin&&presenceResolution?.scope!=='group'
+  if(!funnel&&configuration.research.completion.enabled&&!output.analysisOnly&&associatedOrigin&&presenceResolution?.scope!=='group'
     &&usefulRadarDeliveryContacts({contacts:uniqueContacts},configuration.research).length<configuration.research.completion.minimumUsefulContacts){
     const next=planRadarResearch({identity,policy:configuration.research,hits:[],pages:associatedPages,
       queriesUsed:dependencies.queriesUsed?.()??output.discoveryQueries??discovery.queries,missing:['contact'],attemptedQueries:output.targetedQueries??[],
@@ -396,26 +460,28 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
       }catch(cause){rethrowRadarAdaptiveYield(cause);limits.push(`Pesquisa complementar: ${safeResearchError(cause)}.`)}
     }
   }
-  if(configuration.research.deepResearchEnabled&&dependencies.deepResearch&&!output.deepResearchCompleted&&!output.analysisOnly){
+  if(configuration.research.deepResearchEnabled&&dependencies.deepResearch&&!output.deepResearchCompleted&&!output.analysisOnly&&(!funnel||isRadarFunnelAgentEligible(configuration,output.funnel!))){
     const gaps=[...(!associated?['identity']:[]),...(usefulRadarDeliveryContacts({contacts:uniqueContacts},configuration.research).length<(configuration.research.completion.enabled?configuration.research.completion.minimumUsefulContacts:1)?['contact']:[])]
     const plan=planRadarAdaptiveResearch({missing:gaps,outsideProfile:false,contentHash:radarEvidenceContentHash({identity,criteria:{},purpose:'adaptive',evidence:pages}),availableActions:[{id:'deep_research',kind:'deep_research',inputHash:radarDecisionHash(gaps)}],effects:[]})
     if(plan.next){
       try{
-        const hits=await dependencies.deepResearch(gaps,pages)
+        const hits=await dependencies.deepResearch(funnel?[...new Set([...gaps,'identity','website','contact','whatsapp','official_socials'])]:gaps,pages)
         output.deepResearchCompleted=true
+        if(funnel){output.funnel!.agentAttempted=true;output.funnel!.agentCompleted=true}
         output.discoveryHits=[...(output.discoveryHits??[]),...hits]
         output.discovery={...discovery,hits:[...discovery.hits,...hits],suggestions:[...discovery.suggestions,...hits]}
         output.discoveryLocked=false;output.readingComplete=false
         await checkpoint('discovery')
         return runRadarResearchPipeline(identity,configuration,output,{...dependencies,decisionMemo})
-      }catch(cause){rethrowRadarAdaptiveYield(cause);output.deepResearchStop=safeResearchError(cause);limits.push(`Pesquisa complementar: ${output.deepResearchStop}.`)}
+      }catch(cause){rethrowRadarAdaptiveYield(cause);if(funnel)output.funnel!.agentAttempted=true;output.deepResearchStop=safeResearchError(cause);limits.push(`Pesquisa complementar: ${output.deepResearchStop}.`)}
     }else output.deepResearchStop=plan.stop
   }
   output.contacts=uniqueContacts
   await checkpoint('consolidation')
   const confirmedSearchPages=trustedSearchHits.filter(hit=>isRadarInstitutionalSource(hit.url,{title:hit.title,text:hit.snippets.join(' ')}))
     .map(hit=>({url:hit.url,text:`${hit.title} ${hit.snippets.join(' ')}`,observedAt:hit.observedAt}))
-  const qualifiedEvidence=[...associatedPages.filter(page=>!page.limitation&&!!page.text),...confirmedSearchPages].slice(0,10)
+  const qualificationPages=[...associatedPages.filter(page=>!page.limitation&&!!page.text),...confirmedSearchPages]
+  const qualifiedEvidence=configuration.funnel.enabled?selectRadarQualificationEvidence(qualificationPages,{maxPages:configuration.research.qualificationEvidenceMaxPages,maxChars:configuration.research.qualificationEvidenceMaxChars}):qualificationPages.slice(0,10)
   const activity = assessRadarBusinessActivity(qualifiedEvidence,uniqueContacts,{pages:pages.filter(candidatePage),scope:presenceResolution?.scope})
   if (!website && !pages.length) limits.push('Site não encontrado nas fontes consultadas; isso não comprova inexistência.')
   if (website && !associated) limits.push('A identidade do site exige revisão; contatos não são tratados como confirmados.')
@@ -475,11 +541,12 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     }catch{return []}
   }))].map(item=>[item.url,item])).values()].slice(0,20)
   const dossier = { methodVersion:RADAR_RESEARCH_METHOD_VERSION,associationVersion:RADAR_ASSOCIATION_VERSION,
+    ...(configuration.funnel.enabled?{funnel:output.funnel}:{}),
     deepResearchCompleted:output.deepResearchCompleted,deepResearchStop:output.deepResearchStop,
     historicalEvidence:output.historicalEvidence,targetedQueries:output.targetedQueries,analysisEvidence:output.analysisEvidence,
     discovery:{...discovery,websiteUrl:associatedOrigin??(discovery.websiteUrl&&isRadarInstitutionalSource(discovery.websiteUrl,{text:pages.find(page=>canonicalRadarReadUrl(page.url)===canonicalRadarReadUrl(discovery.websiteUrl!))?.text})?discovery.websiteUrl:undefined),association:associatedOrigin?'confirmed' as const:discovery.websiteUrl?'review' as const:discovery.association}, pages, contacts: uniqueContacts, registryPhone: identity.phone, siteAssociation:associated?'confirmed' as const:'review' as const, activity, qualification,
     qualificationEvidenceHash:qualification?evidenceHash:undefined,presenceResolution,presenceEvidenceHash:presenceResolution?presenceEvidenceHash:undefined,profile,sizeAssessment,documents,limitations: limits }
-  const qualityDecision=await decide('radar_quality_gate',pages,[])
+  const qualityDecision=configuration.funnel.enabled?undefined:await decide('radar_quality_gate',pages,[])
   const result={...dossier,decisionReview:qualityDecision?.action==='review',quality:evaluateRadarResearchQuality({dossier,policy:configuration.research,currentRevision:true})}
   if(result.decisionReview){result.quality={...result.quality,readyForReview:false};result.limitations.push('A avaliação encontrou evidências que precisam de conferência antes da aprovação.')}
   Object.assign(output, result); await checkpoint('review')
@@ -657,6 +724,10 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
     adaptiveTurn=configuration.discovery.enabled&&(await pool.query(`SELECT EXISTS(SELECT 1 FROM public.radar_capture_items WHERE run_id=$1 AND organization_id=$2 UNION ALL SELECT 1 FROM public.radar_research_request_items WHERE run_id=$1 AND organization_id=$2) AS bound`,[run.id,run.organization_id])).rows[0]?.bound===true
     if (!configuration.research.enabled) throw error('campaign_research_disabled')
     const payload = context.normalized_payload
+    const funnelPolicy=configuration.funnel.enabled?await loadRadarOperationalLimits(pool):undefined
+    const funnelEmailPolicy=configuration.funnel.enabled?(await loadRadarEmailDomainPolicy(pool)).configuration:undefined
+    const funnelReadiness=configuration.funnel.enabled?await getRadarResearchAvailability(pool,user,run.organization_id,run.campaign_id):undefined
+    const sourceCostsBrl=funnelReadiness?Object.fromEntries(funnelReadiness.estimates.filter(item=>item.available).map(item=>[item.sourceType,item.costPerQuery])):undefined
     const intentBudget=await loadRadarResearchIntentBudget(pool,{organizationId:run.organization_id,candidateId:run.candidate_id,runId:run.id,configurationRevision:run.configuration_revision})
     const str = (key:string) => typeof payload[key] === 'string' ? payload[key] as string : undefined
     const identity:RadarBusinessIdentity = {name:str('tradeName') || context.title,legalName:str('legalName'),cnpj:str('cnpj'),
@@ -666,6 +737,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
       const selected=new Set<string>(configuration.research.webSearchEnabled?configuration.research.webSearchProviders:[])
       if(configuration.sources.enrichWithBrave&&configuration.research.localSearchOrder!=='disabled'&&identity.city&&identity.state)selected.add('brave_place_search')
       for(const source of Object.keys(capacity.bySource))if(!selected.has(source))capacity.bySource[source].remaining=0
+      if(sourceCostsBrl)for(const source of Object.keys(capacity.bySource))if(!(source in sourceCostsBrl))capacity.bySource[source].remaining=0
       return capacity
     }
     const searchAttempted=(source:RadarSearchSource,query:string)=>!!run.calls[createHash('sha256').update(`${source}:${query}`).digest('hex')]
@@ -837,21 +909,33 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
       }
     }
     const decisionRequester=(await pool.query('SELECT id,role FROM public.app_users WHERE id=$1 AND is_active=TRUE',[run.requested_by])).rows[0] as AuthUser
-    const decide=async(task:DecisionContextV1['task'],pages:RadarSiteEvidence[],options:DecisionContextV1['options'])=>{
+    const funnelScope={organizationId:run.organization_id,campaignId:run.campaign_id,candidateId:run.candidate_id,runId:run.id,leaseId:lease,configurationRevision:run.configuration_revision,expectedProjectionVersion:radarCompanyProjectionVersion(context.normalized_payload)}
+    const decide=async(task:DecisionContextV1['task'],pages:RadarSiteEvidence[],options:DecisionContextV1['options'],meta?:{step?:number;associatedWebsite?:string}):Promise<RadarFunnelDecision>=>{
       if(run.operation==='reanalyze')return{action:'continue'}
       try{
         const {websiteUrl:_website,phone:_phone,...decisionIdentity}=identity
-        const result=await decideRadarAction(pool,decisionRequester,{schemaVersion:1,organizationId:run.organization_id,campaignId:run.campaign_id,candidateId:run.candidate_id,configurationRevision:run.configuration_revision,task,
+        const decisionContext:DecisionContextV1={schemaVersion:1,organizationId:run.organization_id,campaignId:run.campaign_id,candidateId:run.candidate_id,configurationRevision:run.configuration_revision,task,
           identity:decisionIdentity,criteria:{segment:context.target_segment,offer:context.offer_type,products:context.product_focus,includeTerms:configuration.qualification.includeAnyTerms,includeAllTerms:configuration.qualification.includeAllTerms,excludeTerms:configuration.qualification.excludeTerms,desiredCnaes:context.target_cnaes,cnaeRule:configuration.qualification.requireCnaeMatch?'required':'advisory',requiredContacts:configuration.research.completion.contactTypes,minimumUsefulContacts:String(configuration.research.completion.minimumUsefulContacts),contactPurpose:configuration.research.contactPurpose},
-          evidence:pages.filter(page=>!!page.text&&!page.limitation).slice(0,30).map(page=>({id:`ev_${radarDecisionHash({url:page.url,text:page.text}).slice(0,24)}`,sourceUrl:page.url,text:page.text,role:'activity',primary:isRadarInstitutionalSource(page.url,{text:page.text}),contradictory:cnpjConflict(identity,page.text),scope:!cnpjConflict(identity,page.text)&&matchRadarBusinessIdentity(identity,page.text)==='confirmed'?'establishment':'unresolved'})),options,humanReviewed:payload.manualDecisionOverride===true||payload.braveMatchStatus==='manual_matched'},
-          {env,runId:run.id,leaseId:lease,runtime,authorize:assertEffectAuthorization,beforeEffect})
+          evidence:pages.filter(page=>!!page.text&&!page.limitation).slice(0,30).map(page=>({id:`ev_${radarDecisionHash({url:page.url,text:page.text}).slice(0,24)}`,sourceUrl:page.url,text:page.text,role:'activity',primary:isRadarInstitutionalSource(page.url,{text:page.text}),contradictory:cnpjConflict(identity,page.text),scope:!cnpjConflict(identity,page.text)&&matchRadarBusinessIdentity(identity,page.text)==='confirmed'?'establishment':'unresolved'})),options,humanReviewed:payload.manualDecisionOverride===true||payload.braveMatchStatus==='manual_matched'}
+        if(configuration.funnel.enabled){
+          decisionContext.contextVersion='radar-decision-context-v2'
+          decisionContext.criteria={...radarFunnelDecisionCriteria(configuration,context),registryFlags:evaluateRadarRegistryRules({payload,targetCnaes:context.target_cnaes,configuration}).flags}
+          decisionContext.evidence=buildRadarFunnelEvidence({identity,registryPayload:payload,targetCnaes:context.target_cnaes,pages:task==='radar_initial_triage'?[]:pages,associatedWebsite:meta?.associatedWebsite})
+          decisionContext.humanReviewed=false
+          if(task==='radar_next_action')decisionContext.step=meta?.step??0
+        }
+        const result=await decideRadarAction(pool,decisionRequester,decisionContext,{env,runId:run.id,leaseId:lease,runtime,authorize:assertEffectAuthorization,beforeEffect})
+        if(configuration.funnel.enabled){
+          if(task==='radar_next_action')return applyRadarFunnelNextAction(pool,{...funnelScope,result:result.result,requestId:result.requestId,options,step:meta?.step??0},{authorize:assertEffectAuthorization})
+          if(task==='radar_initial_triage'||task==='radar_fit_gate')return applyRadarFunnelGateDecision(pool,{...funnelScope,gate:task==='radar_initial_triage'?'g1':'g5',result:result.result,routeFingerprint:result.routeFingerprint,requestId:result.requestId,evidence:decisionContext.evidence,associatedWebsite:meta?.associatedWebsite},{authorize:assertEffectAuthorization})
+        }
         return{action:result.action}
       }catch(cause){
         rethrowRadarAdaptiveYield(cause)
         signal?.throwIfAborted()
         // Optional decisions must not stop facts collection. Uncertain effects
         // remain in their receipts/calls and are never silently repurchased.
-        if(cause instanceof Error&&cause.message==='radar_research_lease_lost')throw cause
+        if(cause instanceof Error&&['radar_research_lease_lost','radar_campaign_configuration_changed','radar_research_projection_changed','radar_campaign_or_candidate_inactive','radar_research_approved_candidate_requires_review'].includes(cause.message)||(cause as {statusCode?:number})?.statusCode===403)throw cause
         return{action:'continue'}
       }finally{
         const savedCalls=(await pool.query('SELECT calls FROM public.radar_candidate_research_runs WHERE id=$1 AND lease_id=$2',[run.id,lease])).rows[0]?.calls
@@ -863,6 +947,10 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
       discoveryHits:[...(run.output.discoveryHits??run.output.discovery?.hits??[]),...cachedHits,...cachedLocal],
       discoveryQueries:Object.values(run.calls).filter(call=>['brave_web_search','serper_web_search','brave_place_search','perplexity_search_fast','perplexity_search_web'].includes(call.source)).length},{
       signal,checkpoint,decide,analysisCriteria:{segment:context.target_segment,offer:context.offer_type,products:context.product_focus},registrySizeFacts:registryRadarSizeFacts(payload),collect:run.operation==='reanalyze'||!configuration.sources.inspectWebsite ? async () => [] : collect,
+      registryPayload:payload,targetCnaes:context.target_cnaes,emailPolicy:funnelEmailPolicy,configurationRevision:run.configuration_revision,funnelOverrides:radarScopedFunnelOverrides(payload),
+      sourceCostsBrl,maxDecisionCalls:funnelPolicy?.limits.maxDecisionCallsPerCompany,
+      onRegistryGate:configuration.funnel.enabled?()=>applyRadarFunnelRegistryGate(pool,funnelScope,{authorize:assertEffectAuthorization}):undefined,
+      onInitialGate:configuration.funnel.enabled?blocked=>markRadarFunnelInitialGate(pool,funnelScope,blocked,{authorize:assertEffectAuthorization}):undefined,
       collectSocial:adaptiveTurn?(input,options={})=>collectRadarPublicSocialEvidence(input,{...options,inspect:async url=>{beforeEffect();await assertEffectAuthorization();try{return await inspectRadarBusinessSite(url)}finally{effectCompleted=true}},checkpoint:async page=>{await options.checkpoint?.(page);if(effectCompleted)throw new RadarAdaptiveTurnYield()}}):undefined,
       deepResearch:configuration.research.deepResearchEnabled?async(gaps,pages)=>{
         const {websiteUrl:_website,phone:_phone,...subject}=identity
@@ -1058,7 +1146,9 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
       researchUsesPerplexity:context.normalized_payload.researchUsesPerplexity===true||Object.values(run.calls).some(call=>call.source.startsWith('perplexity_')),
       companyProfile:dossier.profile,sizeAssessment:dossier.sizeAssessment,presenceResolution:dossier.presenceResolution,researchMethodVersion:RADAR_RESEARCH_METHOD_VERSION,
       researchQuality:quality,researchIdentityName:identity.name,
-      ...(dossier.decisionExcluded&&context.normalized_payload.manualDecisionOverride!==true?{decisionExclusion:{active:true,revision:run.configuration_revision,reason:'outside_profile',runId:run.id}}:context.normalized_payload.decisionExclusion?{decisionExclusion:{...(context.normalized_payload.decisionExclusion as Record<string,unknown>),active:false}}:{}),
+      ...(configuration.funnel.enabled?{funnel:{...(candidate.rows[0].normalized_payload.funnel as Record<string,unknown>??{}),...dossier.funnel,...(dossier.funnel?.blockedGate?{lastBlock:{gate:dossier.funnel.blockedGate,configurationRevision:run.configuration_revision,runId:run.id}}:{lastBlock:null})},
+        decisionExclusion:{active:dossier.decisionExcluded===true,revision:run.configuration_revision,gate:dossier.funnel?.blockedGate,reason:'outside_profile',runId:run.id},emailDomainSignal:dossier.funnel?.emailSignal??context.normalized_payload.emailDomainSignal}
+        :dossier.decisionExcluded&&context.normalized_payload.manualDecisionOverride!==true?{decisionExclusion:{active:true,revision:run.configuration_revision,reason:'outside_profile',runId:run.id}}:context.normalized_payload.decisionExclusion?{decisionExclusion:{...(context.normalized_payload.decisionExclusion as Record<string,unknown>),active:false}}:{}),
       researchLimitations:dossier.limitations,
       researchTlsExceptions:dossier.pages.filter(page=>page.tlsException).map(page=>({...page.tlsException,sourceUrl:page.url})),
       researchContactPurpose:resolveRadarSearchConfiguration(context.search_configuration).research.contactPurpose,

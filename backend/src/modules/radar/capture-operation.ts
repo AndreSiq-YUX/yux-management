@@ -15,6 +15,8 @@ import {authorizeRadarAdaptiveContinuations} from './adaptive-continuation.js'
 import {resolveRadarSearchConfiguration} from './search-configuration.js'
 import {classifyRadarEmailDomain} from './email-domain.js'
 import {loadRadarEmailDomainPolicy} from './email-domain-policy.js'
+import {applyRadarRegistryAdmission} from './registry-admission.js'
+import {loadRadarFunnelLotProgress,syncRadarFunnelDiscovery} from './funnel-replenishment.js'
 
 export const captureError=(code:string,statusCode=409)=>Object.assign(new Error(code),{statusCode})
 export const parseRadarCaptureCount=(value:unknown)=>z.number().int().positive().safe().parse(value)
@@ -51,8 +53,8 @@ export async function startRadarCaptureOperation(pool:pg.Pool,user:AuthUser,inpu
   else await authorizeRadarContinuations(client,scopes.filter(scope=>preflight.continuations.some(s=>s.scopeKey===scope.key)).map(scope=>({...scope,organizationId:input.organizationId,campaignId:input.campaignId,configurationRevision:revision})),policy,{authorizations:input.continuationAuthorizations,requestId:input.requestId,approvedBy:user.id})
   const adaptive=resolveRadarSearchConfiguration(campaign.search_configuration).discovery.enabled?await prepareRadarAdaptiveCapture(client,campaign):null
   if(adaptive&&!adaptive.plan.scopes.length)throw captureError('radar_discovery_no_eligible_sources')
-  const row=(await client.query(`INSERT INTO public.radar_capture_operations(organization_id,campaign_id,requested_by,request_id,configuration_revision,requested_count,configuration_snapshot,pipeline_version,counting_mode,discovery_plan)
-   VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb) RETURNING id,status`,[input.organizationId,input.campaignId,user.id,input.requestId,revision,count,JSON.stringify({...campaign,operationalPolicy:policy}),adaptive?2:1,adaptive?'qualified':'admitted',JSON.stringify(adaptive??{})])).rows[0]
+  const row=(await client.query(`INSERT INTO public.radar_capture_operations(organization_id,campaign_id,requested_by,request_id,configuration_revision,requested_count,configuration_snapshot,pipeline_version,counting_mode,discovery_plan,funnel_enabled)
+   VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11) RETURNING id,status`,[input.organizationId,input.campaignId,user.id,input.requestId,revision,count,JSON.stringify({...campaign,operationalPolicy:policy}),adaptive?2:1,adaptive?'qualified':'admitted',JSON.stringify(adaptive??{}),resolveRadarSearchConfiguration(campaign.search_configuration).funnel.enabled])).rows[0]
   await client.query('INSERT INTO public.radar_capture_outbox(operation_id,organization_id,campaign_id) VALUES($1,$2,$3)',[row.id,input.organizationId,input.campaignId])
   await saveRequest(row.id)
   await client.query('COMMIT');return{operationId:row.id,reused:false,status:row.status}
@@ -63,14 +65,14 @@ export async function getRadarCaptureOperation(pool:pg.Pool,user:AuthUser,organi
  const row=normalizeRadarCounters((await pool.query('SELECT * FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2',[operationId,organizationId])).rows[0])
  if(!row)throw captureError('radar_capture_not_found',404)
  await requireRadarScope(pool,user,{organizationId,campaignId:row.campaign_id})
- const items=(await pool.query(`SELECT id,candidate_id AS "candidateId",run_id AS "runId",status,blocker,funnel_outcome AS outcome FROM public.radar_capture_items WHERE operation_id=$1 AND organization_id=$2 ORDER BY created_at,id`,[operationId,organizationId])).rows
+ const items=(await pool.query(`SELECT id,candidate_id AS "candidateId",run_id AS "runId",status,blocker,funnel_outcome AS outcome,initial_gate_status FROM public.radar_capture_items WHERE operation_id=$1 AND organization_id=$2 ORDER BY created_at,id`,[operationId,organizationId])).rows
  const adaptiveItems=row.pipeline_version===2?await loadRadarAdaptiveItems(pool,row.id,organizationId):null
  const outside=new Set(adaptiveItems?.filter(item=>item.qualification==='not_target').map(item=>item.candidateId)??[])
  const n=(status:string)=>items.filter(item=>item.status===status&&!outside.has(item.candidateId)).length
  const adaptive=adaptiveItems?radarAdaptiveDiscoveryCounts(adaptiveItems):null
  const outcomes=items.some(item=>item.outcome!=null)?{completedWithGaps:items.filter(item=>item.outcome==='completed_with_gaps').length,technicalFailures:items.filter(item=>item.outcome==='technical_failure').length,outsideProfile:items.filter(item=>item.outcome==='out_of_profile'||outside.has(item.candidateId)).length}:{}
  return{id:row.id,campaignId:row.campaign_id,configurationRevision:row.configuration_revision,status:row.status,discoveryStopped:row.discovery_stopped,discoveryReason:row.discovery_reason,queries:row.queries,blockers:row.blockers,items,...(user.role==='yux_admin'?{canContinue:isRadarCaptureLimitPause(row,adaptive?.qualifiedNew??items.length)||row.status==='partial'&&row.discovery_stopped&&items.some(item=>!item.outcome&&item.status==='insufficient'&&item.runId)}:{}),
-  ...(adaptive?{countingMode:'qualified' as const}:{}),counts:{requested:row.requested_count,admitted:items.length,researching:n('queued')+n('researching'),completed:n('completed'),insufficient:n('insufficient'),blocked:n('blocked'),...(adaptive?{qualified:adaptive.qualifiedNew,outsideProfile:adaptive.outsideProfile}:{}),...outcomes}}
+  ...(adaptive?{countingMode:'qualified' as const}:{}),counts:{requested:row.requested_count,admitted:items.length,researching:n('queued')+n('researching'),completed:items.filter(item=>item.status==='completed'&&item.outcome!=='out_of_profile'&&!outside.has(item.candidateId)).length,insufficient:n('insufficient'),blocked:n('blocked'),...(adaptive?{qualified:adaptive.qualifiedNew,outsideProfile:adaptive.outsideProfile}:{}),...outcomes,...(row.funnel_enabled?{passedInitialTriage:items.filter(item=>item.initial_gate_status==='pass').length}:{})}}
 }
 export async function getLatestRadarCaptureOperation(pool:pg.Pool,user:AuthUser,organizationId:string,campaignId:string){
  await requireRadarScope(pool,user,{organizationId,campaignId})
@@ -82,7 +84,7 @@ export async function getLatestRadarCaptureOperation(pool:pg.Pool,user:AuthUser,
 export async function admitRadarCapturePage(client:pg.PoolClient,input:{organizationId:string;campaignId:string;operationId:string;revision:number;scopeKey:string;runId:string},results:CnpjaCandidate[],persistOverflow=true){
  const op=(await client.query('SELECT * FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2 AND campaign_id=$3 FOR UPDATE',[input.operationId,input.organizationId,input.campaignId])).rows[0]
  if(!op||op.configuration_revision!==input.revision)throw captureError('radar_campaign_configuration_changed')
- let remaining=op.requested_count-Number((await client.query('SELECT COUNT(*) AS n FROM public.radar_capture_items WHERE operation_id=$1',[op.id])).rows[0].n)
+ let remaining=op.funnel_enabled?(await loadRadarFunnelLotProgress(client,op)).remaining:op.requested_count-Number((await client.query('SELECT COUNT(*) AS n FROM public.radar_capture_items WHERE operation_id=$1',[op.id])).rows[0].n)
  const ids:string[]=[]
  const emailPolicy=(await loadRadarEmailDomainPolicy(client)).configuration
  for(const result of results){
@@ -101,8 +103,10 @@ export async function admitRadarCapturePage(client:pg.PoolClient,input:{organiza
    VALUES($1,$2,$3,'cnpja_advanced_search',$4,$5,$6,$7,$8,$9) ON CONFLICT(campaign_id,dedupe_key) DO NOTHING RETURNING id`,[input.organizationId,input.campaignId,input.runId,result.sourceUrl??null,title,buildCnpjaCandidateSnippet(result),JSON.stringify(result.rawPayload),JSON.stringify(normalized),dedupeKey])
   if(!inserted.rows[0])continue
   await client.query('INSERT INTO public.radar_capture_items(organization_id,campaign_id,operation_id,candidate_id) VALUES($1,$2,$3,$4)',[input.organizationId,input.campaignId,op.id,inserted.rows[0].id])
+  await applyRadarRegistryAdmission(client,{organizationId:input.organizationId,campaignId:input.campaignId,candidateId:inserted.rows[0].id,operationId:op.id,revision:input.revision,configuration:resolveRadarSearchConfiguration(op.configuration_snapshot.search_configuration),targetCnaes:op.configuration_snapshot.target_cnaes??[],payload:normalized})
   ids.push(inserted.rows[0].id);remaining--
  }
- if(remaining<=0)await client.query("UPDATE public.radar_capture_operations SET discovery_stopped=TRUE,discovery_reason='target_reached' WHERE id=$1",[op.id])
+ if(op.funnel_enabled)await syncRadarFunnelDiscovery(client,op)
+ else if(remaining<=0)await client.query("UPDATE public.radar_capture_operations SET discovery_stopped=TRUE,discovery_reason='target_reached' WHERE id=$1",[op.id])
  return ids
 }

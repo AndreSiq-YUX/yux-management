@@ -4,6 +4,7 @@ import {z} from 'zod'
 import type {AuthUser} from '../../auth/routes.js'
 import {loadRadarOperationalLimits} from './operational-limits.js'
 import {resolveRadarSearchConfiguration} from './search-configuration.js'
+import {isRadarDecisionTask} from './decision-contracts.js'
 
 const fail=(code:string,statusCode=409)=>Object.assign(Error(code),{statusCode})
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -34,7 +35,7 @@ export async function resolveRadarAnalysisRetry(db:Pick<pg.Pool,'query'>,input:{
 }
 
 export async function radarAnalysisRetryPolicy(db:Pick<pg.PoolClient,'query'>,organizationId:string,searchConfiguration:unknown,actions:string[],campaignOperationalVersion=1){
- if(actions.some(action=>['radar_initial_triage','radar_next_action','radar_quality_gate'].includes(action)))actions=[...actions,'radar_decision_default']
+ if(actions.some(isRadarDecisionTask))actions=[...actions,'radar_decision_default']
  const policy=await loadRadarOperationalLimits(db),research=resolveRadarSearchConfiguration(searchConfiguration).research
  const rows=(await db.query(`SELECT rule.* FROM public.organizations organization
   LEFT JOIN LATERAL(SELECT id FROM public.contracts WHERE client_id=organization.client_id AND status='active' ORDER BY starts_at DESC,id DESC LIMIT 1) contract ON TRUE
@@ -45,7 +46,8 @@ export async function radarAnalysisRetryPolicy(db:Pick<pg.PoolClient,'query'>,or
   provider:rule.provider,model:rule.model_name,fallbackModel:rule.fallback_model_name,
   fallbacks:Array.isArray(rule.fallback_routes)?rule.fallback_routes.map(fallbackSnapshot):[],
   maxInputTokens:rule.max_input_tokens,maxOutputTokens:rule.max_output_tokens,maxCostPerRun:numericSnapshot(rule.max_cost_per_run),temperature:numericSnapshot(rule.temperature)}))
- const snapshot={campaignOperationalVersion,operationalPolicy:{version:policy.version,limits:policy.limits},research,routes}
+ const funnel=resolveRadarSearchConfiguration(searchConfiguration).funnel
+ const snapshot={campaignOperationalVersion,operationalPolicy:{version:policy.version,limits:policy.limits},research,routes,...(funnel.enabled?{funnel}:{})}
  return{snapshot,hash:hash(snapshot),policy}
 }
 export async function authorizeRadarAnalysisRetries(pool:pg.Pool,user:AuthUser,value:RadarAnalysisRetryAuthorizationInput,options:{client?:pg.PoolClient;reuseActive?:boolean}={}){
@@ -79,7 +81,7 @@ export async function authorizeRadarAnalysisRetries(pool:pg.Pool,user:AuthUser,v
   const runs=(await client.query('SELECT id,candidate_id,calls FROM public.radar_candidate_research_runs WHERE organization_id=$1 AND campaign_id=$2 AND candidate_id=ANY($3::uuid[])',[input.organizationId,input.campaignId,items.map(item=>item.candidateId)])).rows
   const bound=items.map(item=>{
    const receipt=receipts.find(row=>row.id===item.previousReceiptId),key=receipt?.action==='radar_presence_resolution'?'presence':'semantic'
-   const source=receipt?.action==='radar_deep_research'?'perplexity_agent':['radar_initial_triage','radar_next_action','radar_quality_gate'].includes(receipt?.action)?'openrouter_decision':undefined
+   const source=receipt?.action==='radar_deep_research'?'perplexity_agent':isRadarDecisionTask(receipt?.action)?'openrouter_decision':undefined
    if(!receipt||!runs.some(run=>run.candidate_id===item.candidateId&&(source?Object.values(run.calls).some((call:any)=>call.source===source&&call.requestId===receipt.request_id):run.calls[key]?.evidenceHash&&(run.calls[key].requestId??`${run.id}${key==='presence'?':presence':''}:${run.calls[key].evidenceHash}`)===receipt.request_id)))throw fail('radar_analysis_retry_scope_invalid',403)
    if(receipt.status==='completed'||receipt.status==='rejected_before_provider')throw fail('radar_analysis_retry_not_required')
    if(receipt.status==='reserved'&&receipt.lease_until&&new Date(receipt.lease_until).getTime()>now)throw fail('radar_analysis_still_running')
@@ -88,9 +90,9 @@ export async function authorizeRadarAnalysisRetries(pool:pg.Pool,user:AuthUser,v
   const active=(await client.query('SELECT * FROM public.radar_analysis_retry_authorizations WHERE organization_id=$1 AND previous_analysis_receipt_id=ANY($2::uuid[]) AND consumed_at IS NULL AND expires_at>NOW() ORDER BY approved_at DESC',[input.organizationId,items.map(item=>item.previousReceiptId)])).rows
   const policy=await radarAnalysisRetryPolicy(client,input.organizationId,campaign.search_configuration,bound.map(item=>item.action),Number(campaign.operational_policy_version??1))
   if(new Set(items.map(item=>item.candidateId)).size>policy.policy.limits.maxNewCompaniesPerLot)throw fail('radar_operational_limit_exceeded')
-  if(bound.some(item=>!policy.snapshot.routes.some(route=>route.action===item.action||['radar_initial_triage','radar_next_action','radar_quality_gate'].includes(item.action)&&route.action==='radar_decision_default')))throw fail('radar_analysis_retry_route_missing')
+  if(bound.some(item=>!policy.snapshot.routes.some(route=>route.action===item.action||isRadarDecisionTask(item.action)&&route.action==='radar_decision_default')))throw fail('radar_analysis_retry_route_missing')
   const research=policy.snapshot.research
-  if(bound.some(item=>item.action==='radar_deep_research'?!research.deepResearchEnabled:['radar_initial_triage','radar_next_action','radar_quality_gate'].includes(item.action)?!research.enabled:item.action==='radar_presence_resolution'?!research.presenceResolutionEnabled:!(research.semanticQualificationEnabled||research.profileEnabled||research.sizeAssessment.enabled)))throw fail('radar_analysis_retry_stage_disabled')
+  if(bound.some(item=>item.action==='radar_deep_research'?!research.deepResearchEnabled:isRadarDecisionTask(item.action)?!research.enabled:item.action==='radar_presence_resolution'?!research.presenceResolutionEnabled:!(research.semanticQualificationEnabled||research.profileEnabled||research.sizeAssessment.enabled)))throw fail('radar_analysis_retry_stage_disabled')
   if(active.length){
    const reusable=items.length===1&&active.find(row=>row.policy_hash===policy.hash&&row.configuration_revision===input.configurationRevision&&row.candidate_id===items[0].candidateId)
    if(options.reuseActive&&reusable){if(ownsTransaction)await client.query('COMMIT');return project([reusable])}

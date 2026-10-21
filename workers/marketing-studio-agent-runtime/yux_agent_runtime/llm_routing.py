@@ -9,7 +9,7 @@ from .providers import ProviderAuthorizationError, ProviderRequestError
 
 SCOPES = ("organization_id", "client_id", "contract_id", "agent_id")
 PROVIDERS = {"openrouter", "openai_direct", "perplexity"}
-DECISION_CASES={'radar_decision_default','radar_initial_triage','radar_next_action','radar_quality_gate'}
+DECISION_CASES={'radar_decision_default','radar_initial_triage','radar_next_action','radar_quality_gate','radar_fit_gate'}
 CAPABILITIES={**{key:'decision' for key in DECISION_CASES},'radar_deep_research':'research','knowledge_embeddings':'embedding','global_embeddings':'embedding'}
 
 

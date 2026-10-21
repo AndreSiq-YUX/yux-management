@@ -34,3 +34,13 @@ def test_long_unpunctuated_navigation_does_not_hide_the_relevant_tail():
     text = ' - '.join(f'Seção de navegação {index}' for index in range(600)) + ' Fornecemos refeições para indústrias em São Paulo.'
     result = build_radar_decision_context(dict(identity={}, criteria=dict(segment='refeições para indústrias'), evidence=[dict(id='source', source_url='https://empresa.example/', text=text)]), model='fixture/model')
     assert 'Fornecemos refeições para indústrias' in result['state']['evidence'][0]['text']
+
+
+def test_v2_preserves_compact_registry_without_excerpting_and_persists_the_decision_step():
+    registry_text='Atividade cadastrada e principal. ' * 25
+    data=dict(context_version='radar-decision-context-v2',step=3,identity=dict(name='Empresa'),criteria={},evidence=[dict(id='registry',source_url='https://cnpja.com/office/12345678000190',text=registry_text,role='registry',primary=True)])
+    packed=build_radar_decision_context(data,model='fixture/model',policy=dict(excerptBytes=200))
+    assert packed['state']['evidence'][0]['role']=='registry'
+    assert packed['state']['evidence'][0]['text']==registry_text
+    assert packed['state']['step']==3
+    assert packed['contextVersion']=='radar-decision-context-v2'

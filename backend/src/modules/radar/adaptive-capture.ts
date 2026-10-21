@@ -2,6 +2,8 @@ import {createHash,randomUUID} from 'node:crypto'
 import type pg from 'pg'
 import {classifyRadarEmailDomain} from './email-domain.js'
 import {loadRadarEmailDomainPolicy} from './email-domain-policy.js'
+import {applyRadarRegistryAdmission} from './registry-admission.js'
+import {loadRadarFunnelLotProgress,stopRadarFunnelAtPaidPageCap,syncRadarFunnelDiscovery} from './funnel-replenishment.js'
 import type {AppEnv} from '../../config/env.js'
 import type {AuthUser} from '../../auth/routes.js'
 import {buildRadarAdaptiveDiscoveryPlan,planRadarAdaptiveDiscoveryTurn,type RadarAdaptiveDiscoveryPlan,type RadarAdaptiveDiscoveryItem} from './discovery-plan.js'
@@ -57,9 +59,10 @@ export async function advanceRadarAdaptiveCapture(pool:pg.Pool,env:AppEnv,operat
  const allPages=(await pool.query<Page>('SELECT * FROM public.radar_discovery_pages WHERE organization_id=$1 AND campaign_id=$2 AND criteria_revision=$3 ORDER BY created_at,id',[op.organization_id,op.campaign_id,op.configuration_revision])).rows.map(page=>effectiveRadarAdaptivePage(page) as Page)
  const relevant=allPages.filter(page=>stored.plan.scopes.some(scope=>scope.key===page.scope_key))
  const items=await loadRadarAdaptiveItems(pool,op.id,op.organization_id)
+ const funnelProgress=op.funnel_enabled?await loadRadarFunnelLotProgress(pool,op as any):null
  // Research the existing admissions before consuming saved surplus/replacements.
  if(items.some(item=>['pending','running'].includes(item.state)))return
- if(items.filter(item=>item.isNew&&item.qualification==='confirmed').length>=Number(op.requested_count)){await pool.query("UPDATE public.radar_capture_operations SET discovery_stopped=TRUE,discovery_reason='target_reached',status='researching',blockers='[]'::jsonb WHERE id=$1 AND organization_id=$2",[op.id,op.organization_id]);return}
+ if(funnelProgress?funnelProgress.remaining===0:items.filter(item=>item.isNew&&item.qualification==='confirmed').length>=Number(op.requested_count)){await pool.query("UPDATE public.radar_capture_operations SET discovery_stopped=TRUE,discovery_reason='target_reached',status='researching',blockers='[]'::jsonb WHERE id=$1 AND organization_id=$2",[op.id,op.organization_id]);return}
  const attemptedHere=allPages.filter(page=>page.operation_id===op.id)
  const sourceCapacity=new Map<string,{allowed:boolean;code?:string}>()
  for(const key of new Set(stored.plan.scopes.map(scope=>scope.source))){
@@ -81,7 +84,8 @@ export async function advanceRadarAdaptiveCapture(pool:pg.Pool,env:AppEnv,operat
   else throw failure([...sourceCapacity.values()].find(value=>value.code)?.code??'radar_discovery_no_eligible_sources')
   return
  }
- const turn=planRadarAdaptiveDiscoveryTurn({plan:{...stored.plan,scopes:eligibleScopes},requestedCount:Number(op.requested_count),items,pages:relevant.map(page=>({id:page.id,scopeKey:page.scope_key,status:page.status,exhaustion:page.exhaustion,continuation:page.continuation}))})
+ const planningItems=funnelProgress?items.map(item=>({...item,qualification:'confirmed' as const})):items
+ const turn=planRadarAdaptiveDiscoveryTurn({plan:{...stored.plan,scopes:eligibleScopes},requestedCount:funnelProgress?items.length+funnelProgress.remaining:Number(op.requested_count),items:planningItems,pages:relevant.map(page=>({id:page.id,scopeKey:page.scope_key,status:page.status,exhaustion:page.exhaustion,continuation:page.continuation}))})
  if('stop' in turn){
   const wait=['awaiting_research_attention','awaiting_reconciliation','awaiting_source_response','awaiting_continuation'].includes(turn.stop!)
   await pool.query(`UPDATE public.radar_capture_operations SET status=$3,discovery_stopped=$4,discovery_reason=$5,blockers=$6::jsonb,updated_at=NOW() WHERE id=$1 AND organization_id=$2`,[op.id,op.organization_id,wait?'blocked':'researching',!wait,turn.stop==='target_reached'?'target_reached':turn.stop,JSON.stringify(wait?[`radar_discovery_${turn.stop}`]:[])])
@@ -100,10 +104,11 @@ export async function advanceRadarAdaptiveCapture(pool:pg.Pool,env:AppEnv,operat
    await pool.query(`UPDATE public.radar_discovery_pages SET normalized_page=$3::jsonb,continuation=$4::jsonb,exhaustion=$5,error_code=NULL,updated_at=NOW() WHERE id=$1 AND organization_id=$2 AND normalized_page IS NULL`,[page.id,op.organization_id,JSON.stringify(restored),JSON.stringify(restored.continuation??null),restored.exhaustion])
    return
   }
-  const remaining=Math.max(0,Number(op.requested_count)-items.filter(item=>item.isNew&&item.qualification==='confirmed').length)
+  const remaining=funnelProgress?.remaining??Math.max(0,Number(op.requested_count)-items.filter(item=>item.isNew&&item.qualification==='confirmed').length)
   await admitAdaptivePage(pool,env,op,page,remaining,dependencies)
   return
  }
+ if(await stopRadarFunnelAtPaidPageCap(pool,op as any))return
  const scope=turn.scope
  const currentScopePages=relevant.filter(page=>page.scope_key===scope.key)
  if(attemptedHere.length>=config.batch.maxQueriesPerBatch||currentScopePages.filter(page=>page.operation_id===op.id).length>=config.batch.maxPagesPerScope)throw failure('radar_capture_query_limit')
@@ -199,10 +204,12 @@ async function admitAdaptivePage(pool:pg.Pool,env:AppEnv,op:pg.QueryResultRow,pa
      await db.query(`UPDATE public.radar_candidate_records SET normalized_payload=normalized_payload||$3::jsonb,raw_payload=$4::jsonb,source_type='cnpja_advanced_search' WHERE id=$1 AND organization_id=$2`,[admission.candidateId,op.organization_id,JSON.stringify(fiscal),JSON.stringify(row.rawPayload)])
     }
     await db.query('INSERT INTO public.radar_capture_items(organization_id,campaign_id,operation_id,candidate_id,is_new) VALUES($1,$2,$3,$4,TRUE) ON CONFLICT DO NOTHING',[op.organization_id,op.campaign_id,op.id,admission.candidateId]);added++
+    if(op.funnel_enabled){const payload=(await db.query('SELECT normalized_payload FROM public.radar_candidate_records WHERE id=$1 AND organization_id=$2',[admission.candidateId,op.organization_id])).rows[0]?.normalized_payload;await applyRadarRegistryAdmission(db,{organizationId:op.organization_id,campaignId:op.campaign_id,candidateId:admission.candidateId,operationId:op.id,revision:op.configuration_revision,configuration:config,targetCnaes:op.configuration_snapshot.target_cnaes??[],payload})}
    }
    offset++;scanned++
   }
   await db.query(`UPDATE public.radar_discovery_pages SET admitted_offset=$3::int,status=CASE WHEN $3::int>=$4::int THEN 'admitted' ELSE 'received' END,updated_at=NOW() WHERE id=$1 AND organization_id=$2`,[page.id,op.organization_id,offset,normalized.candidates.length])
+  if(op.funnel_enabled){const current=(await db.query('SELECT * FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2 FOR UPDATE',[op.id,op.organization_id])).rows[0];await syncRadarFunnelDiscovery(db,current)}
   await db.query('COMMIT')
  }catch(cause){await db.query('ROLLBACK');throw cause}finally{db.release()}
 }

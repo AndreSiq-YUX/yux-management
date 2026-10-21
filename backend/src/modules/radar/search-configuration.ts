@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import {RADAR_SEARCH_SOURCES} from './search-capacity.js'
 import {radarCampaignDiscoverySchema} from './discovery-policy.js'
+import {radarFunnelPolicySchema} from './funnel-policy.js'
 
 export const RADAR_BRAZIL_STATES = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'] as const
 export const radarStateSchema = z.enum(RADAR_BRAZIL_STATES)
@@ -43,6 +44,8 @@ export const radarResearchPolicySchema = z.object({
   maxSearchQueriesBySource:z.partialRecord(z.enum(RADAR_SEARCH_SOURCES),z.number().int().nonnegative().safe()).default({}),
   maxSearchQueriesTotalPerCandidate:z.number().int().nonnegative().safe().nullable().default(null),
   maxPagesPerCandidate: z.number().int().positive().safe().default(4),
+  qualificationEvidenceMaxPages:z.number().int().min(1).max(10).default(5),
+  qualificationEvidenceMaxChars:z.number().int().min(500).max(12000).default(6000),
   freshnessDays: z.number().int().positive().safe().default(7),
   semanticQualificationEnabled: z.boolean().default(false),
   presenceResolutionEnabled:z.boolean().default(false),
@@ -55,6 +58,7 @@ export const radarResearchPolicySchema = z.object({
 export type RadarResearchPolicy = z.infer<typeof radarResearchPolicySchema>
 
 export const radarSearchConfigurationSchema = z.object({
+  funnel:radarFunnelPolicySchema.default(()=>radarFunnelPolicySchema.parse({})),
   discovery:radarCampaignDiscoverySchema.default(()=>radarCampaignDiscoverySchema.parse({})),
   crmDestination:z.object({crmInstanceId:z.string().uuid(),pipelineId:z.string().uuid(),stageId:z.string().uuid()}).strict().optional(),
   research: radarResearchPolicySchema.default(() => radarResearchPolicySchema.parse({})),
@@ -77,10 +81,11 @@ export const radarSearchConfigurationSchema = z.object({
   }).strict().default({ includeAnyTerms: [], includeAllTerms: [], excludeTerms: [], requireCnaeMatch: false,
     missingWebsite: 'review', productTerms: [], productMatch: 'any',targets:[],outOfScopeExamples:[],registry:{mainActivityRule:'any',blockedMainCnaes:[],blockedNameTerms:[]} }),
   batch: z.object({ pageSize: z.number().int().positive().safe().default(10),
+    minPassRatio:z.number().min(0).max(1).default(.5),maxReplenishmentPages:z.number().int().nonnegative().safe().default(5),replenishmentBasis:z.enum(['initial_triage','final_fit']).default('initial_triage'),
     maxPagesPerScope: z.number().int().positive().safe().default(1),
     maxQueriesPerBatch: z.number().int().positive().safe().default(10),
     verificationLimit: z.number().int().positive().safe().default(10) }).strict()
-    .default({ pageSize: 10, maxPagesPerScope: 1, maxQueriesPerBatch: 10, verificationLimit: 10 }),
+    .default({ pageSize: 10, maxPagesPerScope: 1, maxQueriesPerBatch: 10, verificationLimit: 10,minPassRatio:.5,maxReplenishmentPages:5,replenishmentBasis:'initial_triage' }),
   exportFields: z.array(z.enum(RADAR_EXPORT_FIELDS)).min(1).max(RADAR_EXPORT_FIELDS.length)
     .default([...RADAR_EXPORT_FIELDS]),
 }).strict().superRefine((config, context) => {

@@ -39,7 +39,7 @@ export type DecisionResultV1 = {
   [k: string]: unknown
 } & {
   schemaVersion: 1
-  task: 'radar_initial_triage' | 'radar_next_action' | 'radar_quality_gate'
+  task: 'radar_initial_triage' | 'radar_next_action' | 'radar_quality_gate' | 'radar_fit_gate'
   status: 'decided' | 'unavailable' | 'context_incomplete'
   choice: string | null
   reasonCode:
@@ -49,6 +49,9 @@ export type DecisionResultV1 = {
     | 'more_evidence_needed'
     | 'action_selected'
     | 'quality_review'
+    | 'registry_activity_mismatch'
+    | 'registry_name_mismatch'
+    | 'registry_target_secondary_only'
   /**
    * @maxItems 6
    */
@@ -60,6 +63,7 @@ export type DecisionResultV1 = {
     | [string, string, string, string]
     | [string, string, string, string, string]
     | [string, string, string, string, string, string]
+  matchedTargetKey?: string
   probabilities?: {
     [k: string]: number
   }
@@ -70,9 +74,9 @@ export type DecisionResultV1 = {
   upstreamProvider?: string
   externalRequestId?: string
   adapterVersion?: 'openrouter-decisions-alpha-v1'
-  contextVersion?: 'radar-decision-context-v1'
-  questionVersion?: 'radar-decisions-questions-v1'
-  criteriaRubricVersion?: 'radar-decisions-rubric-v1'
+  contextVersion?: 'radar-decision-context-v1' | 'radar-decision-context-v2'
+  questionVersion?: 'radar-decisions-questions-v1' | 'radar-decisions-questions-v2'
+  criteriaRubricVersion?: 'radar-decisions-rubric-v1' | 'radar-decisions-rubric-v2'
   contextBytes?: number
   omittedEvidenceIds?: string[]
   /**
@@ -1188,7 +1192,9 @@ export interface DecisionContextV1 {
   campaignId: string
   candidateId: string
   configurationRevision: number
-  task: 'radar_initial_triage' | 'radar_next_action' | 'radar_quality_gate'
+  task: 'radar_initial_triage' | 'radar_next_action' | 'radar_quality_gate' | 'radar_fit_gate'
+  contextVersion?: 'radar-decision-context-v1' | 'radar-decision-context-v2'
+  step?: number
   identity: {
     name: string
     legalName?: string
@@ -1198,6 +1204,721 @@ export interface DecisionContextV1 {
     address?: string
   }
   criteria: {
+    /**
+     * @maxItems 10
+     */
+    targets?:
+      | []
+      | [
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+        ]
+      | [
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+        ]
+      | [
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+        ]
+      | [
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+        ]
+      | [
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+        ]
+      | [
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+        ]
+      | [
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+        ]
+      | [
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+        ]
+      | [
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+        ]
+      | [
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+          {
+            key: string
+            label: string
+            definition: string
+            priority: 'primary' | 'secondary'
+            /**
+             * @maxItems 50
+             */
+            cnaes?: string[]
+          },
+        ]
+    /**
+     * @maxItems 50
+     */
+    outOfScopeExamples?: string[]
+    /**
+     * @maxItems 20
+     */
+    registryFlags?:
+      | []
+      | [string]
+      | [string, string]
+      | [string, string, string]
+      | [string, string, string, string]
+      | [string, string, string, string, string]
+      | [string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string, string, string, string, string, string, string]
+      | [
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+        ]
+      | [
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+        ]
+      | [
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+        ]
+      | [
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+        ]
+      | [
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+        ]
+      | [
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+        ]
     segment?: string
     offer?: string
     /**
@@ -1367,7 +2088,7 @@ export interface DecisionContextV1 {
     id: string
     sourceUrl: string
     text: string
-    role: 'identity' | 'activity' | 'domain' | 'contact'
+    role: 'registry' | 'identity' | 'activity' | 'domain' | 'contact'
     primary: boolean
     contradictory: boolean
     scope: 'establishment' | 'group' | 'unresolved'

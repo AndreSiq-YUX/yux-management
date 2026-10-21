@@ -238,7 +238,7 @@ export async function updateRadarCampaign(pool: pg.Pool, user: AuthUser, campaig
     const configuration = resolveRadarSearchConfiguration(input.searchConfiguration)
     validateRadarOperationalConfiguration(configuration,(await loadRadarOperationalLimits(client)).limits,input.dailyLimit)
     const criteria = (config: RadarSearchConfiguration) => {
-      const { batch: _batch, exportFields: _fields, crmDestination:_destination,sources:_sources,discovery:_discovery,research,braveQueryTemplate:_template, ...searchCriteria } = config
+      const { batch: _batch, funnel:_funnel, exportFields: _fields, crmDestination:_destination,sources:_sources,discovery:_discovery,research,braveQueryTemplate:_template, ...searchCriteria } = config
       return {...searchCriteria,research:{contactPurpose:research.contactPurpose,completion:research.completion,
         presenceResolutionEnabled:research.presenceResolutionEnabled,semanticQualificationEnabled:research.semanticQualificationEnabled,
         profileEnabled:research.profileEnabled,sizeAssessment:research.sizeAssessment}}

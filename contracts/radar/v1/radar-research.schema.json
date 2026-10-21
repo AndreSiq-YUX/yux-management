@@ -579,9 +579,12 @@
           "enum": [
             "radar_initial_triage",
             "radar_next_action",
-            "radar_quality_gate"
+            "radar_quality_gate",
+            "radar_fit_gate"
           ]
         },
+        "contextVersion": {"type":"string","enum":["radar-decision-context-v1","radar-decision-context-v2"]},
+        "step": {"type":"integer","minimum":0,"maximum":9007199254740991},
         "identity": {
           "type": "object",
           "properties": {
@@ -618,6 +621,9 @@
         "criteria": {
           "type": "object",
           "properties": {
+            "targets": {"type":"array","maxItems":10,"items":{"type":"object","additionalProperties":false,"properties":{"key":{"type":"string","pattern":"^[a-z][a-z0-9_]{0,59}$"},"label":{"type":"string","minLength":1,"maxLength":120},"definition":{"type":"string","minLength":1,"maxLength":1200},"priority":{"enum":["primary","secondary"]},"cnaes":{"type":"array","maxItems":50,"items":{"type":"string","pattern":"^[0-9]{2,7}$"}}},"required":["key","label","definition","priority"]}},
+            "outOfScopeExamples":{"type":"array","maxItems":50,"items":{"type":"string","maxLength":300}},
+            "registryFlags":{"type":"array","maxItems":20,"items":{"type":"string","maxLength":80}},
             "segment": {
               "type": "string",
               "maxLength": 1000
@@ -717,6 +723,7 @@
                 "default": "activity",
                 "type": "string",
                 "enum": [
+                  "registry",
                   "identity",
                   "activity",
                   "domain",
@@ -808,7 +815,8 @@
           "enum": [
             "radar_initial_triage",
             "radar_next_action",
-            "radar_quality_gate"
+            "radar_quality_gate",
+            "radar_fit_gate"
           ]
         },
         "status": {
@@ -838,7 +846,10 @@
             "identity_unresolved",
             "more_evidence_needed",
             "action_selected",
-            "quality_review"
+            "quality_review",
+            "registry_activity_mismatch",
+            "registry_name_mismatch",
+            "registry_target_secondary_only"
           ]
         },
         "evidenceIds": {
@@ -850,6 +861,7 @@
             "maxLength": 80
           }
         },
+        "matchedTargetKey":{"type":"string","pattern":"^[a-z][a-z0-9_]{0,79}$"},
         "probabilities": {
           "type": "object",
           "propertyNames": {
@@ -900,15 +912,15 @@
         },
         "contextVersion": {
           "type": "string",
-          "const": "radar-decision-context-v1"
+          "enum": ["radar-decision-context-v1","radar-decision-context-v2"]
         },
         "questionVersion": {
           "type": "string",
-          "const": "radar-decisions-questions-v1"
+          "enum": ["radar-decisions-questions-v1","radar-decisions-questions-v2"]
         },
         "criteriaRubricVersion": {
           "type": "string",
-          "const": "radar-decisions-rubric-v1"
+          "enum": ["radar-decisions-rubric-v1","radar-decisions-rubric-v2"]
         },
         "contextBytes": {
           "type": "integer",

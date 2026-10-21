@@ -132,7 +132,7 @@ class RadarRevalidationRequest(BaseModel):
     organization_id: str
     client_id: str | None = None
     contract_id: str | None = None
-    action: Literal['radar_presence_resolution', 'radar_business_qualification','radar_discovery_extraction','radar_initial_triage','radar_next_action','radar_quality_gate','radar_deep_research']
+    action: Literal['radar_presence_resolution', 'radar_business_qualification','radar_discovery_extraction','radar_initial_triage','radar_next_action','radar_quality_gate','radar_fit_gate','radar_deep_research']
     request_id: str = Field(min_length=1, max_length=200)
     input_hash: str = Field(pattern=r'^[a-f0-9]{64}$')
 
@@ -142,7 +142,7 @@ class RadarDecisionEvidence(BaseModel):
     id: str = Field(min_length=1,max_length=80)
     source_url: str = Field(min_length=1,max_length=2000)
     text: str = Field(min_length=1,max_length=20000)
-    role: Literal['identity','activity','domain','contact']='activity'
+    role: Literal['registry','identity','activity','domain','contact']='activity'
     primary: bool=False
     contradictory: bool=False
     scope: Literal['establishment','group','unresolved']='unresolved'
@@ -154,13 +154,23 @@ class RadarDecisionRequest(RadarAnalysisRequest):
     client_id: str | None=None
     contract_id: str | None=None
     request_id: str=Field(min_length=1,max_length=200)
-    task: Literal['radar_initial_triage','radar_next_action','radar_quality_gate']
+    task: Literal['radar_initial_triage','radar_next_action','radar_quality_gate','radar_fit_gate']
+    context_version: Literal['radar-decision-context-v1','radar-decision-context-v2'] | None = None
+    step: int | None = Field(default=None,strict=True,ge=0,le=9007199254740991)
     enabled: bool=False
     identity: dict[str,Any]
     criteria: dict[str,Any]
     evidence: list[RadarDecisionEvidence]=Field(max_length=30)
     options: list[dict[str,str]]=Field(default_factory=list,max_length=8)
     route_snapshot: dict[str,Any]
+
+    @model_serializer(mode='wrap')
+    def preserve_legacy_decision_request(self,handler):
+        result=handler(self)
+        for key in ('context_version','step','retry_authorization'):
+            if result.get(key) is None:
+                result.pop(key,None)
+        return result
 
 class RadarDeepResearchRequest(RadarAnalysisRequest):
     model_config=ConfigDict(extra='forbid')

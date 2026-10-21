@@ -7,6 +7,7 @@ import {buildRadarDiscoveryScopes,resolveRadarSearchConfiguration} from './searc
 import {admitRadarCapturePage,assertCaptureAvailability,captureError,getRadarCaptureOperation,type AvailabilityLoader} from './capture-operation.js'
 import {loadRadarCapturePageAccounting} from './capture-capacity.js'
 import {advanceRadarAdaptiveCapture} from './adaptive-capture.js'
+import {loadRadarFunnelLotProgress,stopRadarFunnelAtPaidPageCap} from './funnel-replenishment.js'
 
 export async function authorizeRadarCapture(pool:pg.Pool,organizationId:string,operationId:string,availability?:AvailabilityLoader,checkAvailability=true){
  const op=normalizeRadarCounters((await pool.query('SELECT * FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2',[operationId,organizationId])).rows[0])
@@ -54,6 +55,7 @@ export async function advanceRadarCaptureDiscovery(pool:pg.Pool,env:AppEnv,input
  // surplus on the next turn before reserving another provider request.
  const surplus=(await pool.query('SELECT EXISTS(SELECT 1 FROM public.radar_capture_overflow WHERE organization_id=$1 AND campaign_id=$2 AND configuration_revision=$3) AS pending',[input.organizationId,op.campaign_id,op.configuration_revision])).rows[0]?.pending
  if(surplus)return state
+ if(await stopRadarFunnelAtPaidPageCap(pool,op))return getRadarCaptureOperation(pool,user,input.organizationId,op.id)
  const cursors=(await pool.query('SELECT scope_key,completed FROM public.radar_regional_discovery_cursors WHERE organization_id=$1 AND campaign_id=$2',[input.organizationId,op.campaign_id])).rows
  const unfinished=scopes.filter(scope=>!cursors.some(row=>row.scope_key===scope.key&&row.completed))
  const accounting=await loadRadarCapturePageAccounting(pool,op)
@@ -64,7 +66,9 @@ export async function advanceRadarCaptureDiscovery(pool:pg.Pool,env:AppEnv,input
  // Round-robin scopes across bounded worker turns, not an unbounded job.
  const scope=eligible.sort((a,b)=>Number(accounting.successfulPagesByScope[a.key]??0)-Number(accounting.successfulPagesByScope[b.key]??0))[0]
  try{
-  const result=await runRadarCnpjaAdvancedSearch(pool,user,{organizationId:input.organizationId,campaignId:op.campaign_id,captureOperationId:op.id,expectedRevision:op.configuration_revision,regionalState:scope.state,regionalCity:scope.city,limit:Math.min(configuration.batch.pageSize,state.counts.requested-state.counts.admitted),secretKeyMaterial:env.PROVIDER_SECRET_ENCRYPTION_KEY_B64?`provider-key:${env.PROVIDER_SECRET_ENCRYPTION_KEY_B64}`:env.SESSION_SECRET},dependencies)
+  const remaining=op.funnel_enabled?(await loadRadarFunnelLotProgress(pool,op)).remaining:state.counts.requested-state.counts.admitted
+  if(remaining<=0)return state
+  const result=await runRadarCnpjaAdvancedSearch(pool,user,{organizationId:input.organizationId,campaignId:op.campaign_id,captureOperationId:op.id,expectedRevision:op.configuration_revision,regionalState:scope.state,regionalCity:scope.city,limit:Math.min(configuration.batch.pageSize,remaining),secretKeyMaterial:env.PROVIDER_SECRET_ENCRYPTION_KEY_B64?`provider-key:${env.PROVIDER_SECRET_ENCRYPTION_KEY_B64}`:env.SESSION_SECRET},dependencies)
   if(result.issues.length)await blockRadarCapture(pool,input.organizationId,op.id,captureError(result.issues[0].code))
  }catch(cause){await blockRadarCapture(pool,input.organizationId,op.id,cause)}
  state=await getRadarCaptureOperation(pool,user,input.organizationId,op.id)

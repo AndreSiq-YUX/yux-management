@@ -88,6 +88,34 @@ def test_response_is_saved_before_parser_crash_and_revalidation_needs_no_route_o
     assert result['choice']=='investigate' and calls==[1]
 
 
+def test_saved_v1_response_is_revalidated_with_its_original_questions_after_current_version_changes(monkeypatch):
+    store,data=setup();calls=[]
+    import yux_agent_runtime.radar_decisions as module
+    original=module.validate_decision_result
+    monkeypatch.setattr(module,'validate_decision_result',lambda *args,**kwargs: (_ for _ in ()).throw(RuntimeError('simulated crash')))
+    def transport(url,headers,payload,method):calls.append(1);return response(payload)
+    with pytest.raises(RuntimeError):invoke(store,data,transport)
+    monkeypatch.setattr(module,'validate_decision_result',original)
+    monkeypatch.setattr(module,'QUESTION_VERSION','radar-decisions-questions-v2')
+    monkeypatch.setattr(module,'RUBRIC_VERSION','radar-decisions-rubric-v2')
+    receipt=store.list('radar_analysis_receipts')[0]
+    result=revalidate_radar_receipt(store,organization_id='org',action=data['task'],request_id=data['request_id'],input_hash=receipt['input_hash'],validate=validate_saved_decision)
+    assert result['questionVersion']=='radar-decisions-questions-v1'
+    assert result['criteriaRubricVersion']=='radar-decisions-rubric-v1'
+    assert calls==[1]
+
+
+def test_v2_triage_receives_registry_and_target_definitions_and_returns_the_matched_target():
+    from yux_agent_runtime.radar_decisions import decision_context
+    _,data=setup()
+    data.update(context_version='radar-decision-context-v2',criteria=dict(targets=[dict(key='target',label='Perfil configurado',definition='Produção para empresas',priority='primary')]),evidence=[dict(id='registry',source_url='https://cnpja.com/office/12345678000190',text='Atividade principal: produção para empresas.',role='registry',primary=True,scope='establishment')])
+    packed=decision_context(data,'fixture/primary',dict(modelPolicies={}))
+    assert packed['contextVersion']=='radar-decision-context-v2'
+    assert set(packed['questions']['action']['criteria'])=={'compatible','plausible_needs_evidence','weak_fit','outside_profile'}
+    assert 'target' in packed['questions']['matchedTargetKey']['criteria']
+    assert packed['state']['criteria']['targets'][0]['definition']=='Produção para empresas'
+
+
 def test_route_changes_before_a_new_effect_reject_without_payment():
     store,data=setup();store.tables['model_routing_rules'][0]['version']=2
     with pytest.raises(Exception,match='decision_route_changed'): invoke(store,data,lambda *args: pytest.fail('no network'))

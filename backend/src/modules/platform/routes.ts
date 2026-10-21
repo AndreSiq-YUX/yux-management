@@ -442,7 +442,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
     requireAdminRole(request);const user=await getAuthenticatedUser(request,reply);if(!user)return reply
     const params=llmRouteParams.parse(request.params),route=await getAdminLlmRouteById(app.pg,params.routeId)
     if(!route)return reply.code(404).send({error:'llm_route_not_found'})
-    const query=z.object({task:z.enum(['radar_initial_triage','radar_next_action','radar_quality_gate']).optional()}).parse(request.query)
+    const query=z.object({task:z.enum(['radar_initial_triage','radar_next_action','radar_quality_gate','radar_fit_gate']).optional()}).parse(request.query)
     return getRadarDecisionRouteStatus(app.pg,user,route,query.task)
   })
   app.get('/admin/radar-decision-calibrations',async(request,reply)=>{requireAdminRole(request);const user=await getAuthenticatedUser(request,reply);if(!user)return reply;return listRadarDecisionCalibrations(app.pg,user)})

@@ -63,7 +63,7 @@ def _excerpt(text, terms, maximum):
     return result.rsplit(' ', 1)[0] if ' ' in result and len(result.encode()) >= maximum - 4 else result
 
 
-def build_radar_decision_context(data: dict, *, model: str, policy: dict | None = None) -> dict:
+def build_radar_decision_context_v1(data: dict, *, model: str, policy: dict | None = None) -> dict:
     _text_only(data)
     if not isinstance(model, str) or not 1 <= len(model) <= 200:
         raise ValueError('decision_exact_model_required')
@@ -112,4 +112,40 @@ def build_radar_decision_context(data: dict, *, model: str, policy: dict | None 
         raise ContextIncomplete('context_incomplete')
     selected_ids = {item['id'] for item in selected}
     return dict(state=state, questions=json.loads(canonical_json(QUESTIONS)), evidenceMap={item['id']: item['source_url'] for item in selected},
-                byteCount=len(canonical_json(body)), omittedEvidenceIds=sorted(identifiers - selected_ids), contextVersion=CONTEXT_VERSION)
+                byteCount=len(canonical_json(body)), omittedEvidenceIds=sorted(identifiers - selected_ids), contextVersion='radar-decision-context-v1')
+
+
+def build_radar_decision_context_v2(data: dict, *, model: str, policy: dict | None = None) -> dict:
+    registry = {item.get('id'): item for item in data.get('evidence', []) if isinstance(item, dict) and item.get('role') == 'registry'}
+    if len(registry) > 1 or any(len(str(item.get('text', '')).encode('utf-8')) > 1400 for item in registry.values()):
+        raise ContextIncomplete('context_incomplete')
+    # Reuse the frozen v1 URL, duplicate-id, UTF-8 and contradiction checks, but
+    # never discard/truncate the compact registry facts in the version-2 state.
+    base = {**data, 'evidence': [{**item, 'role': 'identity'} if item.get('role') == 'registry' else item for item in data.get('evidence', [])]}
+    packed = build_radar_decision_context_v1(base, model=model, policy=policy)
+    if not registry.keys() <= packed['evidenceMap'].keys():
+        raise ContextIncomplete('context_incomplete')
+    for item in packed['state']['evidence']:
+        if item['id'] in registry:
+            item.update(role='registry', text=registry[item['id']]['text'])
+    packed['state']['evidence'].sort(key=lambda item: item['role'] != 'registry')
+    packed['state']['criteria'].update({key: data['criteria'][key] for key in ('targets', 'outOfScopeExamples', 'registryFlags') if key in data.get('criteria', {})})
+    step = data.get('step', 0)
+    if type(step) is not int or step < 0 or step > 9007199254740991:
+        raise ValueError('decision_step_invalid')
+    packed['state']['step'] = step
+    packed['contextVersion'] = 'radar-decision-context-v2'
+    packed['byteCount'] = len(canonical_json(dict(model=model, state=packed['state'], questions=packed['questions'])))
+    if len(canonical_json(packed['state'])) > min((policy or {}).get('stateBytes', 16000), 16000) or packed['byteCount'] > min((policy or {}).get('requestBytes', 24000), 24000):
+        raise ContextIncomplete('context_incomplete')
+    return packed
+
+
+CONTEXT_BUILDERS = {'radar-decision-context-v1': build_radar_decision_context_v1, 'radar-decision-context-v2': build_radar_decision_context_v2}
+
+
+def build_radar_decision_context(data: dict, *, model: str, policy: dict | None = None) -> dict:
+    version = data.get('context_version', 'radar-decision-context-v1')
+    if version not in CONTEXT_BUILDERS:
+        raise ValueError('decision_context_version_unknown')
+    return CONTEXT_BUILDERS[version](data, model=model, policy=policy)

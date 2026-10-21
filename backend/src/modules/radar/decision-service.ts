@@ -95,7 +95,7 @@ export async function invokeRadarDecision(env: AppEnv, input: DecisionContextV1,
     contractId: string | null;
 }, requestId: string, runtime = invokeAgentRuntime, testOnly = false, retry?: RadarAnalysisRetryBinding) {
     const payload = { organization_id: input.organizationId, client_id: tenant.clientId, contract_id: tenant.contractId, request_id: requestId, task: input.task, enabled: true,
-        identity: input.identity, criteria: input.criteria, evidence: input.evidence.map(({ sourceUrl, ...item }) => ({ ...item, source_url: sourceUrl })), options: input.options,
+        identity: input.identity, criteria: input.criteria, evidence: input.evidence.map(({ sourceUrl, ...item }) => ({ ...item, source_url: sourceUrl })), options: input.options,...(input.contextVersion?{context_version:input.contextVersion}:{}),...(input.step!==undefined?{step:input.step}:{}),
         route_snapshot: { id: route.id, version: route.version, attempts: route.attempts, authorizedAttempts: route.authorizedAttempts ?? 1, config: route.config, ...(testOnly ? { testOnly: true, routingKey: route.routingKey } : {}) }, ...(retry ? { retry_authorization: retry } : {}) };
     return decisionResultSchema.parse(await runtime<unknown>(env, '/radar/decide', payload, { timeoutMs: route.config.deadlineSeconds * 1000 + 10000 }));
 }
@@ -108,6 +108,8 @@ export type RadarDecisionOutcome = {
     evidenceIds: string[];
     threshold?: number | null;
     result?: DecisionResultV1;
+    routeFingerprint?: string;
+    requestId?: string;
 };
 export async function decideRadarAction(pool: pg.Pool, user: AuthUser, value: DecisionContextV1, dependencies: {
     env: AppEnv;
@@ -243,5 +245,5 @@ export async function decideRadarAction(pool: pg.Pool, user: AuthUser, value: De
     input.humanReviewed=input.humanReviewed||currentCompany?.manualDecisionOverride===true||currentCompany?.braveMatchStatus==='manual_matched';
     const calibrations = await loadRadarDecisionCalibrations(pool, appliedRoute.id, appliedRoute.fingerprint), decisionPolicy = { enabled: currentRoute?.fingerprint === appliedRoute.fingerprint, requestedMode: appliedRoute.config.mode, routeFingerprint: appliedRoute.fingerprint };
     const calibration = calibrations.find(item => matchingRadarDecisionCalibration(input, result, decisionPolicy, item)) ?? null;
-    return { ...evaluateRadarDecision(input, result, decisionPolicy, calibration), result };
+    return { ...evaluateRadarDecision(input, result, decisionPolicy, calibration), result, routeFingerprint: appliedRoute.fingerprint, requestId: call.requestId };
 }

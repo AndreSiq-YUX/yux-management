@@ -1,16 +1,17 @@
 import type pg from 'pg'
 import {assessRadarCaptureResearch,assessRadarFunnelResearch,type RadarFunnelOutcome} from './capture-research-state.js'
+import {syncRadarFunnelDiscovery} from './funnel-replenishment.js'
 
-type Operation={id?:string;campaign_id?:string;configuration_revision?:number;requested_count:number;discovery_stopped:boolean;discovery_reason?:string|null;blockers:string[];pipeline_version?:number;qualified_count?:number}
+type Operation={id?:string;campaign_id?:string;configuration_revision?:number;requested_count:number;discovery_stopped:boolean;discovery_reason?:string|null;blockers:string[];pipeline_version?:number;qualified_count?:number;funnel_enabled?:boolean}
 type Item={status:string;blocker?:string|null;target_status?:string;funnel_outcome?:RadarFunnelOutcome|null}
 export function summarizeRadarCaptureItems(op:Operation,items:Item[],discoveryBlockers?:string[]){
  items=items.map(item=>item.funnel_outcome&&item.funnel_outcome!=='technical_failure'?{...item,status:'completed',blocker:null}:item)
  const pending=items.some(item=>['queued','researching'].includes(item.status))
- const achieved=op.pipeline_version===2?op.qualified_count??0:items.length
- const capped=achieved<op.requested_count&&['page_cap','query_cap'].includes(op.discovery_reason??'')
+ const achieved=op.pipeline_version===2&&!op.funnel_enabled?op.qualified_count??0:items.length
+ const capped=!op.funnel_enabled&&achieved<op.requested_count&&['page_cap','query_cap'].includes(op.discovery_reason??'')
  const discovery=discoveryBlockers??(!op.discovery_stopped?op.blockers:[])
  const blockers=[...new Set([...discovery,...(capped?[op.discovery_reason==='page_cap'?'radar_capture_page_limit':'radar_capture_query_limit']:[]),...items.flatMap(item=>item.blocker?[item.blocker]:[])])]
- const status=discovery.length?'blocked':pending&&op.discovery_stopped?'researching':capped?'blocked':!op.discovery_stopped?'discovering':pending?'researching':items.some(item=>item.status==='blocked')?'blocked':achieved<op.requested_count||items.some(item=>item.status==='insufficient')?'partial':'completed'
+ const status=discovery.length?'blocked':pending&&op.discovery_stopped?'researching':capped?'blocked':!op.discovery_stopped?'discovering':pending?'researching':items.some(item=>item.status==='blocked')?'blocked':achieved<op.requested_count||op.discovery_reason==='replenishment_shortfall'||items.some(item=>item.status==='insufficient')?'partial':'completed'
  return{status,blockers}
 }
 
@@ -19,8 +20,9 @@ export function summarizeRadarCaptureItems(op:Operation,items:Item[],discoveryBl
 export async function reconcileRadarCaptureSummary(db:Pick<pg.PoolClient,'query'>,input:{organizationId:string;operationId:string;discoveryBlockers?:string[]}){
  const op=(await db.query<Operation & {id:string;campaign_id:string;configuration_revision:number}>(`SELECT * FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2 FOR UPDATE`,[input.operationId,input.organizationId])).rows[0]
  if(!op)return
+ if(op.funnel_enabled&&!(input.discoveryBlockers??[]).length)await syncRadarFunnelDiscovery(db,op as any)
  if(op.pipeline_version===2)op.qualified_count=Number((await db.query(`SELECT COUNT(*) AS n FROM public.radar_capture_items item JOIN public.radar_b2b_reviews review ON review.candidate_id=item.candidate_id AND review.organization_id=item.organization_id AND review.configuration_revision=$3 WHERE item.operation_id=$1 AND item.organization_id=$2 AND item.is_new=TRUE AND review.target_status='confirmed'`,[op.id,input.organizationId,op.configuration_revision])).rows[0].n)
- const items=op.pipeline_version===2?(await db.query<Item>(`SELECT item.status,item.blocker,item.funnel_outcome FROM public.radar_capture_items item LEFT JOIN public.radar_b2b_reviews review ON review.candidate_id=item.candidate_id AND review.organization_id=item.organization_id AND review.configuration_revision=$3 WHERE item.operation_id=$1 AND item.organization_id=$2 AND review.target_status IS DISTINCT FROM 'not_target'`,[op.id,input.organizationId,op.configuration_revision])).rows:(await db.query<Item>('SELECT status,blocker,funnel_outcome FROM public.radar_capture_items WHERE operation_id=$1 AND organization_id=$2',[op.id,input.organizationId])).rows
+ const items=op.pipeline_version===2&&!op.funnel_enabled?(await db.query<Item>(`SELECT item.status,item.blocker,item.funnel_outcome FROM public.radar_capture_items item LEFT JOIN public.radar_b2b_reviews review ON review.candidate_id=item.candidate_id AND review.organization_id=item.organization_id AND review.configuration_revision=$3 WHERE item.operation_id=$1 AND item.organization_id=$2 AND review.target_status IS DISTINCT FROM 'not_target'`,[op.id,input.organizationId,op.configuration_revision])).rows:(await db.query<Item>('SELECT status,blocker,funnel_outcome FROM public.radar_capture_items WHERE operation_id=$1 AND organization_id=$2',[op.id,input.organizationId])).rows
  const summary=summarizeRadarCaptureItems(op,items,input.discoveryBlockers)
  // A historical partial batch must not become a second active batch. Its
  // counters/blockers still track current evidence while the current lot owns

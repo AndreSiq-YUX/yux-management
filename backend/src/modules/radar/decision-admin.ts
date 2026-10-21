@@ -7,6 +7,7 @@ import { loadRadarDecisionRoute, radarDecisionPrice, invokeRadarDecision } from 
 import { loadRadarOperationalLimits } from './operational-limits.js';
 import { loadRadarDecisionCalibrations } from './decision-calibration.js';
 import type { DecisionContextV1 } from './decision-contracts.js';
+import {decisionTaskSchema,isRadarDecisionTask} from './decision-contracts.js';
 type Route = {
     id?: string;
     kind?: string | null;
@@ -30,7 +31,7 @@ export async function getRadarDecisionRouteStatus(pool: pg.Pool, user: AuthUser,
  ORDER BY organization.is_internal_growth_workspace DESC,organization.id LIMIT 1`, [route.organizationId ?? null, route.clientId ?? null, route.contractId ?? null])).rows[0];
     if (!row)
         throw fail('radar_decision_test_tenant_missing');
-    const tenant = { organizationId: row.organization_id, clientId: row.client_id ?? null, contractId: row.contract_id ?? null }, task = (['radar_initial_triage', 'radar_next_action', 'radar_quality_gate'].includes(route.agentType ?? '') ? route.agentType : taskOverride ?? 'radar_initial_triage') as DecisionContextV1['task'];
+    const tenant = { organizationId: row.organization_id, clientId: row.client_id ?? null, contractId: row.contract_id ?? null }, task = (isRadarDecisionTask(route.agentType) ? route.agentType : taskOverride ?? 'radar_initial_triage') as DecisionContextV1['task'];
     const selected = await loadRadarDecisionRoute(pool, task, tenant);
     if (!selected)
         throw fail('radar_decision_route_unavailable');
@@ -42,7 +43,7 @@ export async function getRadarDecisionRouteStatus(pool: pg.Pool, user: AuthUser,
 }
 export async function testRadarDecisionRoute(pool: pg.Pool, env: AppEnv, user: AuthUser, route: Route, value: unknown, runtime = invokeAgentRuntime) {
     requireAdmin(user);
-    const parsed = z.object({ task: z.enum(['radar_initial_triage', 'radar_next_action', 'radar_quality_gate']).optional(), confirmPaid: z.literal(true), requestId: z.uuid(), expectedFingerprint: z.string().regex(/^[a-f0-9]{64}$/), expectedPolicyVersion: z.number().int().positive(), approvedPriceBrl: z.string().regex(/^\d+(?:\.\d+)?$/) }).strict().safeParse(value);
+    const parsed = z.object({ task: decisionTaskSchema.optional(), confirmPaid: z.literal(true), requestId: z.uuid(), expectedFingerprint: z.string().regex(/^[a-f0-9]{64}$/), expectedPolicyVersion: z.number().int().positive(), approvedPriceBrl: z.string().regex(/^\d+(?:\.\d+)?$/) }).strict().safeParse(value);
     if (!parsed.success)
         throw fail('radar_decision_test_confirmation_required', 400);
     const input = parsed.data;
@@ -54,7 +55,7 @@ export async function testRadarDecisionRoute(pool: pg.Pool, env: AppEnv, user: A
     if (input.expectedPolicyVersion !== status.policyVersion || input.approvedPriceBrl !== status.price.amountBrl)
         throw fail('radar_decision_test_price_changed');
     const context: DecisionContextV1 = { schemaVersion: 1, organizationId: status.tenant.organizationId, campaignId: '10000000-0000-4000-8000-000000000001', candidateId: '10000000-0000-4000-8000-000000000002', configurationRevision: 1, task: status.task,
-        identity: { name: 'Empresa sintética de teste' }, criteria: { segment: 'Fornecedora de equipamentos industriais' }, evidence: [{ id: 'test_source', sourceUrl: 'https://empresa.example/', text: 'Empresa sintética de teste fornece equipamentos industriais. Dado sintético para validar o contrato, não pesquisa real.', role: 'identity', primary: true, contradictory: false, scope: 'establishment' }], options: status.task === 'radar_next_action' ? [{ id: 'read_site', description: 'Ler a página pública elegível.' }] : [], humanReviewed: false };
+        ...(status.task==='radar_fit_gate'?{contextVersion:'radar-decision-context-v2' as const}:{}),identity: { name: 'Empresa sintética de teste' }, criteria: { segment: 'Fornecedora de equipamentos industriais' }, evidence: [{ id: 'test_source', sourceUrl: 'https://empresa.example/', text: 'Empresa sintética de teste fornece equipamentos industriais. Dado sintético para validar o contrato, não pesquisa real.', role: 'identity', primary: true, contradictory: false, scope: 'establishment' }], options: status.task === 'radar_next_action' ? [{ id: 'read_site', description: 'Ler a página pública elegível.' }] : [], humanReviewed: false };
     const started = Date.now(), result = await invokeRadarDecision(env, context, { ...status.route, authorizedAttempts: status.maxAttempts }, status.tenant, `admin-decision:${input.requestId}`, runtime, true);
     return { ok: result.status === 'decided', kind: 'decision', selectedOption: result.choice, contractValid: result.status === 'decided', requestedModel: result.requestedModel, resolvedModel: result.resolvedModel, adapterVersion: result.adapterVersion, calibrationState: 'synthetic_test_not_calibration', latencyMs: Date.now() - started, usage: result.usage, attempts: result.attempts,
         model: route.modelName, provider: 'openrouter', checkedAt: new Date().toISOString(), message: result.status === 'decided' ? 'Contrato de decisão validado. Este teste sintético não comprova qualidade nem aprova calibração.' : 'O modelo não concluiu uma decisão válida. Nenhuma empresa foi alterada.' };
