@@ -73,7 +73,7 @@ export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,
  const researchCapacity=knownCapacity?{remainingQueries:estimates.reduce((sum,item)=>sum+(item.remainingQueries??0),0),plannedMaximumQueries,
   estimatedMaximumCostBrl:Number((availability.maximumCostPerCandidate!==undefined?availability.maximumCostPerCandidate*input.requestedCount:plannedMaximumQueries*Math.max(0,...estimates.map(item=>item.costPerQuery))).toFixed(6))}:undefined
  const spent=researchCapacity&&campaign.budget_limit!==null&&campaign.budget_limit!==undefined
-  ?Number((await db.query("SELECT COALESCE(SUM(estimated_cost),0) AS cost FROM public.radar_source_usage_counters WHERE organization_id=$1 AND campaign_id=$2 AND source_type<>'perplexity_agent' AND usage_date=CURRENT_DATE",[input.organizationId,input.campaignId])).rows[0]?.cost??0):0
+  ?Number((await db.query("SELECT COALESCE(SUM(estimated_cost),0) AS cost FROM public.radar_source_usage_counters WHERE organization_id=$1 AND campaign_id=$2",[input.organizationId,input.campaignId])).rows[0]?.cost??0):0
  const budgetCapacity=campaign.budget_limit===null||campaign.budget_limit===undefined?undefined:Math.max(0,Number(campaign.budget_limit)-spent)
  const warnings:RadarCapturePreflight['warnings']=researchCapacity&&(researchCapacity.remainingQueries<plannedMaximumQueries||budgetCapacity!==undefined&&researchCapacity.estimatedMaximumCostBrl>budgetCapacity)
   ?[{code:'radar_capture_enrichment_capacity_low',message:'A capacidade diária de aprofundamento pode ser menor que este lote. Ajuste as quotas das fontes no Admin ou reduza o lote. Etapas salvas continuam recuperáveis; nenhum limite será aumentado automaticamente.'}]:[]

@@ -811,7 +811,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         const governance = await evaluateRadarSourceGovernance(reservation,run.organization_id,run.campaign_id,source,1,1,true)
         if (!governance.allowed) throw error(governance.issues[0].code)
         if (!hasRadarSearchCapacity(searchCapacity(),sourceKey)) throw error('candidate_search_limit_reached')
-        const spent = await reservation.query("SELECT COALESCE(SUM(estimated_cost),0) AS cost FROM public.radar_source_usage_counters WHERE organization_id=$1 AND campaign_id=$2 AND source_type<>'perplexity_agent' AND usage_date=CURRENT_DATE",[run.organization_id,run.campaign_id])
+        const spent = await reservation.query("SELECT COALESCE(SUM(estimated_cost),0) AS cost FROM public.radar_source_usage_counters WHERE organization_id=$1 AND campaign_id=$2",[run.organization_id,run.campaign_id])
         const budget = currentCampaign.rows[0]?.budget_limit
         if (budget !== null && budget !== undefined && compareRadarDecimal(addRadarDecimal(String(spent.rows[0]?.cost??0),String(source.defaultCostPerUnit)),String(budget))>0) throw error('source_budget_exceeded')
         const approvedUnit=intentBudget?.sourceUnitPricesBrl[sourceKey as keyof typeof intentBudget.sourceUnitPricesBrl]

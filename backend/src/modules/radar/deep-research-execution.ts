@@ -10,6 +10,7 @@ import {radarDecisionHash} from './decision-service.js'
 import {loadRadarDeepResearchRoute,radarDeepResearchBudget} from './deep-research.js'
 import {resolveRadarAnalysisRetry,type RadarAnalysisRetryBinding} from './analysis-retry-authorizations.js'
 import {resolveRadarSearchConfiguration} from './search-configuration.js'
+import {loadRadarCampaignSpendBrl,radarCampaignBudgetAllows} from './campaign-budget.js'
 
 const failure=(code:string,statusCode=409)=>Object.assign(Error(code),{statusCode})
 type ResearchCall={source:'perplexity_agent';status:string;requestId:string;contextHash:string;context:Record<string,unknown>;route:Record<string,unknown>;tenant:{client_id:string|null;contract_id:string|null};reservedUsd:string;reservedBrl:string;usageDate:string;costPolicy:RadarCostPolicy;result?:Record<string,unknown>;actualBrl?:string;actualUsd?:string;budgetExceeded?:boolean;retryAuthorization?:RadarAnalysisRetryBinding;previous?:ResearchCall[]}
@@ -77,6 +78,7 @@ export async function researchRadarGaps(pool:pg.Pool,user:AuthUser,input:{organi
    ),versions AS(SELECT value FROM entries UNION ALL SELECT history.value FROM entries CROSS JOIN LATERAL jsonb_array_elements(COALESCE(entries.value->'previous','[]')) history)
    SELECT jsonb_build_object('entry',jsonb_build_object('source','perplexity_agent','requestId',value->'requestId','reservedUsd',value->'reservedUsd','actualUsd',value->'actualUsd')) AS calls FROM versions`,[input.organizationId,campaignId])).rows)
    if(compareRadarDecimal(addRadarDecimal(spent,reservedUsd),String(budget.config.budgetUsdPerCampaign))>0)throw failure('radar_deep_research_campaign_budget_reached')
+   if(!radarCampaignBudgetAllows(await loadRadarCampaignSpendBrl(db,input.organizationId,campaignId),price.amountBrl,campaign.budget_limit))throw failure('source_budget_exceeded')
    const usageDate=(await db.query('SELECT CURRENT_DATE::text AS date')).rows[0].date
    call={source:'perplexity_agent',status:'reserved',requestId:`${dependencies.runId}:deep:${contextHash}${retry?`:retry:${retry.authorization_id}`:''}`,contextHash,context:{...input.context,gaps:input.gaps},route:{id:String(route.id),version:Number(route.version),attempts,authorizedAttempts:maximum},tenant:{client_id:route.client_id??null,contract_id:route.contract_id??null},reservedUsd,reservedBrl:price.amountBrl,usageDate,costPolicy:policy.costPolicy,...(retry?{retryAuthorization:retry,previous:[...(previous?.previous??[]),{...previous!,previous:undefined}]}:{})}
    await db.query(`INSERT INTO public.radar_source_usage_counters(organization_id,campaign_id,source_type,units,estimated_cost) VALUES($1,$2,'perplexity_agent',1,$3) ON CONFLICT(organization_id,campaign_id,source_type,usage_date) DO UPDATE SET units=radar_source_usage_counters.units+1,estimated_cost=radar_source_usage_counters.estimated_cost+EXCLUDED.estimated_cost,updated_at=NOW()`,[input.organizationId,campaignId,call.reservedBrl])

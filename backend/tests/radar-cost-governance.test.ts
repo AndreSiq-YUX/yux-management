@@ -2,7 +2,7 @@ import {it,expect} from 'vitest'
 import {evaluateRadarSourceGovernance} from '../src/modules/radar/repository.js'
 function fixture(localCost:string,globalCost:string,unitPrice:number){return{source:{enabled:true,sourceType:'brave_web_search',defaultCostPerUnit:unitPrice,rateLimitPerDay:100},db:{query:async(sql:string)=>{
  if(sql.includes('FROM public.radar_campaigns'))return{rows:[{daily_limit:100,budget_limit:'0.3'}]}
- if(sql.includes('FROM public.radar_source_usage_counters'))return{rows:[{units:0,estimated_cost:sql.includes("source_type<>'perplexity_agent'")?globalCost:localCost}]}
+ if(sql.includes('FROM public.radar_source_usage_counters'))return{rows:[{units:0,estimated_cost:sql.includes('SUM(estimated_cost)')&&!sql.includes('source_type = $')?globalCost:localCost}]}
  throw Error('unexpected_fixture_query')
 }}}}
 it('permits the final exact monetary unit without losing it to binary rounding',async()=>{

@@ -13,3 +13,9 @@ it('offers the Agent only with a usable route, license, secret, converted estima
 it('always permits recovering an existing effect without implying a new purchase is eligible', () => {
     expect(api.evaluateRadarFunnelAgentReadiness({ ...base, route: undefined, hasExistingEffect: true })).toMatchObject({ allowed: true, recoverOnly: true });
 });
+it('includes the cumulative BRL cap in readiness without blocking receipt recovery', () => {
+    expect(api.evaluateRadarFunnelAgentReadiness({ ...base, usedBrlCampaign: '0.8', budgetBrlCampaign: '1' })).toMatchObject({ allowed: false, reason: 'source_budget_exceeded' });
+    expect(api.evaluateRadarFunnelAgentReadiness({ ...base, usedBrlCampaign: '0.793', budgetBrlCampaign: '1' })).toMatchObject({ allowed: true });
+    expect(api.evaluateRadarFunnelAgentReadiness({ ...base, usedBrlCampaign: '20', budgetBrlCampaign: null })).toMatchObject({ allowed: true });
+    expect(api.evaluateRadarFunnelAgentReadiness({ ...base, usedBrlCampaign: '20', budgetBrlCampaign: '0', hasExistingEffect: true })).toMatchObject({ allowed: true, recoverOnly: true });
+});

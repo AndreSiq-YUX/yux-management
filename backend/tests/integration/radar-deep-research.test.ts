@@ -4,9 +4,10 @@ import {captureFixture,connectionString,organizationId,admin} from '../support/r
 import {upsertAdminLlmRoute,storePlatformProviderSecret} from '../../src/modules/platform/adminRepository.js'
 import {getRadarOperationalLimits,updateRadarOperationalLimits} from '../../src/modules/radar/operational-limits.js'
 import {researchRadarGaps} from '../../src/modules/radar/deep-research.js'
+import {evaluateRadarSourceGovernance,findRadarDataSource} from '../../src/modules/radar/repository.js'
 
 describe.skipIf(!connectionString)('Agent estimated budget with actual PostgreSQL and simulated transport',()=>{
- for(const mode of ['success','timeout','overrun','authorization_denied','changed_gaps','historical_recovery'] as const)it(`reserves before ${mode}, scopes every effect and never buys the same call twice`,async()=>{
+ for(const mode of ['success','timeout','overrun','authorization_denied','changed_gaps','historical_recovery','budget_blocked','budget_zero','budget_exact','budget_unlimited','budget_concurrent'] as const)it(`reserves before ${mode}, scopes every effect and never buys the same call twice`,async()=>{
   const f=await captureFixture(),policy=await getRadarOperationalLimits(f.pool,admin);let routeId:string|undefined
   try{
    await updateRadarOperationalLimits(f.pool,admin,{expectedVersion:policy.version,limits:{...policy.limits,...(mode==='changed_gaps'?{maxDeepSearchesPerCompany:2}:{})},costPolicy:{usdToBrl:'5',rateAsOf:'2026-10-20T12:00:00Z',rateSource:'manual',marginPercent:'0'}})
@@ -17,15 +18,31 @@ describe.skipIf(!connectionString)('Agent estimated budget with actual PostgreSQ
    const candidate=(await f.pool.query(`INSERT INTO radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'manual','Empresa Alfa',$3,'{}') RETURNING id`,[organizationId,f.campaign.id,randomUUID()])).rows[0]
    const lease=randomUUID(),run=(await f.pool.query(`INSERT INTO radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,status,lease_id,lease_until) VALUES($1,$2,$3,$4,1,'running',$5,NOW()+INTERVAL '5 minutes') RETURNING id`,[organizationId,f.campaign.id,candidate.id,admin.id,lease])).rows[0]
    const input={organizationId,candidateId:candidate.id,revision:1,gaps:['website'],context:{identity:{name:'Empresa Alfa'}}},requests:unknown[]=[]
+   if(mode.startsWith('budget_')){
+    await f.pool.query('UPDATE radar_campaigns SET budget_limit=$2 WHERE id=$1',[f.campaign.id,mode==='budget_unlimited'?null:mode==='budget_zero'?0:mode==='budget_concurrent'?.06:.1])
+    if(mode!=='budget_concurrent')await f.pool.query(`INSERT INTO radar_source_usage_counters(organization_id,campaign_id,source_type,units,estimated_cost,usage_date) VALUES($1,$2,'serper_web_search',1,$3,CURRENT_DATE-1)`,[organizationId,f.campaign.id,mode==='budget_exact'?.05:.06])
+   }
    const actual=mode==='overrun'?.03:.006
    const deps={env:{} as any,runId:run.id,leaseId:lease,authorize:async()=>{if(mode==='authorization_denied')throw Error('radar_campaign_not_active')},runtime:async(_env:any,path:string,payload:any)=>{
     requests.push(payload)
     expect(path).toBe('/radar/deep-research')
     expect(Number((await f.pool.query("SELECT estimated_cost FROM radar_source_usage_counters WHERE campaign_id=$1 AND source_type='perplexity_agent'",[f.campaign.id])).rows[0].estimated_cost)).toBe(.05)
+    if(mode==='budget_concurrent'){
+     const second=(await f.pool.query(`INSERT INTO radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'manual','Empresa Beta',$3,'{}') RETURNING id`,[organizationId,f.campaign.id,randomUUID()])).rows[0]
+     const nextLease=randomUUID(),next=(await f.pool.query(`INSERT INTO radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,status,lease_id,lease_until) VALUES($1,$2,$3,$4,1,'running',$5,NOW()+INTERVAL '5 minutes') RETURNING id`,[organizationId,f.campaign.id,second.id,admin.id,nextLease])).rows[0]
+     await expect(researchRadarGaps(f.pool,admin,{...input,candidateId:second.id},{...deps,runId:next.id,leaseId:nextLease} as any)).rejects.toThrow('source_budget_exceeded')
+     const source=await findRadarDataSource(f.pool,organizationId,'brave_web_search')
+     expect(source).not.toBeNull()
+     const governance=await evaluateRadarSourceGovernance(f.pool,organizationId,f.campaign.id,{...source!,defaultCostPerUnit:.02},1)
+     expect(governance).toMatchObject({allowed:false,issues:[{code:'source_budget_exceeded'}]})
+    }
     if(mode==='timeout')throw Error('synthetic_timeout')
     return{response:{id:'p1',output:[{type:'search_results',contents:[{id:1,source:'web',url:'https://alfa.example/',snippet:'Empresa Alfa contato público.'}]}]},usage:{costUsd:actual},budget:{usedUsd:actual,exceeded:mode==='overrun'}}
    }}
-   if(mode==='authorization_denied'){
+   if(mode==='budget_blocked'||mode==='budget_zero'){
+    await expect(researchRadarGaps(f.pool,admin,input,deps as any)).rejects.toThrow('source_budget_exceeded')
+    expect((await f.pool.query("SELECT units FROM radar_source_usage_counters WHERE campaign_id=$1 AND source_type='perplexity_agent'",[f.campaign.id])).rows).toEqual([])
+   }else if(mode==='authorization_denied'){
     await expect(researchRadarGaps(f.pool,admin,input,deps as any)).rejects.toThrow('radar_campaign_not_active')
     expect((await f.pool.query("SELECT units FROM radar_source_usage_counters WHERE campaign_id=$1 AND source_type='perplexity_agent'",[f.campaign.id])).rows).toEqual([])
    }else if(mode==='timeout'){
@@ -33,6 +50,8 @@ describe.skipIf(!connectionString)('Agent estimated budget with actual PostgreSQ
     await expect(researchRadarGaps(f.pool,admin,input,deps as any)).rejects.toThrow('radar_research_call_uncertain')
    }else{
     expect((await researchRadarGaps(f.pool,admin,input,deps as any)).evidence).toHaveLength(1)
+    // A lower cap must not prevent free recovery of an already saved response.
+    if(mode==='budget_exact')await f.pool.query('UPDATE radar_campaigns SET budget_limit=0 WHERE id=$1',[f.campaign.id])
     await researchRadarGaps(f.pool,admin,input,deps as any)
     if(mode==='changed_gaps')await researchRadarGaps(f.pool,admin,{...input,gaps:['contact','website'],context:{identity:{name:'Empresa Alfa'},evidence:[{text:'Novos dados'}]}},deps as any)
     expect(Number((await f.pool.query("SELECT estimated_cost FROM radar_source_usage_counters WHERE campaign_id=$1 AND source_type='perplexity_agent'",[f.campaign.id])).rows[0].estimated_cost)).toBe(actual*5)
@@ -50,7 +69,7 @@ describe.skipIf(!connectionString)('Agent estimated budget with actual PostgreSQ
     }
     await expect(researchRadarGaps(f.pool,admin,{...input,candidateId:randomUUID()},deps as any)).rejects.toThrow('radar_candidate_not_found')
    }
-   expect(requests).toHaveLength(mode==='authorization_denied'?0:1)
+   expect(requests).toHaveLength(['authorization_denied','budget_blocked','budget_zero'].includes(mode)?0:1)
   }finally{
    const current=await getRadarOperationalLimits(f.pool,admin);await updateRadarOperationalLimits(f.pool,admin,{expectedVersion:current.version,limits:policy.limits,costPolicy:policy.costPolicy})
    if(routeId)await f.pool.query('DELETE FROM model_routing_rules WHERE id=$1',[routeId]);await f.close()

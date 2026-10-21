@@ -2981,7 +2981,7 @@ export async function evaluateRadarSourceGovernance(
   )
   const usedUnits = Number(usage.rows[0]?.units ?? 0)
   // Money is campaign-wide and cumulative; a new source/day does not reset it.
-  const campaignCost=await queryable.query<{estimated_cost:string|number}>(`SELECT COALESCE(SUM(estimated_cost),0) AS estimated_cost FROM public.radar_source_usage_counters WHERE organization_id=$1 AND campaign_id=$2 AND source_type<>'perplexity_agent'`,[organizationId,campaignId])
+  const campaignCost=await queryable.query<{estimated_cost:string|number}>(`SELECT COALESCE(SUM(estimated_cost),0) AS estimated_cost FROM public.radar_source_usage_counters WHERE organization_id=$1 AND campaign_id=$2`,[organizationId,campaignId])
   const costAmount=String(campaignCost.rows[0]?.estimated_cost??0),usedCost=Number(costAmount)
   const organizationUsage = await queryable.query<{ units: string | number }>(
     `SELECT COALESCE(SUM(units), 0) AS units
