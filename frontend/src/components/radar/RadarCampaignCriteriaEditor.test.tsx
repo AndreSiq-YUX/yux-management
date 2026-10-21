@@ -3,7 +3,7 @@ import {createRoot} from 'react-dom/client';
 import {expect,it,vi} from 'vitest';
 const save=vi.fn(),search=vi.fn();
 vi.mock('@/services/radarService',()=>({radarService:{saveCommercialCriteria:()=>save(),searchCnaeCatalog:()=>search()}}));
-const modulePath='./RadarCampaignCriteriaEditor',api=await import(modulePath).catch(()=>({})) as Record<string,any>;
+const api=await import('./RadarCampaignCriteriaEditor');
 it('shows only business criteria and never fetches or saves anything for a read-only viewer',async()=>{
  const container=document.createElement('div'),root=createRoot(container);
  try{await act(async()=>root.render(<api.RadarCampaignCriteriaEditor campaign={{id:'campaign',organizationId:'org',configurationRevision:1,criteria:{}}} canEdit={false} onSaved={vi.fn()}/>));

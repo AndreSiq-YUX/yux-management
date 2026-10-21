@@ -55,3 +55,11 @@ Leituras públicas gratuitas (`public_read`) sem custo real explícito podem apa
 ## O que ainda não foi feito
 
 Não houve publicação, ativação do novo funil, mudança de configurações reais, importação do catálogo oficial, rótulos humanos, calibração paga ou piloto em empresas reais (T11/T12). A entrega local é implementação verificada, não confirmação de funcionamento/qualidade em produção. Os dois documentos não rastreados de experimento, preexistentes à execução, foram preservados.
+
+## Integração na main — autorização posterior
+
+Após o usuário autorizar expressamente mesclar e enviar, a main local foi atualizada até `origin/main` (`8aea99c`) e recebeu os quatro commits da implementação até `0b76a05` por fast-forward, sem conflitos. O workspace principal de outros trabalhos e os documentos não rastreados foram preservados.
+
+Verificação repetida na main: backend 1.375 aprovados/126 opt-in ignorados; integração Radar/PostgreSQL 144 aprovados; runtime Python 375 aprovados/sete opcionais ignorados; frontend 1.174 aprovados; builds e orçamento do bundle aprovados; manifesto e regeneração dos contratos sem divergência. A checagem de lint identificou três imports com tipo `any` nos próprios testes novos; foram substituídos por imports tipados. Lint baseline e TypeScript passaram sem aumentar a baseline ou alterar componentes de produção.
+
+Enviar a main não ativa o funil, não configura provedores e não executa o piloto. A conclusão do deploy automático e o funcionamento em produção exigem confirmação posterior; não são inferidos desses testes locais.
