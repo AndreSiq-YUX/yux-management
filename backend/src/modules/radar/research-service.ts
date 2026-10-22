@@ -696,9 +696,9 @@ export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,inp
           run.output=prepareRadarDecisionRecovery(run.output,run.calls,{requestId:input.analysisRefreshRequestId??input.requestId,maximum:policy.limits.maxDecisionCallsPerCompany})
           await client.query('UPDATE public.radar_candidate_research_runs SET output = $3::jsonb WHERE id=$1 AND organization_id=$2',[run.id,input.organizationId,JSON.stringify(run.output)])
         }
-        if(input.allowSemanticRefresh&&run.calls.presence?.status==='completed')run.calls.presence.refreshAuthorized=true
-        if(input.allowSemanticRefresh&&(run.calls.presence?.status==='completed'||run.calls.semantic?.status==='completed')) {
-          if(run.calls.semantic?.status==='completed')run.calls.semantic.refreshAuthorized=true
+        if(input.allowSemanticRefresh&&run.calls.presence)run.calls.presence.refreshAuthorized=true
+        if(input.allowSemanticRefresh&&(run.calls.presence||run.calls.semantic)) {
+          if(run.calls.semantic)run.calls.semantic.refreshAuthorized=true
           await client.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND organization_id=$2',
             [run.id,input.organizationId,JSON.stringify(run.calls)])
         }
@@ -1035,7 +1035,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
       },
       resolvePresence:async(evidence,evidenceHash,version)=>{
         const bindings=run.calls.presence&&radarEvidenceBindingMatch(run.calls.presence,version)
-        await recoverAnalysis('presence',bindings?run.calls.presence.evidenceHash??evidenceHash:evidenceHash)
+        await recoverAnalysis('presence',run.calls.presence?.evidenceHash??evidenceHash)
         const previous=run.calls.presence
         if(previous?.status==='completed'&&bindings){
           const result=remapRadarEvidenceResult(previous.result,bindings,version.bindings)
@@ -1083,7 +1083,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
       },
       qualify: async (pages,evidenceHash,version) => {
         const bindings=run.calls.semantic&&radarEvidenceBindingMatch(run.calls.semantic,version)
-        await recoverAnalysis('semantic',bindings?run.calls.semantic.evidenceHash??evidenceHash:evidenceHash)
+        await recoverAnalysis('semantic',run.calls.semantic?.evidenceHash??evidenceHash)
         // Dedicated opt-in route; runtime refuses unconfigured global/legacy inheritance for this case.
         const previousSemantic=run.calls.semantic
         if(previousSemantic?.status==='completed'&&bindings){

@@ -80,6 +80,18 @@ it('revalidates a completed raw profile receipt claim by claim without another A
 })
 const start=(pool:ResearchPool,organizationId='org',configurationRevision=2)=>startRadarCandidateResearch(pool as never,admin,{organizationId,candidateId:'candidate',configurationRevision})
 const pages=[{url:'https://alfa.example',observedAt:'2026-10-08',text:'Empresa Alfa CNPJ 12.345.678/0001-90',html:'<a href="tel:41999998888">Contato</a>'}]
+it('recovers the old exact receipt before deciding whether the changed criteria need an authorized refresh',async()=>{
+ const pool=new ResearchPool();pool.researchConfiguration={research:{enabled:true,semanticQualificationEnabled:true}};
+ await start(pool);pool.run!.status='partial';pool.run!.output={readingComplete:true,readerVersion:4,discoveryLocked:true,pages,discovery:{association:'confirmed',websiteUrl:pages[0].url,hits:[],suggestions:[],limitations:[],queries:1}};
+ pool.run!.calls.semantic={source:'radar_business_qualification',status:'uncertain',requestId:'old-paid-policy',evidenceHash:'old-policy-hash'};
+ pool.receiptResult={targetStatus:'review',productFit:'unknown',reasons:[],evidenceIds:[],limitations:[]};
+ await startRadarCandidateResearch(pool as never,admin,{organizationId:'org',candidateId:'candidate',configurationRevision:2,operation:'resume',requestId:'approved-resume',allowSemanticRefresh:true});
+ const runtime=vi.fn(async()=>({targetStatus:'confirmed',productFit:'high',reasons:[],evidenceIds:[],limitations:[]}));
+ await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:'run',organizationId:'org'},undefined,{runtime:runtime as never});
+ expect(pool.run!.calls.semantic).toMatchObject({status:'completed',previous:{status:'completed',requestId:'old-paid-policy'}});
+ expect(runtime).toHaveBeenCalledTimes(1);
+ expect(pool.queries.some(q=>q.sql.includes('FROM public.radar_analysis_receipts')&&q.params.includes('old-paid-policy'))).toBe(true);
+});
 it('explicit resume requeues a terminal commercial gap in the same run, once per approved intent',async()=>{
  const pool=new ResearchPool();pool.researchConfiguration={funnel:{enabled:true},research:{enabled:true,semanticQualificationEnabled:true}};
  await start(pool);pool.run!.status='succeeded';pool.run!.request_id='capture-item';
