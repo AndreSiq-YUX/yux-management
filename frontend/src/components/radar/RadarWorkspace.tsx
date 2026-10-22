@@ -499,13 +499,16 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,technical
 
     try {
       setCreating(true)
+      const configuration=defaultRadarSearchConfiguration()
+      configuration.cities=[{city:form.targetCity.trim(),state:form.targetState.trim().toUpperCase()}]
+      if(form.campaignType==='recently_opened')configuration.openingFrom=new Date(Date.now()-30*86400000).toISOString().slice(0,10)
       const campaign = await radarService.createCampaign({
         organizationId,
         name: form.name,
-        campaignType: form.campaignType,
+        campaignType: 'regional_b2b',
         targetSegment: form.targetSegment,
-        targetCity: form.targetCity,
-        targetState: form.targetState,
+        targetStates: [configuration.cities[0].state],
+        searchConfiguration:configuration,
         offerType: form.offerType,
         dailyLimit: form.dailyLimit,
         targetKeywords: [form.targetSegment],
@@ -1293,7 +1296,7 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,technical
             <h2 className="font-semibold text-slate-950">Pesquisa da campanha</h2>
             <details className="mt-2 text-sm"><summary className="cursor-pointer text-slate-600">Ver público, oferta e critérios utilizados</summary><p className="mt-1 text-sm text-slate-600">Público: {selectedCampaign.targetSegment}. Oferta: {selectedCampaign.offerType}. CNAEs: {selectedCampaign.targetCnaes.join(', ') || 'sem filtro'}. A coleta não inicia contatos automáticos.</p>
             <p className="mt-1 text-xs text-slate-500">Produtos e serviços: {selectedCampaign.productFocus.join(', ') || 'não informados'}. Os critérios completos podem ser editados antes de executar a pesquisa.</p></details>
-            {canEditConfiguration&&<RadarCaptureControls canAuthorizeAnalysisRefresh={researchAvailability?.semanticQualificationEnabled===true} maximum={operationalPolicy?.limits.maxNewCompaniesPerLot} scopeKey={`${organizationId}:${selectedCampaign.id}:${selectedCampaign.configurationRevision??1}`} operation={captureOperation} loading={captureLoading||!operationalPolicy&&!operationalPolicyError} busy={captureBusy||Boolean(actionLoading)} available={!!researchAvailability?.allowed&&!!selectedCampaign.searchConfiguration?.research?.enabled&&!getSourceBlockedReason(cnpjaSource)} error={captureError||operationalPolicyError} onStart={startCapture} onResume={resumeCapture} onRefresh={()=>{reloadOperationalPolicy();setCaptureRefresh(value=>value+1)}}/>}
+            {canEditConfiguration&&<RadarCaptureControls canAuthorizeAnalysisRefresh={researchAvailability?.semanticQualificationEnabled===true} maximum={operationalPolicy?.limits.maxNewCompaniesPerLot} scopeKey={`${organizationId}:${selectedCampaign.id}:${selectedCampaign.configurationRevision??1}`} operation={captureOperation} loading={captureLoading||!operationalPolicy&&!operationalPolicyError} busy={captureBusy||Boolean(actionLoading)} available={!!researchAvailability?.allowed&&!!selectedCampaign.searchConfiguration?.research?.enabled&&(selectedCampaign.searchConfiguration?.discovery?.enabled===true||!getSourceBlockedReason(cnpjaSource))} error={captureError||operationalPolicyError} onStart={startCapture} onResume={resumeCapture} onRefresh={()=>{reloadOperationalPolicy();setCaptureRefresh(value=>value+1)}}/>}
             {canEditConfiguration&&captureStartConsent&&captureStartConsent.scope===sidebarScope.current&&<RadarCaptureContinuationDialog key={`start:${captureStartConsent.preflight.stateId}`} mode="start" open preflight={captureStartConsent.preflight} busy={captureBusy} error={captureError} onCancel={()=>{setCaptureStartConsent(null);setCaptureError('')}} onConfirm={async()=>{
               const consent=captureStartConsent
               const input={...consent.input,continuationAuthorizations:consent.preflight.continuations?.filter(s=>s.requiresRestartConfirmation).map(s=>({scopeKey:s.scopeKey,expectedStateId:s.stateId}))}
@@ -1656,6 +1659,7 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,technical
           canConfigureProviders={context.role?.key==='yux_admin'}
           busy={creating} readOnly={!canEditConfiguration&&screen==='configuration'} canUseCrm={canEditConfiguration&&Boolean(canUseCrm)} onSubmit={saveCampaignConfiguration} onCancel={() => navigateTo(selectedCampaignId??'')} />}
         {!activeConfigurationEditor && <form aria-label="Criação rápida local" className="mt-3 grid gap-3 md:grid-cols-6" onSubmit={createCampaign}>
+          <p className="text-sm text-slate-600 md:col-span-6">O mesmo fluxo completo, limitado à cidade escolhida. Empresas recém-abertas usa inicialmente os últimos 30 dias; você pode ajustar o período na configuração.</p>
           <select
             className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm md:col-span-2"
             value={form.campaignType}
@@ -1670,7 +1674,7 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,technical
           <Input placeholder="UF" value={form.targetState} required maxLength={2} onChange={event => setForm({ ...form, targetState: event.target.value.toUpperCase() })} />
           <Input className="md:col-span-2" placeholder="Oferta ou objetivo comercial" value={form.offerType} required
             onChange={event => setForm({ ...form, offerType: event.target.value })} />
-          <Input type="number" min="1" max="10" placeholder="Limite" value={form.dailyLimit} required onChange={event => setForm({ ...form, dailyLimit: Number(event.target.value) })} />
+          <Input type="number" min="1" max={operationalPolicy?.limits.maxCampaignDailyQueries} placeholder="Limite" value={form.dailyLimit} required onChange={event => setForm({ ...form, dailyLimit: Number(event.target.value) })} />
           <Button type="submit" disabled={!canManage || creating}>
             <Plus className="mr-2 h-4 w-4" />
             {creating ? 'Criando...' : 'Criar'}

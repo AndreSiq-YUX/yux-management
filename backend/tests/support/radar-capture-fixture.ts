@@ -21,7 +21,8 @@ export async function captureFixture(){
   const heartbeat=randomUUID()
   await pool.query("INSERT INTO public.worker_process_heartbeats(instance_id,queue_classes,started_at,last_seen_at,metadata) VALUES($1,ARRAY['external'],NOW(),NOW(),'{}')",[heartbeat])
   const campaign=await createRadarCampaign(pool,admin,{organizationId,name:`Capture ${randomUUID()}`,campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],offerType:'Oferta',dailyLimit:1000,budgetLimit:100,
-    searchConfiguration:{sources:{enrichWithBrave:false},batch:{pageSize:10,maxPagesPerScope:5,maxQueriesPerBatch:5},research:{enabled:true,webSearchEnabled:true}}} as never)
+    // These fixtures exercise the original persisted v1 capture protocol, not new-campaign defaults.
+    searchConfiguration:{funnel:{enabled:false},discovery:{enabled:false},sources:{enrichWithBrave:false},batch:{pageSize:10,maxPagesPerScope:5,maxQueriesPerBatch:5},research:{enabled:true,webSearchEnabled:true,webSearchProviders:['brave_web_search'],presenceResolutionEnabled:false,semanticQualificationEnabled:false,profileEnabled:false,inspectLinkedSocialProfiles:false,deepResearchEnabled:false,completion:{enabled:false}}}} as never)
   return {pool,campaign,async close(){await pool.query('DELETE FROM public.radar_campaigns WHERE id=$1',[campaign.id]);await pool.query('DELETE FROM public.worker_process_heartbeats WHERE instance_id=$1',[heartbeat]);await pool.end()}}
 }
 export function company(){return {taxId:String(randomInt(10_000_000_000_000,99_999_999_999_999)),tradeName:'Empresa sintética',legalName:'Empresa sintética LTDA',city:'Curitiba',state:'PR',cnaes:[],websiteStatus:'unknown' as const,rawPayload:{}}}

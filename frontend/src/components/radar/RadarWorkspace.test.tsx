@@ -23,6 +23,7 @@ vi.mock('@/stores/platformStore', () => ({ usePlatformContext: () => state.conte
 vi.mock('@/components/strategy-engine/StrategyContextPanel', () => ({StrategyContextPanel:() => null}))
 vi.mock('@/services/radarService', () => ({radarService:{
   getCampaigns:vi.fn(async () => []),getDataSources:vi.fn(async () => []),updateCampaign:vi.fn(),
+  createCampaign:vi.fn(),
   getOperationalPolicy:vi.fn(async()=>radarPolicyFixture),
   getCommercialCampaigns:vi.fn(async()=>[]),getCommercialCandidates:vi.fn(async()=>[]),getCommercialCapture:vi.fn(async()=>({operation:null})),getCommercialResearch:vi.fn(async()=>null),getCommercialHistory:vi.fn(async()=>[]),getCommercialResearchMetrics:vi.fn(async()=>({companies:0,identified:0,withUsefulContact:0,readyForReview:0})),getCommercialOpportunities:vi.fn(async()=>[]),getCommercialFeedback:vi.fn(async()=>[]),
   commercialOpportunityAction:vi.fn(async()=>{}),commercialCandidateAction:vi.fn(async()=>{}),
@@ -45,6 +46,46 @@ vi.mock('@/services/radarService', () => ({radarService:{
 }}))
 
 describe('Radar campaign creation entry point', () => {
+  it('does not require the legacy registry source to start an available adaptive campaign',async()=>{
+    const config=defaultRadarSearchConfiguration(),host=document.createElement('div'),root=createRoot(host)
+    const previousAvailability=vi.mocked(radarService.getResearchAvailability).getMockImplementation()!
+    vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{...campaignDefaults,id:'adaptive',organizationId:'org',name:'Pesquisa adaptativa',campaignType:'regional_b2b',targetSegment:'Manutenção',targetStates:['SC'],targetCnaes:[],targetKeywords:[],productFocus:[],offerType:'Equipamentos',dailyLimit:100,status:'draft',createdAt:'',updatedAt:'',configurationRevision:1,searchConfiguration:config} as RadarCampaign])
+    vi.mocked(radarService.getDataSources).mockResolvedValueOnce([{id:'serper',sourceType:'serper_web_search',sourceKey:'serper_web_search',displayName:'Web',enabled:true,isPaid:true,requiresSecret:true,defaultCostPerUnit:.01,rateLimitPerDay:1000,createdAt:'',updatedAt:''} as RadarDataSource])
+    vi.mocked(radarService.getResearchAvailability).mockResolvedValue({allowed:true,reasons:[],estimates:[],maximumCostPerCandidate:.03,maxQueriesPerCandidate:3,semanticQualificationEnabled:true})
+    try{
+      await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="adaptive"/>))
+      const button=host.querySelector<HTMLButtonElement>('form[aria-label="Pesquisar novas empresas"] button[type="submit"]')!
+      expect(button).not.toBeNull();expect(button.disabled).toBe(false)
+      expect(radarService.startCaptureOperation).not.toHaveBeenCalled()
+    }finally{act(()=>root.unmount());vi.mocked(radarService.getResearchAvailability).mockImplementation(previousAvailability)}
+  })
+  it.each(['local_niche','recently_opened'])('uses the complete configurable pipeline for quick %s creation',async kind=>{
+    const host=document.createElement('div'),root=createRoot(host)
+    vi.mocked(radarService.createCampaign).mockResolvedValue({...campaignDefaults,id:'new',organizationId:'org',name:'Nova pesquisa',campaignType:'regional_b2b',targetSegment:'Manutenção',targetStates:['SC'],targetCnaes:[],targetKeywords:[],productFocus:[],offerType:'Equipamentos',dailyLimit:10,status:'draft',createdAt:'',updatedAt:'',searchConfiguration:defaultRadarSearchConfiguration()} as RadarCampaign)
+    try{
+      await act(async()=>root.render(<RadarWorkspace/>))
+      await act(async()=>[...host.querySelectorAll('button')].find(item=>item.textContent==='Nova campanha')!.click())
+      const mode=host.querySelector('select')!
+      await act(async()=>{mode.value='local';mode.dispatchEvent(new Event('change',{bubbles:true}))})
+      const form=host.querySelector('form[aria-label="Criação rápida local"]')!
+      expect(form.querySelector<HTMLInputElement>('input[placeholder="Limite"]')?.max).toBe('1000')
+      await act(async()=>{
+        const type=form.querySelector('select')!;type.value=kind;type.dispatchEvent(new Event('change',{bubbles:true}))
+        for(const [placeholder,value] of [['Nome','Nova pesquisa'],['Nicho','Manutenção'],['Cidade','Joinville'],['UF','SC'],['Oferta ou objetivo comercial','Equipamentos']] as const){
+          const field=form.querySelector(`input[placeholder="${placeholder}"]`)!
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(field,value)
+          field.dispatchEvent(new Event('input',{bubbles:true}))
+        }
+      })
+      await act(async()=>form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
+      expect(radarService.createCampaign).toHaveBeenCalledWith(expect.objectContaining({campaignType:'regional_b2b',targetStates:['SC'],targetSegment:'Manutenção',
+        searchConfiguration:expect.objectContaining({cities:[{city:'Joinville',state:'SC'}],discovery:expect.objectContaining({enabled:true}),funnel:expect.objectContaining({enabled:true}),research:expect.objectContaining({enabled:true,presenceResolutionEnabled:true,semanticQualificationEnabled:true,deepResearchEnabled:true})})}))
+      const payload=vi.mocked(radarService.createCampaign).mock.calls.at(-1)![0]
+      expect(payload.targetCity).toBeUndefined();expect(payload.targetState).toBeUndefined()
+      if(kind==='recently_opened')expect(payload.searchConfiguration?.openingFrom).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      expect(radarService.startCaptureOperation).not.toHaveBeenCalled()
+    }finally{act(()=>root.unmount())}
+  })
   it('recovers the saved per-company outcome on reload without sending another research request',async()=>{
     vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{...campaignDefaults,id:'campaign',organizationId:'org',name:'Campanha',campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',dailyLimit:100,createdAt:'',updatedAt:'',configurationRevision:2,searchConfiguration:defaultRadarSearchConfiguration()} as RadarCampaign])
     vi.mocked(radarService.getLatestResearchRequest).mockResolvedValueOnce({request:{requestId:'saved',state:'waiting',items:[{candidateId:'candidate',state:'waiting',message:'Pesquisa parcial.',feedback:{schemaVersion:1,status:'incomplete',updatedFields:['email'],unresolvedFields:[],lastAttemptAt:null,nextAction:'continue'}}]}})

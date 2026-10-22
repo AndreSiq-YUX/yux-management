@@ -49,7 +49,7 @@ import { searchRadarPlaces, type RadarPlaceProvider } from './place-providers.js
 import { assertLicensedBraveRetention, bravePlaceMatchesLocation, selectBraveBusinessMatch } from './licensed-brave.js'
 import { inspectRadarBusinessSite, type RadarBusinessSiteInspection } from './b2b-site-inspection.js'
 import { triageRadarBusiness } from './business-triage.js'
-import { buildRadarBraveQuery, buildRadarDiscoveryScopes, resolveRadarSearchConfiguration,
+import { buildRadarBraveQuery, buildRadarDiscoveryScopes, resolveRadarSearchConfiguration, prepareNewRadarSearchConfiguration,radarStateSchema,
   type RadarSearchConfiguration } from './search-configuration.js'
 import { assertB2bDeliveryRights, formatB2bProspectCsv, type B2bProspectCsvRow } from './b2b-delivery.js'
 import type { RadarContactEvidence } from './contact-evidence.js'
@@ -191,7 +191,7 @@ export async function createRadarCampaign(pool: pg.Pool, user: AuthUser, input: 
     throw Object.assign(new Error('radar_source_internal_admin_only'), { statusCode: 403 })
   }
   const policy=await loadRadarOperationalLimits(pool)
-  const configuration=resolveRadarSearchConfiguration(input.searchConfiguration)
+  const configuration=prepareNewRadarSearchConfiguration(input.searchConfiguration)
   validateRadarOperationalConfiguration(configuration,policy.limits,input.dailyLimit)
   // A newly created campaign has no human-reviewed calibration to authorize exclusion.
   if(configuration.funnel.enabled&&(configuration.funnel.g1.mode==='enforce'||configuration.funnel.g5.mode==='enforce'))throw Object.assign(Error('radar_campaign_calibration_required'),{statusCode:409})
@@ -218,7 +218,7 @@ export async function createRadarCampaign(pool: pg.Pool, user: AuthUser, input: 
       input.budgetLimit ?? null,
       input.dailyLimit ?? 10,
       user.id,
-      JSON.stringify(resolveRadarSearchConfiguration(input.searchConfiguration)),
+      JSON.stringify(configuration),
     ],
   )
   return mapCampaign(result.rows[0])
@@ -291,9 +291,24 @@ export async function duplicateRadarCampaign(pool: pg.Pool, user: AuthUser,
   )
   if (!result.rows[0]) throw Object.assign(new Error('radar_campaign_not_found'), { statusCode: 404 })
   const source = mapCampaign(result.rows[0])
+  const configuration=resolveRadarSearchConfiguration(source.searchConfiguration)
+  // A copy is a new campaign: inherit business/capacity choices, not a legacy
+  // disabled workflow or the original campaign's calibration authority.
+  configuration.discovery.enabled=true
+  configuration.sources.inspectWebsite=true
+  configuration.funnel.enabled=true
+  for(const gate of ['g1','g5'] as const)configuration.funnel[gate].mode='shadow'
+  configuration.funnel.g3.mode='effective'
+  configuration.funnel.agentPolicy.mode='escalation'
+  for(const flag of ['enabled','webSearchEnabled','presenceResolutionEnabled','semanticQualificationEnabled','profileEnabled','inspectLinkedSocialProfiles','deepResearchEnabled'] as const)configuration.research[flag]=true
+  configuration.research.completion.enabled=true
+  const wasLocal=source.campaignType!=='regional_b2b'
+  if(wasLocal)configuration.cities=[{city:source.targetCity,state:radarStateSchema.parse(source.targetState)}]
+  if(source.campaignType==='recently_opened'&&!configuration.openingFrom)configuration.openingFrom=new Date(Date.now()-30*86400000).toISOString().slice(0,10)
   return createRadarCampaign(pool, user, { ...source, organizationId: input.organizationId,
-    name: input.name?.trim() || `${source.name} — cópia`, targetCity: source.targetCity || undefined,
-    targetState: source.targetState || undefined })
+    campaignType:'regional_b2b',targetStates:wasLocal?[source.targetState]:source.targetStates,
+    searchConfiguration:configuration,
+    name: input.name?.trim() || `${source.name} — cópia`, targetCity:undefined,targetState:undefined })
 }
 
 export async function listRadarDataSources(pool: pg.Pool, user: AuthUser, organizationId: string) {

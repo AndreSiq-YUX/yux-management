@@ -44,6 +44,12 @@ O intake não usa mais um formulário como fronteira principal. A conversa colet
 
 O Action Engine não implementa retrieval paralelo. O Harness existente seleciona Strategy Packs, conteúdo YUX aprovado e conhecimento do cliente; o backend revalida tenant, publicação, visibilidade, versão e content hash antes de congelar o snapshot usado pelo planner. A especificação delta está em `docs/superpowers/specs/2026-08-31-yux-conversational-mission-harness-integration-design.md`.
 
+### Radar Comercial — documentação para integração futura (22/10/2026)
+
+O [guia funcional do Radar](knowledge/radar-commercial-action-engine.md) descreve o público, parâmetros, pesquisa completa, lotes, retomada, atualização, qualidade e revisão. É o documento preparado para futura publicação no conhecimento da IA. A [referência técnica de execução](radar-commercial-execution-reference.md) é exclusiva do Admin/equipe técnica e lista contratos, endpoints, escopos de limites e requisitos da futura integração.
+
+Os documentos foram preparados localmente; não foram ingeridos/publicados no conhecimento do sistema nesta entrega. Por decisão do usuário, essa integração será feita em outra frente. O registry atual não registra capabilities do Radar; conhecer a documentação não permite ao Action Engine criar campanhas ou iniciar lotes. `campaign.create_draft` não deve ser usado como substituto de campanha do Radar.
+
 ## 3. Mapa de código
 
 | Responsabilidade | Local |

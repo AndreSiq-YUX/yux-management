@@ -10,9 +10,13 @@
 - `docs/superpowers/plans/2026-08-14-yux-action-engine-mvp.md`
 - `docs/yux-strategy-engine.md`
 - `docs/yux-agent-harness-runtime.md`
+- [Radar Comercial — funcionalidades e operação](knowledge/radar-commercial-action-engine.md)
+- [Radar Comercial — referência técnica para futura integração](radar-commercial-execution-reference.md) (Admin/equipe técnica)
 - `docs/superpowers/plans/2026-08-03-orquestracao-integrada-de-leads.md`
 
 ## 1. Leitura executiva
+
+Atualização de 22/10/2026: a documentação do Radar foi preparada para apoiar uma integração futura. Não representa conhecimento já publicado nem capability executável do Action Engine; a implementação de ações do Radar será realizada em frente separada.
 
 A resposta analisada propõe uma mudança correta e potencialmente fundadora para a YUX: o Hub atual não deve ser substituído por uma interface conversacional nem refeito como “um agente”. Ele deve continuar sendo o plano de controle da operação, enquanto uma nova camada passa a coordenar suas capacidades a partir de resultados empresariais.
 

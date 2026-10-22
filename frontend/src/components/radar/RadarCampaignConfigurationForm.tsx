@@ -103,6 +103,7 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
 
   return <form onSubmit={submit} className="mt-4 space-y-5" aria-label="Configuração da pesquisa">
     <p className="text-sm text-slate-600">Os critérios pertencem a esta campanha. Nenhum segmento, cidade ou produto é imposto pelo sistema. Salvar não executa consultas.</p>
+    {!initialCampaign&&<p className="rounded-md border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">Pesquisa completa por padrão: descoberta de empresas, identificação, site, contatos, sinais de atividade e análise comercial. Investigações adicionais são usadas quando necessárias, respeitando a disponibilidade e os limites autorizados.</p>}
     {storageKey&&<p className="text-xs text-slate-600">As edições ficam como rascunho nesta aba por até 24 horas. Sair não altera a campanha salva nem inicia buscas.</p>}
     {draftNotice&&<div role="status" className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm">Rascunho recuperado — revise e salve para aplicar.<Button type="button" variant="ghost" onClick={discardDraft}>Descartar rascunho</Button></div>}
     {draftError&&<p role="alert" className="text-sm text-amber-800">Não foi possível preservar o rascunho nesta aba. Salve antes de sair.</p>}

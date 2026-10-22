@@ -45,7 +45,7 @@ import {
   updateRadarCampaign,
   type RadarAnalysisRequest,
 } from './repository.js'
-import { radarSearchConfigurationSchema, radarStateSchema } from './search-configuration.js'
+import { radarSearchConfigurationSchema, radarNewSearchConfigurationSchema, radarStateSchema } from './search-configuration.js'
 import { getRadarCandidateResearch,reopenRadarResearchReview,listRadarResearchHistory } from './research-service.js'
 import {queueRadarResearchRequest,radarResearchRequestSchema,getRadarResearchRequest,getLatestRadarResearchRequest,enqueueRadarResearchRequest,authorizeRadarResearchBudget,radarResearchBudgetAuthorizationSchema} from './research-requests.js'
 import {randomUUID} from 'node:crypto'
@@ -80,7 +80,7 @@ const uuid = z.string().uuid()
 
 const campaignQuerySchema = z.object({ organizationId: uuid })
 const dataSourceQuerySchema = z.object({ organizationId: uuid })
-const createCampaignSchema = z.object({
+const campaignBaseSchema = z.object({
   organizationId: uuid,
   name: z.string().min(1),
   campaignType: z.enum(['local_niche', 'recently_opened', 'regional_b2b']).optional(),
@@ -95,7 +95,8 @@ const createCampaignSchema = z.object({
   offerType: z.string().min(1),
   budgetLimit: z.number().min(0).optional(),
   dailyLimit: z.number().int().positive().safe().optional(),
-}).superRefine((input, context) => {
+})
+const validateCampaignGeography=(input:z.infer<typeof campaignBaseSchema>,context:z.RefinementCtx)=>{
   if (input.campaignType === 'regional_b2b') {
     if (!input.targetStates?.length || input.targetCity || input.targetState) {
       context.addIssue({ code: 'custom', message: 'regional_search_requires_states_without_single_city' })
@@ -112,7 +113,9 @@ const createCampaignSchema = z.object({
   } else if (!input.targetCity || !input.targetState || input.targetStates?.length) {
     context.addIssue({ code: 'custom', message: 'local_campaign_requires_city_and_state' })
   }
-})
+}
+const createCampaignSchema=campaignBaseSchema.superRefine(validateCampaignGeography)
+const newCampaignSchema=campaignBaseSchema.extend({searchConfiguration:radarNewSearchConfigurationSchema.optional()}).superRefine(validateCampaignGeography)
 const addCompanySchema = z.object({
   organizationId: uuid,
   legalName: z.string().optional(),
@@ -373,7 +376,7 @@ export async function registerRadarRoutes(app: FastifyInstance) {
   app.post('/campaigns', async (request, reply) => {
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
-    const parsed = createCampaignSchema.safeParse(request.body)
+    const parsed = newCampaignSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_radar_campaign_payload' })
     return reply.code(201).send(await createRadarCampaign(app.pg, user, parsed.data))
   })

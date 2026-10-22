@@ -9,6 +9,7 @@ import type {AuthUser} from '../../src/auth/routes.js'
 import {connectionString,activateCaptureSearch} from '../support/radar-capture-fixture.js'
 import {dispatchRadarResearchRequest} from '../../src/modules/radar/research-requests.js'
 import {executeRadarCandidateResearch} from '../../src/modules/radar/research-service.js'
+import {resolveRadarSearchConfiguration} from '../../src/modules/radar/search-configuration.js'
 
 describe.skipIf(!connectionString)('Radar commercial HTTP audience with isolated PostgreSQL',()=>{
  const pool=new pg.Pool({connectionString});let app:Awaited<ReturnType<typeof buildServer>>,apiPool:pg.Pool,campaignId:string,candidateId:string
@@ -29,6 +30,25 @@ describe.skipIf(!connectionString)('Radar commercial HTTP audience with isolated
  })
  afterAll(async()=>{await app?.close();await apiPool?.end();if(campaignId)await pool.query('DELETE FROM public.radar_campaigns WHERE id=$1',[campaignId]);await pool.end()})
  const get=(path:string,user:string)=>app.inject({method:'GET',url:`/api/radar${path}`,headers:{cookie:cookies.get(user)!}})
+ it('persists all default stages through HTTP for partial creation and keeps technical settings Admin-only',async()=>{
+  const response=await app.inject({method:'POST',url:'/api/radar/campaigns',headers:{cookie:cookies.get('yux_admin')!},payload:{organizationId:fixtureIds.organizationA,name:'Pesquisa completa independente',campaignType:'regional_b2b',targetStates:['SC'],targetSegment:'Manutenção industrial',offerType:'Equipamentos',searchConfiguration:{research:{contactPurpose:'sales'},cities:[{city:'Joinville',state:'SC'}]}}})
+  expect(response.statusCode).toBe(201)
+  const created=response.json()
+  try{
+   const saved=(await pool.query('SELECT search_configuration FROM public.radar_campaigns WHERE id=$1',[created.id])).rows[0].search_configuration
+   expect(saved).toMatchObject({funnel:{enabled:true,g1:{mode:'shadow'},g3:{mode:'effective'},g5:{mode:'shadow'}},discovery:{enabled:true},research:{enabled:true,webSearchEnabled:true,presenceResolutionEnabled:true,semanticQualificationEnabled:true,deepResearchEnabled:true,profileEnabled:true,contactPurpose:'sales',completion:{enabled:true,requireSegment:true}}})
+   for(const user of ['yux_admin','yux_operator','client_admin_A','client_member_A']){
+    const list=await get(`/campaigns?organizationId=${fixtureIds.organizationA}`,user)
+    expect(list.statusCode).toBe(200)
+    const record=list.json().find((item:{id:string})=>item.id===created.id)
+    expect(record).toMatchObject({id:created.id,name:'Pesquisa completa independente'})
+    if(user!=='yux_admin')expect(JSON.stringify(record)).not.toMatch(/webSearchProviders|perplexity_search|serper_web|funnel|sourceOrder|maxSearchQueries/)
+   }
+   expect((await get(`/campaigns?organizationId=${fixtureIds.organizationA}`,'client_admin_B')).statusCode).toBe(403)
+   for(const user of ['yux_operator','client_admin_A','client_member_A'])expect((await app.inject({method:'POST',url:'/api/radar/campaigns',headers:{cookie:cookies.get(user)!},payload:{organizationId:fixtureIds.organizationA,name:'Não autorizada',campaignType:'regional_b2b',targetStates:['SC'],targetSegment:'Manutenção',offerType:'Equipamentos'}})).statusCode).toBe(403)
+   expect(Number((await pool.query('SELECT COUNT(*) AS n FROM public.radar_capture_operations WHERE campaign_id=$1',[created.id])).rows[0].n)).toBe(0)
+  }finally{await pool.query('DELETE FROM public.radar_campaigns WHERE id=$1',[created.id])}
+ })
  it('keeps every new funnel and calibration endpoint exclusively in the system admin audience',async()=>{
   const query=`organizationId=${fixtureIds.organizationA}&campaignId=${campaignId}`;
   expect((await get(`/admin/campaign-funnel?${query}`,'yux_admin')).statusCode).toBe(200);
@@ -96,7 +116,8 @@ describe.skipIf(!connectionString)('Radar commercial HTTP audience with isolated
   await pool.query(`UPDATE public.platform_provider_connections SET public_config=public_config||'{"clientDeliveryLicensed":true}'::jsonb WHERE provider_key='brave_place'`)
   const candidate=(await pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'manual','Empresa Alfa',$3,'{"cnpj":"12345678000190","tradeName":"Empresa Alfa","city":"Curitiba","state":"PR"}') RETURNING id`,[fixtureIds.organizationA,campaignId,randomUUID()])).rows[0]
   try{
-   await pool.query(`UPDATE public.radar_campaigns SET search_configuration=jsonb_set(jsonb_set(jsonb_set(search_configuration,'{research,enabled}','true'),'{research,webSearchEnabled}','true'),'{sources,enrichWithBrave}','false') WHERE id=$1`,[campaignId])
+   // This saved-facts regression models an existing legacy campaign, not creation defaults.
+   await pool.query('UPDATE public.radar_campaigns SET search_configuration=$2 WHERE id=$1',[campaignId,JSON.stringify(resolveRadarSearchConfiguration({research:{enabled:true,webSearchEnabled:true},sources:{enrichWithBrave:false}}))])
    const requestId=randomUUID()
    const response=await app.inject({method:'POST',url:`/api/radar/campaigns/${campaignId}/research-requests`,headers:{cookie:cookies.get('client_admin_A')!},payload:{organizationId:fixtureIds.organizationA,criteriaRevision:1,requestId,candidateIds:[candidate.id],intent:'resume'}})
    expect(response.statusCode).toBe(202)

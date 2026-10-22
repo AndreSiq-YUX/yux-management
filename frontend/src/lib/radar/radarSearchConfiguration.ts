@@ -56,8 +56,11 @@ export type RadarSearchConfiguration = {
   exportFields: RadarExportField[]
 }
 export function defaultRadarSearchConfiguration(): RadarSearchConfiguration {
-  return { research: { enabled: false, webSearchEnabled: false,webSearchProviders:['brave_web_search'],localSearchOrder:'after_web_if_needed',completion:defaultRadarCompletionPolicy(), maxSearchQueriesPerCandidate: 3,
-    maxPagesPerCandidate: 4, freshnessDays: 7, semanticQualificationEnabled: false,presenceResolutionEnabled:false,inspectLinkedSocialProfiles:false,profileEnabled:false,contactPurpose:'general',sizeAssessment:defaultRadarSizePolicy() },
+  const gateCriteria=()=>({minPositiveSamples:30,minNegativeSamples:20,holdoutShare:.34,minHoldoutPositives:10,minHoldoutNegatives:7,maxFalseBlocksOnPositives:0 as const,minBlockPrecision:.95,minBlockRecall:.30,thresholdMargin:.05,minThreshold:.8,auditSampleRate:.2,auditSampleRateSteady:.1,autoShadowOnReversedAudits:1,autoShadowOnReopenRate:.05})
+  return {discovery:{enabled:true,sourceOrder:['osm_extract','serper_web_search','cnpja_advanced_search'],terms:[]},
+    funnel:{enabled:true,g0:{mode:'enforce'},g1:{mode:'shadow',criteria:gateCriteria()},g3:{mode:'effective'},g5:{mode:'shadow',criteria:gateCriteria()},agentPolicy:{mode:'escalation',timing:'after_first_cheap_attempt',priorities:['primary','secondary']},weakFitBudget:{maxCheapSearches:1,agent:false},depthByPriority:{primary:'full',secondary:'full'}},
+    research: { enabled: true, webSearchEnabled: true,webSearchProviders:['serper_web_search','brave_web_search','perplexity_search_fast'],localSearchOrder:'after_web_if_needed',completion:{...defaultRadarCompletionPolicy(),enabled:true,requireSegment:true}, maxSearchQueriesPerCandidate: 3,
+    maxPagesPerCandidate: 4, freshnessDays: 7, semanticQualificationEnabled: true,presenceResolutionEnabled:true,inspectLinkedSocialProfiles:true,profileEnabled:true,deepResearchEnabled:true,contactPurpose:'general',sizeAssessment:defaultRadarSizePolicy() },
     cities: [], activityScope: 'main_or_secondary', excludedNameTerms: [], registrationStatusIds: [2],
     braveQueryTemplate: '{name}', sources: { enrichWithBrave: true, inspectWebsite: true },
     qualification: { includeAnyTerms: [], includeAllTerms: [], excludeTerms: [], requireCnaeMatch: false,

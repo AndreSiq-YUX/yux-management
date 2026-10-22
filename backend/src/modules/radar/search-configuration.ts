@@ -107,6 +107,32 @@ export function resolveRadarSearchConfiguration(value?: unknown): RadarSearchCon
   return radarSearchConfigurationSchema.parse(value ?? {})
 }
 
+// Creation is a product default, not a migration of saved campaigns or consent.
+// Explicit Admin choices survive; omitted settings never select the legacy flow.
+const newCampaignDefaults = {
+  discovery:{enabled:true,sourceOrder:['osm_extract','serper_web_search','cnpja_advanced_search']},
+  funnel:{enabled:true,g0:{mode:'enforce'},g1:{mode:'shadow'},g3:{mode:'effective'},g5:{mode:'shadow'},agentPolicy:{mode:'escalation'}},
+  research:{enabled:true,webSearchEnabled:true,webSearchProviders:['serper_web_search','brave_web_search','perplexity_search_fast'],
+    presenceResolutionEnabled:true,semanticQualificationEnabled:true,profileEnabled:true,inspectLinkedSocialProfiles:true,deepResearchEnabled:true,
+    completion:{enabled:true,requireIdentity:true,requireSegment:true,minimumUsefulContacts:1}},
+}
+function mergeCreationDefaults(defaults:Record<string,unknown>,value:unknown):unknown {
+  if(value===undefined)return structuredClone(defaults)
+  if(!value||typeof value!=='object'||Array.isArray(value))return value
+  const result:Record<string,unknown>={...value}
+  for(const [key,fallback] of Object.entries(defaults)){
+    const supplied=result[key]
+    result[key]=fallback&&typeof fallback==='object'&&!Array.isArray(fallback)
+      ?mergeCreationDefaults(fallback as Record<string,unknown>,supplied)
+      :supplied===undefined?structuredClone(fallback):supplied
+  }
+  return result
+}
+export const radarNewSearchConfigurationSchema=z.preprocess(value=>mergeCreationDefaults(newCampaignDefaults,value),radarSearchConfigurationSchema)
+export function prepareNewRadarSearchConfiguration(value?:unknown):RadarSearchConfiguration {
+  return radarNewSearchConfigurationSchema.parse(value)
+}
+
 export function normalizeRadarText(value: string) {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim()

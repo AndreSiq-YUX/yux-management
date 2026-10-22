@@ -16,6 +16,26 @@ function campaignFixture(patch: Partial<RadarCampaign>): RadarCampaign {
 }
 
 describe('Radar campaign configuration panel', () => {
+  it('submits every research stage for a new campaign without technical activation',async()=>{
+    const host=document.createElement('div'),root=createRoot(host),submit=vi.fn(async()=>undefined)
+    try{
+      await act(async()=>root.render(<RadarCampaignConfigurationForm organizationId="another-org" canConfigureProviders busy={false} onSubmit={submit} onCancel={vi.fn()}/>))
+      await act(async()=>{
+        for(const [label,value] of [['Nome da pesquisa','Pesquisa de manutenção'],['Segmento ou público desejado','Manutenção'],['Oferta ou objetivo comercial','Equipamentos']] as const){
+          const field=[...host.querySelectorAll('label')].find(item=>item.textContent?.startsWith(label))!.querySelector('input')!
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(field,value)
+          field.dispatchEvent(new Event('input',{bubbles:true}))
+        }
+        ;[...host.querySelectorAll('label')].find(item=>item.textContent==='SC')!.querySelector('input')!.click()
+      })
+      await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
+      expect(submit).toHaveBeenCalledWith(expect.objectContaining({organizationId:'another-org',targetSegment:'Manutenção',targetStates:['SC'],searchConfiguration:expect.objectContaining({
+        discovery:expect.objectContaining({enabled:true}),funnel:expect.objectContaining({enabled:true,g3:{mode:'effective'}}),
+        research:expect.objectContaining({enabled:true,webSearchEnabled:true,presenceResolutionEnabled:true,semanticQualificationEnabled:true,profileEnabled:true,deepResearchEnabled:true,inspectLinkedSocialProfiles:true,completion:expect.objectContaining({enabled:true,requireSegment:true})}),
+      })}))
+      expect(submit).toHaveBeenCalledTimes(1)
+    }finally{act(()=>root.unmount())}
+  })
   beforeEach(()=>{sessionStorage.clear();vi.spyOn(radarService,'getOperationalPolicy').mockResolvedValue(radarPolicyFixture)})
   it('updates campaign ceilings after an Admin policy save, without starting a search',async()=>{
     const submit=vi.fn(async()=>{}),host=document.createElement('div'),root=createRoot(host)
@@ -28,6 +48,7 @@ describe('Radar campaign configuration panel', () => {
   })
   it('lets each campaign define completion requirements without requiring a website',async()=>{
     const config=defaultRadarSearchConfiguration(),submit=vi.fn(async()=>undefined),container=document.createElement('div'),root=createRoot(container)
+    config.research!.completion!.enabled=false // Existing saved campaign, before the complete creation default.
     await act(async()=>root.render(<RadarCampaignConfigurationForm organizationId="org" initialCampaign={campaignFixture({targetStates:['PE'],searchConfiguration:config})} busy={false} onSubmit={submit} onCancel={vi.fn()}/>))
     const toggle=container.querySelector<HTMLInputElement>('input[aria-label="Definir quando a pesquisa está suficiente"]')
     expect(toggle).not.toBeNull()
