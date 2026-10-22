@@ -14,7 +14,8 @@ import {loadRadarCapturePreflight,isRadarCaptureLimitPause,type PreflightDepende
 import {authorizeRadarCaptureLimits} from './capture-limit-authorization.js'
 import type {RadarCaptureLimits} from './capture-capacity.js'
 import {authorizeRadarContinuations,type ContinuationAuthorization} from './continuation-state.js'
-import {assessRadarCaptureResearch} from './capture-research-state.js'
+import {assessRadarCaptureResearch,canResumeRadarResearch} from './capture-research-state.js'
+import {resolveRadarSearchConfiguration} from './search-configuration.js'
 import {radarCaptureRefreshAuthorized} from './capture-analysis-authorization.js'
 import {reconcileRadarCaptureSummary,reconcileRadarCaptureItems} from './capture-reconciliation.js'
 import {createRadarResearchIntentBudget,loadRadarResearchBudgetPolicy} from './research-budget.js'
@@ -55,13 +56,13 @@ export async function dispatchRadarCaptureOperation(pool:pg.Pool,env:AppEnv,inpu
    let runId=item.run_id,status=item.run_status
    const expired=status==='running'&&item.lease_until&&new Date(item.lease_until).getTime()<Date.now()
    if(paused&&(!runId||status==='queued'||expired&&item.status==='queued'))continue
-   if(!runId||item.status==='queued'&&(assessRadarCaptureResearch({...item,status}).status!=='completed'&&!['queued','running'].includes(status)||expired)){
+   if(!runId||item.status==='queued'&&(!['queued','running'].includes(status)||expired)){
     try{
      // Admission is already complete. The child authorizes each unfinished effect;
      // exhausted search quota must not prohibit reading or analysing saved evidence.
      await authorizeRadarCapture(pool,input.organizationId,op.id,dependencies.availability,false)
      const allowSemanticRefresh=await radarCaptureRefreshAuthorized(pool,op,item.candidate_id)
-     const start=await(dependencies.startResearch??startRadarCandidateResearch)(pool,user,{organizationId:input.organizationId,candidateId:item.candidate_id,configurationRevision:op.configuration_revision,requestId:item.id,...(runId?{operation:'resume' as const}:{}),...(allowSemanticRefresh?{allowSemanticRefresh:true}:{})})
+     const start=await(dependencies.startResearch??startRadarCandidateResearch)(pool,user,{organizationId:input.organizationId,candidateId:item.candidate_id,configurationRevision:op.configuration_revision,requestId:item.id,...(runId?{operation:'resume' as const}:{}),...(allowSemanticRefresh?{allowSemanticRefresh:true,analysisRefreshRequestId:op.resume_request_id}:{})})
      runId=start.runId;status=start.status
      await pool.query('UPDATE public.radar_capture_items SET run_id=$3 WHERE id=$1 AND organization_id=$2 AND (run_id IS NOT DISTINCT FROM $4::uuid OR run_id=$3)',[item.id,input.organizationId,runId,item.run_id])
     }catch(cause){
@@ -146,7 +147,7 @@ export async function resumeRadarCaptureOperation(pool:pg.Pool,user:AuthUser,inp
   if(current.status!=='blocked'&&!limitPause&&(input.limitsAuthorization||input.restartExpiredContinuation||input.continuationAuthorizations?.length)){
    throw captureError(input.limitsAuthorization?'radar_capture_limits_confirmation_stale':'radar_capture_continuation_confirmation_stale')
   }
-  const recoverPartial=current.status==='partial'&&current.discovery_stopped
+  const recoverPartial=current.discovery_stopped&&(current.status==='partial'||current.status==='completed'&&input.allowSemanticRefresh)
   if(current.status==='blocked'||limitPause||recoverPartial){
    if(input.restartExpiredContinuation){
     const expiry=await inspectExpiredRadarCaptureContinuation(client,current,true)
@@ -160,11 +161,17 @@ export async function resumeRadarCaptureOperation(pool:pg.Pool,user:AuthUser,inp
    const continuationScopes=scopes.filter(scope=>preflight.continuations.some(s=>s.scopeKey===scope.key)).map(scope=>({...scope,organizationId:input.organizationId,campaignId:op.campaign_id,configurationRevision:input.configurationRevision}))
    if(current.pipeline_version===2)await authorizeRadarAdaptiveContinuations(client,{organizationId:input.organizationId,campaignId:op.campaign_id,configurationRevision:input.configurationRevision},policy,{authorizations:input.continuationAuthorizations,requestId:input.requestId,approvedBy:user.id})
    else await authorizeRadarContinuations(client,continuationScopes,policy,{authorizations:input.continuationAuthorizations,requestId:input.requestId,approvedBy:user.id})
-   const items=(await client.query("SELECT * FROM public.radar_capture_items WHERE operation_id=$1 AND (status='blocked' OR ($2 AND status='insufficient' AND run_id IS NOT NULL))",[op.id,current.discovery_stopped&&!limitPause])).rows
+   const researchPolicy=resolveRadarSearchConfiguration(campaign.search_configuration).research
+   const items=(await client.query(`SELECT item.*,to_jsonb(run) AS recovery_run FROM public.radar_capture_items item
+    LEFT JOIN public.radar_candidate_research_runs run ON run.id=item.run_id AND run.organization_id=item.organization_id
+    JOIN public.radar_candidate_records candidate ON candidate.id=item.candidate_id AND candidate.organization_id=item.organization_id
+    WHERE item.operation_id=$1 AND item.organization_id=$3 AND candidate.status='pending_review'
+      AND (item.status='blocked' OR ($2 AND item.run_id IS NOT NULL AND item.status IN ('insufficient','completed')))`,[op.id,current.discovery_stopped&&!limitPause,input.organizationId])).rows
+    .filter(item=>item.status==='blocked'||item.status==='insufficient'||input.allowSemanticRefresh&&item.recovery_run&&canResumeRadarResearch(item.recovery_run,researchPolicy))
    if(!limitPause&&items.length){
     const runs=(await client.query('SELECT id,calls FROM public.radar_candidate_research_runs WHERE organization_id=$1 AND id=ANY($2::uuid[])',[input.organizationId,items.map(item=>item.run_id).filter(Boolean)])).rows
     const budgetPolicy=await loadRadarResearchBudgetPolicy(client,{organizationId:input.organizationId,configuration:campaign.search_configuration,policy})
-    const grant={requestId:input.requestId,approvedBy:user.id,configurationRevision:input.configurationRevision,items:items.map(item=>({candidateId:item.candidate_id,runId:item.run_id,
+    const grant={requestId:input.requestId,approvedBy:user.id,configurationRevision:input.configurationRevision,preserveDiscovery:current.discovery_stopped&&admitted>=current.requested_count,items:items.map(item=>({candidateId:item.candidate_id,runId:item.run_id,
      budget:createRadarResearchIntentBudget({requestId:input.requestId,approvedBy:user.id,policy:budgetPolicy,previousRun:runs.find(run=>run.id===item.run_id) as {id:string;calls:Record<string,{source:string;status:string}>}|undefined})}))}
     await client.query('UPDATE public.radar_capture_operations SET research_budget_authorizations=research_budget_authorizations||$3::jsonb WHERE id=$1 AND organization_id=$2',[op.id,input.organizationId,JSON.stringify([grant])])
    }

@@ -94,6 +94,7 @@ class FakeRadarPool {
     if (sql.includes('SELECT DISTINCT cm.module_key')) return { rows: [] }
 
     if (normalized === 'BEGIN' || normalized === 'COMMIT' || normalized === 'ROLLBACK') return { rows: [] }
+    if (normalized.includes('FROM public.radar_capture_items')) return {rows:[]}
     if (normalized.includes('FROM public.radar_data_sources source')) return { rows: [
       { ...dataSourceRow(this), source_key: 'cnpja_advanced_search', source_type: 'cnpja_advanced_search',
         default_cost_per_unit: '0.025', organization_name: null },

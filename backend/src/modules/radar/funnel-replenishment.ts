@@ -25,6 +25,12 @@ export async function loadRadarFunnelLotProgress(db:Pick<pg.Pool,'query'>,op:Lot
  * repeats discovery, acquires credentials or calls any external service. */
 export async function syncRadarFunnelDiscovery(db:Pick<pg.Pool,'query'>,op:Lot){
  const progress=await loadRadarFunnelLotProgress(db,op)
+ // An explicit recovery of admitted companies is not permission to purchase
+ // replacement prospects, even when their final commercial fit is insufficient.
+ if(Array.isArray(op.research_budget_authorizations)&&op.research_budget_authorizations.some(grant=>grant.requestId===op.resume_request_id&&grant.preserveDiscovery===true)){
+  await db.query("UPDATE public.radar_capture_operations SET discovery_stopped=TRUE,discovery_reason='target_reached' WHERE id=$1 AND organization_id=$2",[op.id,op.organization_id])
+  op.discovery_stopped=true;op.discovery_reason='target_reached';return{...progress,replenish:false,remaining:0}
+ }
  if(progress.admitted<Number(op.requested_count))return progress
  if(progress.pending){
   await db.query("UPDATE public.radar_capture_operations SET discovery_stopped=TRUE,discovery_reason='waiting_initial_triage' WHERE id=$1 AND organization_id=$2",[op.id,op.organization_id])

@@ -20,6 +20,7 @@ export type RadarFunnelResearchState = {
     decisionCalls?: number;
     decisionRound?: number;
     decisionRecoveryRequestId?: string;
+    recoverySearchRequestId?: string;
     executedActions?: string[];
     pendingAction?: Action;
     cheapSearches?: number;
@@ -130,14 +131,14 @@ export async function runRadarFunnelDiscovery(identity: RadarBusinessIdentity, c
     const queries = radarFunnelResearchQueries(identity, state.emailSignal?.kind === 'corporate_candidate' ? state.emailSignal.domain : undefined);
     const short = state.initial?.effectiveMode === 'enforce' && state.initial.action === 'short_investigation';
     const queryCap = short ? configuration.funnel.weakFitBudget.maxCheapSearches : Number.MAX_SAFE_INTEGER;
-    const canSearch = (source: RadarSearchSource, query: string) => !state.agentAttempted && !state.agentCompleted && state.cheapSearches! < queryCap &&
+    const canSearch = (source: RadarSearchSource, query: string) => (!!state.recoverySearchRequestId || !state.agentAttempted && !state.agentCompleted) && state.cheapSearches! < queryCap &&
         !state.executedActions!.includes(`search_${source}_${hash(query)}`) && !deps.searchAttempted?.(source, query) &&
         (deps.searchCapacity ? hasRadarSearchCapacity(deps.searchCapacity(), source) : state.cheapSearches! < configuration.research.maxSearchQueriesPerCandidate) &&
         (deps.sourceCostsBrl === undefined || typeof deps.sourceCostsBrl[source] === 'number' && deps.sourceCostsBrl[source]! > 0);
     while (true) {
         deps.signal?.throwIfAborted();
         const directlyOwned = pages.find(owns);
-        if (!state.pendingAction && directlyOwned && !state.agentCompleted) { state.stopReason = 'identity_found'; break; }
+        if (!state.pendingAction && directlyOwned && (!state.agentCompleted||state.recoverySearchRequestId)) { state.stopReason = 'identity_found'; break; }
         const readOptions: Action[] = [];
         if (pages.filter(page => !page.limitation).length < configuration.research.maxPagesPerCandidate && pages.length < configuration.research.maxPagesPerCandidate * 2) {
             for (const hit of hits.filter(hit => isRadarInstitutionalSource(hit.url, { title: hit.title, text: hit.snippets.join(' ') }))) {

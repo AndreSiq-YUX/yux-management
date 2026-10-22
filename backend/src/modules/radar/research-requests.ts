@@ -145,7 +145,7 @@ export async function dispatchRadarResearchRequest(pool:pg.Pool,_env:AppEnv,inpu
     if(['unchanged','completed'].includes(item.state))continue
     try{
      if(!item.run_id){
-      const run=await startRadarCandidateResearch(pool,actor,{organizationId:input.organizationId,candidateId:item.candidate_id,configurationRevision:row.configuration_revision,requestId:item.id,operation:row.intent,...(allowSemanticRefresh&&grant!.candidateIds.includes(item.candidate_id)?{allowSemanticRefresh:true}:{})})
+      const run=await startRadarCandidateResearch(pool,actor,{organizationId:input.organizationId,candidateId:item.candidate_id,configurationRevision:row.configuration_revision,requestId:item.id,operation:row.intent,...(allowSemanticRefresh&&grant!.candidateIds.includes(item.candidate_id)?{allowSemanticRefresh:true,analysisRefreshRequestId:row.request_id}:{})})
       await pool.query('UPDATE public.radar_research_request_items SET run_id=$3,started_at=NOW(),updated_at=NOW() WHERE id=$1 AND organization_id=$2 AND run_id IS NULL',[item.id,input.organizationId,run.runId]);item.run_id=run.runId
       if(run.status==='succeeded'&&run.reused){await setItem(item,'unchanged');continue}
      }
@@ -153,7 +153,7 @@ export async function dispatchRadarResearchRequest(pool:pg.Pool,_env:AppEnv,inpu
      if(!run)throw failure('radar_research_request_run_missing')
      if(item.resume_pending){
       if(['queued','running'].includes(run.status))throw failure('radar_research_request_busy')
-      const resumed=await startRadarCandidateResearch(pool,actor,{organizationId:input.organizationId,candidateId:item.candidate_id,configurationRevision:row.configuration_revision,requestId:item.id,operation:'resume'})
+      const resumed=await startRadarCandidateResearch(pool,actor,{organizationId:input.organizationId,candidateId:item.candidate_id,configurationRevision:row.configuration_revision,requestId:item.id,operation:'resume',...(allowSemanticRefresh&&grant!.candidateIds.includes(item.candidate_id)?{allowSemanticRefresh:true,analysisRefreshRequestId:row.request_id}:{})})
       if(resumed.runId!==item.run_id)throw failure('radar_intent_budget_run_superseded')
       const changed=(await pool.query('UPDATE public.radar_research_request_items SET resume_pending=FALSE,dispatch_generation=dispatch_generation+1 WHERE id=$1 AND organization_id=$2 RETURNING dispatch_generation',[item.id,input.organizationId])).rows[0]
       item.dispatch_generation=changed.dispatch_generation

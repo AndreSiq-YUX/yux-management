@@ -3,6 +3,7 @@ import {validateRadarFunnelActivation} from './funnel-controls.js'
 import { randomUUID } from 'node:crypto'
 import {normalizeRadarCnpjIdentifier} from './cnpj-identifier.js'
 import {admitRadarCapturePage,captureError} from './capture-operation.js'
+import {reconcileRadarCaptureItems} from './capture-reconciliation.js'
 import {loadRadarCapturePageAccounting,type CaptureAccountingInput} from './capture-capacity.js'
 import {inspectRadarContinuationState} from './continuation-state.js'
 import type { AuthUser } from '../../auth/routes.js'
@@ -2135,7 +2136,13 @@ export async function importRadarCandidate(
 
 export async function discardRadarCandidate(pool: pg.Pool, user: AuthUser, candidateId: string) {
   await requireRadarScope(pool, user, { candidateId }, true)
-  const result = await pool.query<RadarCandidateRecordRow>(
+  const client=await pool.connect()
+  try{
+  await client.query('BEGIN')
+  const initial=(await client.query('SELECT organization_id,campaign_id FROM public.radar_candidate_records WHERE id=$1',[candidateId])).rows[0]
+  if(!initial)throw Object.assign(new Error('radar_candidate_not_found'),{statusCode:404})
+  await client.query('SELECT id FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[initial.campaign_id,initial.organization_id])
+  const result = await client.query<RadarCandidateRecordRow>(
     `UPDATE public.radar_candidate_records
      SET status = 'discarded', reviewed_by = $2, reviewed_at = NOW(), updated_at = NOW()
      WHERE id = $1
@@ -2143,7 +2150,10 @@ export async function discardRadarCandidate(pool: pg.Pool, user: AuthUser, candi
     [candidateId, user.id],
   )
   if (!result.rows[0]) throw Object.assign(new Error('radar_candidate_not_found'), { statusCode: 404 })
+  await reconcileRadarCaptureItems(client,{organizationId:initial.organization_id,candidateId})
+  await client.query('COMMIT')
   return mapCandidate(result.rows[0])
+  }catch(cause){await client.query('ROLLBACK');throw cause}finally{client.release()}
 }
 
 export async function listRadarDuplicateCandidates(pool: pg.Pool, user: AuthUser, campaignId: string) {

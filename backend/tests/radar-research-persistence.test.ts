@@ -80,6 +80,27 @@ it('revalidates a completed raw profile receipt claim by claim without another A
 })
 const start=(pool:ResearchPool,organizationId='org',configurationRevision=2)=>startRadarCandidateResearch(pool as never,admin,{organizationId,candidateId:'candidate',configurationRevision})
 const pages=[{url:'https://alfa.example',observedAt:'2026-10-08',text:'Empresa Alfa CNPJ 12.345.678/0001-90',html:'<a href="tel:41999998888">Contato</a>'}]
+it('explicit resume requeues a terminal commercial gap in the same run, once per approved intent',async()=>{
+ const pool=new ResearchPool();pool.researchConfiguration={funnel:{enabled:true},research:{enabled:true,semanticQualificationEnabled:true}};
+ await start(pool);pool.run!.status='succeeded';pool.run!.request_id='capture-item';
+ pool.run!.output={funnel:{fit:{reasonCode:'decision_limit_reached'},agentCompleted:true,decisionCalls:6},quality:{readyForReview:true},qualification:{targetStatus:'review',productFit:'possible'}};
+ pool.run!.calls=Object.fromEntries(Array.from({length:6},(_,i)=>['decision'+i,{status:'completed',source:'openrouter_decision'}]));
+ pool.run!.calls.semantic={status:'completed',source:'radar_business_qualification',requestId:'old-paid'};
+ const input={organizationId:'org',candidateId:'candidate',configurationRevision:2,requestId:'capture-item',operation:'resume' as const,allowSemanticRefresh:true,analysisRefreshRequestId:'approved-resume'};
+ expect(await startRadarCandidateResearch(pool as never,admin,input)).toMatchObject({runId:'run',status:'queued'});
+ expect(pool.run!.output.funnel).toMatchObject({decisionRound:1,decisionRecoveryRequestId:'approved-resume',agentCompleted:true});
+ expect(pool.run!.calls.semantic).toMatchObject({requestId:'old-paid',refreshAuthorized:true});
+ await startRadarCandidateResearch(pool as never,admin,input);
+ expect(pool.run!.output.funnel.decisionRound).toBe(1);
+ expect(pool.queries.filter(q=>q.sql.includes('INSERT INTO public.radar_candidate_research_runs'))).toHaveLength(1);
+});
+it('does not renew decision capacity without an explicit approved semantic refresh',async()=>{
+ const pool=new ResearchPool();pool.researchConfiguration={funnel:{enabled:true},research:{enabled:true,semanticQualificationEnabled:true}};
+ await start(pool);pool.run!.status='partial';pool.run!.output={funnel:{fit:{reasonCode:'decision_limit_reached'},agentCompleted:true},quality:{readyForReview:false}};
+ pool.run!.calls=Object.fromEntries(Array.from({length:6},(_,i)=>['decision'+i,{status:'completed',source:'openrouter_decision'}]));
+ await startRadarCandidateResearch(pool as never,admin,{organizationId:'org',candidateId:'candidate',configurationRevision:2,operation:'resume',requestId:'plain-resume'});
+ expect(pool.run!.output.funnel.decisionRound).toBeUndefined();
+});
 it('records a received invalid paid reply with its actual failure and charge on the first run',async()=>{
  const pool=new ResearchPool();pool.researchConfiguration={sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:true,semanticQualificationEnabled:true}};
  const run=await start(pool);pool.run!.output={readingComplete:true,readerVersion:4,discoveryLocked:true,pages,discovery:{association:'confirmed',websiteUrl:pages[0].url,hits:[],suggestions:[],limitations:[],queries:1}};

@@ -3,8 +3,10 @@ const object=(value:unknown):Record<string,unknown>=>value&&typeof value==='obje
 export function summarizeRadarFunnelCosts(rows:Array<{id:string;calls:unknown}>){
  const unique=new Map<string,{id:string;source:string;status:string;estimatedBrl:string|null;actualBrl:string|null;actualUsd:string|null}>();
  for(const row of rows)for(const [key,value] of Object.entries(object(row.calls))){
-  const root=object(value),previous=Array.isArray(root.previous)?root.previous:root.previous?[root.previous]:[];
-  for(const version of [root,...previous.map(object)]){
+  const root=object(value),versions=[root];
+  for(let index=0;index<versions.length;index++){
+   const version=versions[index],previous=Array.isArray(version.previous)?version.previous:version.previous?[version.previous]:[];
+   versions.push(...previous.map(object));
    const call=version===root?root:{source:root.source,context:root.context,...version},status=String(call.status??'unknown');if(status==='rejected_before_provider')continue;
    const source=String(call.source??key),estimate=object(call.costEstimate),result=object(call.result),usage=object(result.usage);
    const id=typeof call.requestId==='string'?call.requestId:typeof call.evidenceHash==='string'?`${row.id}:${key==='presence'?'presence:':''}${call.evidenceHash}`:`${row.id}:${key}`;

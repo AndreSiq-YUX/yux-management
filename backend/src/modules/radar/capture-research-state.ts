@@ -2,6 +2,16 @@ export type RadarCaptureResearchStage='discovery'|'reading'|'presence'|'qualific
 export type RadarFunnelOutcome='out_of_profile'|'completed'|'completed_with_gaps'|'technical_failure'
 export type RadarCaptureResearchAssessment={status:'researching'|'completed'|'insufficient'|'blocked';reason?:string;stage?:RadarCaptureResearchStage}
 type Child={status:string;stage?:string;error_code?:string|null;lease_until?:string|Date|null;output?:Record<string,unknown>|null;calls?:Record<string,{status:string;error?:string;source?:string}>|null}
+/** A terminal queue result is not proof that an explicit recovery has no work.
+ * Old runs may also have readyForReview=true under the previous fit policy. */
+export function canResumeRadarResearch(run:Child,policy:{semanticQualificationEnabled?:boolean}):boolean{
+ if(['queued','running'].includes(run.status))return false
+ if(assessRadarResearchProgress(run).status!=='completed')return true
+ if(!run.output?.funnel||run.output.decisionExcluded===true)return false
+ const qualification=run.output.qualification as {targetStatus?:string}|undefined
+ return (run.output.quality as {readyForReview?:boolean}|undefined)?.readyForReview===false
+   ||!!policy.semanticQualificationEnabled&&qualification?.targetStatus!=='confirmed'
+}
 /** Queue completion and commercial completion share the opt-in terminal contract. */
 export function assessRadarResearchProgress(run:Child):RadarCaptureResearchAssessment{
  if(!run.output?.funnel)return assessRadarCaptureResearch(run)

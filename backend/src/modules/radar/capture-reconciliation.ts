@@ -41,6 +41,7 @@ export async function reconcileRadarCaptureItems(db:Pick<pg.PoolClient,'query'>,
  for(const parent of parents){
   await db.query('SELECT id FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[parent.campaign_id,input.organizationId])
   const operations=(await db.query<Operation & {id:string;configuration_revision:number}>(`SELECT operation.* FROM public.radar_capture_operations operation JOIN public.radar_capture_items item ON item.operation_id=operation.id AND item.organization_id=operation.organization_id WHERE item.organization_id=$1 AND item.candidate_id=$2 AND item.campaign_id=$3 ORDER BY operation.id FOR UPDATE OF operation`,[input.organizationId,input.candidateId,parent.campaign_id])).rows
+  const discarded=(await db.query("SELECT status FROM public.radar_candidate_records WHERE id=$1 AND organization_id=$2",[input.candidateId,input.organizationId])).rows[0]?.status==='discarded'
   for(const op of operations){
    if(op.historical_closed_at)continue
    const latest=(await db.query(`SELECT * FROM public.radar_candidate_research_runs WHERE organization_id=$1 AND candidate_id=$2 AND campaign_id=$3 AND configuration_revision=$4 ORDER BY created_at DESC,id DESC LIMIT 1`,[input.organizationId,input.candidateId,parent.campaign_id,op.configuration_revision])).rows[0]
@@ -48,7 +49,7 @@ export async function reconcileRadarCaptureItems(db:Pick<pg.PoolClient,'query'>,
    const previous=(await db.query<Item>('SELECT status,blocker FROM public.radar_capture_items WHERE operation_id=$1 AND organization_id=$2',[op.id,input.organizationId])).rows
    const childReasons=new Set(previous.flatMap(item=>item.blocker?[item.blocker]:[]))
    const discoveryBlockers=!op.discovery_stopped?op.blockers.filter(code=>!childReasons.has(code)):undefined
-    const funnel=assessRadarFunnelResearch(latest),outcome=funnel.outcome
+    const funnel=discarded?{outcome:'out_of_profile' as const,retryable:false}:assessRadarFunnelResearch(latest),outcome=funnel.outcome
     const assessment=op.funnel_enabled?{status:outcome==='technical_failure'?'blocked':outcome==='completed_with_gaps'?'insufficient':outcome===null?'researching':'completed',reason:funnel.reason}:assessRadarCaptureResearch(latest)
    const deliveryFailure=latest.status==='queued'&&latest.id===input.deliveryFailedRunId
    await db.query('UPDATE public.radar_capture_items SET run_id=$4,status=$5,blocker=$6,funnel_outcome=$7 WHERE operation_id=$1 AND organization_id=$2 AND candidate_id=$3',[op.id,input.organizationId,input.candidateId,latest.id,assessment.status,deliveryFailure?'radar_capture_queue_unavailable':assessment.status==='blocked'?assessment.reason??'radar_capture_item_requires_review':null,deliveryFailure?'technical_failure':outcome])

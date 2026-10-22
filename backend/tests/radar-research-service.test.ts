@@ -2,8 +2,18 @@ import { expect, it, vi } from 'vitest'
 import { runRadarResearchPipeline } from '../src/modules/radar/research-service.js'
 import { resolveRadarSearchConfiguration } from '../src/modules/radar/search-configuration.js'
 import { validateRadarCompanyProfile } from '../src/modules/radar/company-profile.js'
+import {radarEvidenceContentHash,radarEvidenceBindings} from '../src/modules/radar/evidence-version.js'
 const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city:'Curitiba',state:'PR',phone:'4133334444' }
 const configuration = resolveRadarSearchConfiguration({ research: { enabled:true, webSearchEnabled:true } })
+it('does not reuse a qualification from the old over-literal funnel policy',async()=>{
+ const config=resolveRadarSearchConfiguration({funnel:{enabled:true},sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:false,semanticQualificationEnabled:true}});
+ const page={url:'https://alfa.example/',text:'Empresa Alfa CNPJ 12.345.678/0001-90. Refeições para empresas.',observedAt:'2026-10-22'};
+ const oldHash=radarEvidenceContentHash({identity,criteria:{qualification:config.qualification,profile:config.research.profileEnabled,size:config.research.sizeAssessment.enabled},purpose:'qualification',evidence:[page]});
+ const saved:any={funnel:{agentCompleted:true},readingComplete:true,readerVersion:4,discoveryLocked:true,pages:[page],discovery:{websiteUrl:page.url,association:'confirmed',hits:[],suggestions:[],queries:1,limitations:[]},qualification:{targetStatus:'review',productFit:'possible',reasons:[],evidenceIds:[],limitations:[]},qualificationEvidenceHash:oldHash,analysisEvidence:{semantic:{hashVersion:2,hash:oldHash,bindings:radarEvidenceBindings([page])}}};
+ const qualify=vi.fn(async()=>({targetStatus:'confirmed' as const,productFit:'high' as const,reasons:[],evidenceIds:[],limitations:[]}));
+ const result=await runRadarResearchPipeline(identity,config,saved,{web:vi.fn(),checkpoint:async()=>{},qualify});
+ expect(qualify).toHaveBeenCalledTimes(1);expect(result.qualification?.targetStatus).toBe('confirmed');
+});
 it('consumes three decision stages and can change only the eligible search source, without fabricating approval',async()=>{
  const url='https://alfa.example/',page={url,text:'Empresa Alfa CNPJ 12.345.678/0001-90. contato@alfa.example',observedAt:'2026-10-19'},stages:string[]=[]
  const web=vi.fn(async()=>[{url,title:'Empresa Alfa',snippets:[page.text],observedAt:page.observedAt}])

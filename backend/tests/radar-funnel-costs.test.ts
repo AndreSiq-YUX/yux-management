@@ -1,5 +1,9 @@
 import {expect,it} from 'vitest';
 const api=await import('../src/modules/radar/funnel-costs.js').catch(()=>({})) as Record<string,any>;
+it('retains all paid attempts across repeated explicit recovery rounds',()=>{
+ const result=api.summarizeRadarFunnelCosts([{id:'run',calls:{semantic:{source:'radar_business_qualification',requestId:'third',status:'completed',actualBrl:'0.03',previous:{requestId:'second',status:'completed',actualBrl:'0.02',previous:{requestId:'first',status:'completed',actualBrl:'0.01'}}}}}]);
+ expect(result.effects).toHaveLength(3);expect(result.knownActualBrl).toBe('0.06');
+});
 it('deduplicates old recovered effects and keeps unknown amounts distinct from zero',()=>{
  const call={source:'perplexity_agent',status:'completed',requestId:'same',actualBrl:'0.03',actualUsd:'0.006',reservedBrl:'0.05'};
  const rows=[{id:'old',calls:{agent:call}},{id:'new',calls:{agent:{...call,actualBrl:undefined,status:'uncertain'},semantic:{source:'radar_business_qualification',status:'uncertain',requestId:'unknown'}}}];

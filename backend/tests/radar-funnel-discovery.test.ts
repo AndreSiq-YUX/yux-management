@@ -5,6 +5,12 @@ const identity = { name: 'Empresa Alfa', legalName: 'Empresa Alfa LTDA', cnpj: '
 const page = { url: 'https://alfa.example/', text: 'Empresa Alfa CNPJ 12.345.678/0001-90. contato@alfa.example', observedAt: '2026-10-21' };
 const config = (patch = {}) => resolveRadarSearchConfiguration({ funnel: { enabled: true, g3: { mode: 'effective' }, agentPolicy: { mode: 'escalation' } }, sources: { enrichWithBrave: false }, research: { enabled: true, webSearchEnabled: true, webSearchProviders: ['serper_web_search', 'perplexity_search_fast'], deepResearchEnabled: true, maxSearchQueriesPerCandidate: 3, maxPagesPerCandidate: 4 }, ...patch });
 const base = <T extends Record<string, unknown>>(patch: T = {} as T) => ({ web: vi.fn(async () => []), collect: vi.fn(async () => []), checkpoint: vi.fn(async () => {}), sourceCostsBrl: { serper_web_search: .035, perplexity_search_fast: .007 }, maxDecisionCalls: 6, ...patch });
+it('allows unused cheap queries in an explicitly authorized recovery, without buying the Agent again',async()=>{
+ const output:any={funnel:{agentCompleted:true,agentAttempted:true,recoverySearchRequestId:'approved-resume'}};
+ const web=vi.fn(async()=>[{url:page.url,title:identity.name,snippets:[],observedAt:page.observedAt}]),agent=vi.fn();
+ await api.runRadarFunnelDiscovery(identity,config(),output,base({web,deepResearch:agent,collect:async()=>[page]}));
+ expect(web).toHaveBeenCalledTimes(1);expect(agent).not.toHaveBeenCalled();
+});
 it('allows one additional free Agent page beyond already read pages, and never follows another company origin',async()=>{
  const portal='https://alfa.example/portal',other='https://outra.example/contact';
  const output:any={funnel:{agentCompleted:true},pages:[page],discoveryHits:[{url:portal,title:'Compras',snippets:[]},{url:other,title:'Outra empresa',snippets:[]}]};

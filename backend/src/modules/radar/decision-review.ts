@@ -1,8 +1,21 @@
 import type pg from 'pg';
 import type { AuthUser } from '../../auth/routes.js';
 import { requireRadarScope } from './access.js';
+import {reconcileRadarCaptureItems} from './capture-reconciliation.js';
 export async function restoreRadarDecisionExclusion(pool: pg.Pool, user: AuthUser, candidateId: string) {
     await requireRadarScope(pool, user, { candidateId }, true);
+    const initial=(await pool.query("SELECT organization_id,campaign_id FROM public.radar_candidate_records WHERE id=$1 AND status='discarded'",[candidateId])).rows[0];
+    if(initial){
+      const client=await pool.connect();
+      try{
+        await client.query('BEGIN');
+        await client.query('SELECT id FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[initial.campaign_id,initial.organization_id]);
+        const restored=(await client.query(`UPDATE public.radar_candidate_records SET status='pending_review',normalized_payload=normalized_payload||jsonb_build_object('manualDiscardRestored',jsonb_build_object('by',$2::text,'at',NOW())),updated_at=NOW() WHERE id=$1 AND organization_id=$3 AND status='discarded' AND NOT EXISTS(SELECT 1 FROM public.radar_b2b_reviews review WHERE review.candidate_id=radar_candidate_records.id AND review.approved_at IS NOT NULL) RETURNING id`,[candidateId,user.id,initial.organization_id])).rows[0];
+        if(!restored)throw Object.assign(Error('radar_candidate_not_excluded'),{statusCode:409});
+        await reconcileRadarCaptureItems(client,{organizationId:initial.organization_id,candidateId});
+        await client.query('COMMIT');return{candidateId,status:'restored'};
+      }catch(cause){await client.query('ROLLBACK');throw cause}finally{client.release()}
+    }
     // Funnel overrides require a gate, revision and audited reason. A commercial
     // review request must not silently become the old global gate bypass.
     const requested=(await pool.query(`UPDATE public.radar_candidate_records SET normalized_payload=jsonb_set(normalized_payload,'{funnelReviewRequest}',jsonb_build_object('by',$2::text,'at',NOW())),updated_at=NOW() WHERE id=$1 AND status='pending_review' AND normalized_payload->'decisionExclusion'->>'active'='true' AND normalized_payload->'decisionExclusion'->>'gate' IN('g0','g1','g5') AND NOT EXISTS(SELECT 1 FROM public.radar_b2b_reviews review WHERE review.candidate_id=radar_candidate_records.id AND review.approved_at IS NOT NULL) RETURNING id`,[candidateId,user.id])).rows[0];

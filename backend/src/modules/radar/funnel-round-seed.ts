@@ -7,10 +7,11 @@ import type { RadarFunnelResearchState } from './funnel-discovery.js';
  * their costs stay immutable; only the bounded decision allowance is renewed. */
 export function prepareRadarDecisionRecovery<T extends {funnel?:RadarFunnelResearchState}>(output:T,calls:Record<string,{source?:string;round?:number}>,input:{requestId?:string;maximum:number}):T {
     const state=output.funnel,round=state?.decisionRound??0;
-    if(!input.requestId||!state||state.decisionRecoveryRequestId===input.requestId)return output;
+    if(!input.requestId||!state||state.recoverySearchRequestId===input.requestId)return output;
     const used=Object.values(calls).filter(call=>call.source==='openrouter_decision'&&(call.round??0)===round).length;
-    if(used<input.maximum||state.fit?.reasonCode!=='decision_limit_reached')return output;
-    return{...output,funnel:{...state,decisionRound:round+1,decisionRecoveryRequestId:input.requestId,decisionCalls:0,fit:undefined,stopReason:undefined}};
+    const renew=used>=input.maximum&&state.fit?.reasonCode==='decision_limit_reached';
+    return{...output,funnel:{...state,recoverySearchRequestId:input.requestId,cheapSearches:0,pendingAction:undefined,stopReason:undefined,
+      ...(renew?{decisionRound:round+1,decisionRecoveryRequestId:input.requestId,decisionCalls:0,fit:undefined}:{})}};
 }
 export function seedRadarFunnelRound<T extends Record<string,{status:string;requestId?:string;evidenceHash?:string}>>(previous:{id?:string;output:{pages?:RadarSiteEvidence[];contacts?:RadarContactEvidence[];discoveryHits?:RadarWebHit[];discovery?:{hits:RadarWebHit[]};analysisEvidence?:{presence?:RadarEvidenceVersion}};calls:T},freshnessDays:number,now=Date.now()){
     const fresh=(date:string)=>Number.isFinite(Date.parse(date))&&Date.parse(date)<=now&&now-Date.parse(date)<=freshnessDays*86400000;

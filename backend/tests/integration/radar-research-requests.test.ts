@@ -26,7 +26,7 @@ describe.skipIf(!connectionString)('durable research request outbox',()=>{
    expect((await f.pool.query('SELECT status FROM radar_research_requests WHERE id=$1',[request.id])).rows[0].status).toBe(required?'waiting':'completed')
    expect((await f.pool.query('SELECT * FROM radar_capture_outbox WHERE research_request_id=$1',[request.id])).rows).toHaveLength(required?1:0)
    const resumed=await startRadarCandidateResearch(f.pool,admin,{organizationId,candidateId,configurationRevision:1,operation:'resume',requestId:randomUUID()})
-   expect(resumed.status).toBe(required?'queued':'partial');expect(resumed.runId).toBe(jobs[0]);expect(jobs).toHaveLength(1)
+   expect(resumed.status).toBe(required||['gaps','optional_uncertain'].includes(kind)?'queued':'partial');expect(resumed.runId).toBe(jobs[0]);expect(jobs).toHaveLength(1)
   }finally{await f.close()}
  })
  it('amends a waiting intent that never allocated a child without getting stuck in resume_pending',async()=>{
