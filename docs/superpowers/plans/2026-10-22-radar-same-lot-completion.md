@@ -117,4 +117,4 @@ Production follow-up within Tasks 2/5: the specifically authorized Galbiatti hom
 - [x] GREEN: implement bounded selection and positive-only fallback, retaining citation/source/CNPJ validators.
 - [x] RED/GREEN: a proven differently named brand site must not be displaced by fifteen unverified name-matching domains.
 - [x] Full backend, type-check/build, real PostgreSQL TLS/audience tests; separate author review, no subagents under the user's explicit execution preference.
-- [ ] Publish and verify exact deploy; reschedule the existing request `9b7037b1-3f2d-44a8-bb75-92e071c204f8` with unchanged budget, so the unused authorized analyses can run against the page already collected. Preserve the original run, receipts and Agent result. Verify final persisted identity/contacts/fit and same-lot counters before reporting.
+- [x] Publish and verify exact deploy; reschedule the existing request `9b7037b1-3f2d-44a8-bb75-92e071c204f8` with unchanged budget, so the unused authorized analyses can run against the page already collected. Preserve the original run, receipts and Agent result. Verify final persisted identity/contacts/fit and same-lot counters before reporting.

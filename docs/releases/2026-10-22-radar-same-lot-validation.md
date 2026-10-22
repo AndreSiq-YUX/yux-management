@@ -2,7 +2,7 @@
 
 ## Publicação e escopo
 
-Correções publicadas na main, de `f337f08` até `59be4a7b3e4a973a1080d527196e129e4158aeb0`. Dez empresas da campanha Cozinhas Industriais São Paulo; nenhuma nova descoberta, mudança de modelo, credencial, orçamento ou exclusão automática sem calibração. A autorização de retomada não é uma autorização de exceção TLS.
+Correções publicadas na main, de `f337f08` até `150e063f07b9aa28db92e90935bc1e876b207739`. Dez empresas da campanha Cozinhas Industriais São Paulo; nenhuma nova descoberta, mudança de modelo, credencial, orçamento ou exclusão automática sem calibração. A autorização de retomada não é uma autorização de exceção TLS; a autorização específica posterior consta no final deste relatório.
 
 ## Evidências de desenvolvimento
 
@@ -59,7 +59,7 @@ A operação original `b0285306-6a60-4df6-8eeb-f65ca9d831e6` terminou `completed
 | Toninho's | Com lacunas | Nome promissor, mas site/identidade pública não comprovados; não descartada por ausência de site. |
 | Nectar Original | Com lacunas | Identidade/site e aderência não comprovados pelas fontes disponíveis. |
 | Prospera Trabalho Temporário | Com lacunas | Perfil aparentemente distante; fontes homônimas não comprovam o vínculo com o CNPJ. Sem descarte baseado apenas em nome/CNAE. |
-| Galbiatti Refeições | Com lacunas | Certificado de `galbiatti.com.br` venceu em 29/07/2026, confirmado por leitura normal. Autorização excepcional específica solicitada, ainda não concedida; pode aprofundar este mesmo registro depois da aprovação. |
+| Galbiatti Refeições | Com lacunas/revisão | Após autorização específica: site e identidade associados, e-mail e quatro telefones públicos, serviços e regiões de atuação. Sem canal específico de fornecedores e sem aprovação comercial automática. |
 | Grupocine | Fora do perfil | Site e cadastro de exibição cinematográfica; descarte humano reversível, sem nova análise paga do cinema. |
 
 Isto prova a recuperação operacional, **não** dez leads bons. A descoberta original admitiu empresas pouco aderentes; esta entrega não a repetiu nem ampliou o mercado. Sete casos continuam exigindo evidência adicional ou revisão, sem inventar contatos, aprovar homônimos ou excluir empresas potencialmente aderentes para deixar o painel verde.
@@ -90,9 +90,9 @@ IA informada pelos recibos: USD 0,12267364. Conversão interna já configurada: 
 
 Original: R$ 1,121247. Recuperação incremental: **R$ 1,347201**. Total médio: **R$ 0,246845 por empresa examinada**, ou **R$ 1,234224 por aderência confirmada** (duas, ainda não aprovadas comercialmente). As buscas usam preços administrativos estimados; saldo/fatura do provedor podem diferir. Orçamento, modelos, credenciais e tetos não foram aumentados.
 
-## Pendência explícita e prova visual
+## Pendência anterior à autorização e prova visual
 
-Somente a leitura excepcional de Galbiatti depende da resposta à autorização específica. Até lá, permanece com lacunas; isso não mantém as outras nove empresas pausadas. O diagnóstico fresco foi preservado no histórico real de leitura, sem liberar TLS globalmente. A tela de autorização e o fechamento do lote foram registrados nas evidências locais `radar-galbiatti-consent-20261022.jpg` e `radar-lote-final-20261022.jpg` em `.codex/visualizations`.
+Na primeira verificação, somente a leitura excepcional de Galbiatti dependia da resposta à autorização específica. Essa restrição não manteve as outras nove empresas pausadas. O diagnóstico fresco foi preservado no histórico real de leitura, sem liberar TLS globalmente. A tela de autorização e o fechamento do lote foram registrados nas evidências locais `radar-galbiatti-consent-20261022.jpg` e `radar-lote-final-20261022.jpg` em `.codex/visualizations`. A autorização foi posteriormente concedida e testada, como registrado abaixo.
 
 Não foi executada nova descoberta, envio ao CRM, formulário de fornecedor ou mensagem. A instância PostgreSQL isolada de testes foi desligada após os testes; os dois documentos não rastreados preexistentes do experimento foram preservados.
 
@@ -103,3 +103,15 @@ O usuário autorizou a leitura pública excepcional. A autorização `1d154e9b-3
 Foi encontrado um defeito posterior à leitura: o limite de oito páginas de evidência considerava as primeiras páginas em ordem de coleta, omitindo a homepage recém-lida após quinze referências antigas. Além disso, o reaproveitamento positivo de site aceitava uma resposta sem site/identidade resolvida quando novas evidências chegavam. A seleção passa a priorizar a origem previamente comprovada e candidatos do domínio da empresa; essa prioridade não confirma a identidade, que continua dependendo dos mesmos validadores. Negativas inalteradas continuam reaproveitadas gratuitamente; negativas com material diferente deixam de ser um cache positivo permanente. O formato/ordem do hash legado são preservados.
 
 Três regressões RED/GREEN: homepage após janela cheia, negativa inalterada versus novo material e preservação de site de marca já comprovado diante de muitos domínios homônimos. Backend completo 1.478 aprovados/126 skips opcionais; TLS/audiência PostgreSQL 34 aprovados; type-check e build aprovados. Revisão pelo autor, sem revisão independente conforme escolha de execução direta. Reteste real após publicação ainda pendente neste registro intermediário; não foi comprada outra análise para investigar o defeito.
+
+### Reteste concluído às 18h21
+
+Deploy exato `150e063` confirmado no Dokploy (migração encerrada, API e worker externo iniciados, Docker Compose Deployed). O pedido anterior já estava comercialmente encerrado com lacunas, não aguardando execução. Foi reagendado **esse mesmo pedido**, com checagem do Admin ativo, autorização TLS vigente, mesmo candidato/run/revisão e comparação do orçamento antes/depois. O outbox e o worker normais processaram a continuação; nenhum orçamento, conclusão ou recibo foi reescrito para forçar sucesso. Duas linhas longas do terminal foram truncadas antes da execução e uma guarda de estado impediu uma transação; nenhuma delas gerou chamada paga. A rotina final entrou por stdin em linhas curtas, sem criar arquivos no servidor.
+
+Resultado persistido no mesmo run: identidade `establishment`, site `https://galbiatti.com.br/`, `contato@galbiatti.com.br` e quatro telefones públicos: +55 11 3873-3724, +55 11 91342-6295, +55 21 97749-0464 e +55 11 95810-9499. A página identifica os dois números intermediários como WhatsApp de São Paulo/Rio; o cadastro os registra como telefones públicos, sem validar atendimento ou conta WhatsApp. Perfil parcial: refeições coletivas para trabalhadores de obras, com contatos em SP/RJ. Esses dados apareceram também na lista geral e no resumo após recarregar a campanha, não apenas no dossiê.
+
+A identificação e a qualificação tiveram uma nova resposta válida cada, ambas via OpenRouter `anthropic/claude-haiku-5.5`. A qualificação permaneceu `review/productFit:unknown`: serviços compatíveis foram citados, mas não existe produto configurado para avaliar encaixe comercial, nem canal específico de fornecedores. Uma afirmação opcional de resumo não tinha citação verificável e foi rejeitada; serviços, segmentos e regiões verificáveis foram preservados. Não houve promoção artificial para aderência confirmada, aprovação para contato/CRM ou nova compra do Agent. Não houve novo recibo de decisão nessa continuação; G1/G5 continuam em observação e G3 efetivo conforme a política anteriormente documentada.
+
+Consumo adicional da Galbiatti desde o fechamento anterior: sete consultas complementares ainda não realizadas (Brave Web 2, Brave Places 1, Serper Web 1, Perplexity Fast 2, Perplexity Web 1), estimadas em R$ 0,179; identificação USD 0,0020887 e qualificação USD 0,0008406, convertidas pelo fator existente 6,90 em R$ 0,02021217. Total adicional conhecido/estimado **R$ 0,19921217**; acumulado do lote **R$ 2,667660286**, aproximadamente **R$ 0,27 por empresa examinada**. As buscas são estimativas administrativas, não fatura. O total de Agent permaneceu nove, e as sete consultas originais de descoberta não mudaram.
+
+Contadores finais: dez empresas, duas aderências confirmadas, sete com lacunas/revisão, um descarte humano, quatro com contato útil e zero bloqueios técnicos/em pesquisa/aprovadas para contato. A exceção expira automaticamente às **19h05 de 22/10/2026**, somente no hostname/run/certificado autorizados. Nenhum login, formulário, mensagem ou contato com prospectos foi executado. Evidência final: `radar-galbiatti-resultado-20261022.jpg`; auditoria adicional ignorada no Git: `galbiatti-tls-validation.json`.
