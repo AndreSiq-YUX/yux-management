@@ -94,7 +94,7 @@ type Output = Partial<RadarResearchDossier> & { deepResearchCompleted?:boolean;d
  * Recheck identity, unchanged cited content, source ownership and scope. */
 function revalidateSavedRadarPresence(saved:Output,identity:RadarBusinessIdentity,evidence:RadarPresenceEvidence[],current:RadarEvidenceVersion):RadarPresenceResolution|undefined{
  const prior=saved.analysisEvidence?.presence
- if(!saved.presenceResolution||!prior?.dependencies||prior.dependencies.identityHash!==current.dependencies?.identityHash)return
+ if(!saved.presenceResolution?.websiteUrl||saved.presenceResolution.scope==='unresolved'||!prior?.dependencies||prior.dependencies.identityHash!==current.dependencies?.identityHash)return
  try{
   const mapped=remapRadarEvidenceResult(saved.presenceResolution,prior.bindings,current.bindings)
   return validateRadarPresenceResolution({candidateId:evidence.find(item=>item.url===mapped.websiteUrl)?.id??null,scope:mapped.scope,reason:mapped.reason,
@@ -179,8 +179,15 @@ function canRetryPreProviderRejection(call:ResearchRun['calls'][string]){
   return call.status==='rejected_before_provider'&&(call.retryProvenByReceipt===true||!!call.error&&preProviderErrors.has(call.error))
 }
 
-function presenceMaterial(pages:RadarSiteEvidence[],hits:RadarWebHit[]):RadarPresenceEvidence[]{
- const pageEvidence=pages.filter(page=>!!page.text&&!page.limitation).map((page,index)=>({id:`page-${index}`,url:page.url,text:page.text.slice(0,12000),observedAt:page.observedAt,kind:classifyRadarSource(page.url,{text:page.text}).kind})).slice(0,8)
+function presenceMaterial(pages:RadarSiteEvidence[],hits:RadarWebHit[],identity?:RadarBusinessIdentity,provenWebsite?:string):RadarPresenceEvidence[]{
+ // Prioritize a readable company-domain candidate without treating that rank
+ // as identity proof. Keep original evidence IDs and the legacy input order.
+ const pageEvidence=pages.filter(page=>!!page.text&&!page.limitation).map((page,index)=>{
+  const kind=classifyRadarSource(page.url,{text:page.text}).kind
+  const priority=!identity?0:kind!=='institutional_candidate'?3:cnpjConflict(identity,page.text)?2:
+   provenWebsite&&sameRadarOrigin(page.url,provenWebsite)?0:hasRadarOwnershipSignal(page.url,identity,page)?1:2
+  return{id:`page-${index}`,url:page.url,text:page.text.slice(0,12000),observedAt:page.observedAt,kind,priority}
+ }).sort((a,b)=>a.priority-b.priority).slice(0,8).map(({priority:_priority,...evidence})=>evidence)
  return[...pageEvidence,...hits.slice(0,10-pageEvidence.length).map((hit,index)=>({id:`search-${index}`,url:hit.url,text:`${hit.title} ${hit.snippets.join(' ')}`.slice(0,12000),observedAt:hit.observedAt,kind:'third_party' as const}))]
 }
 function legacyQualifiedMaterial(identity:RadarBusinessIdentity,saved:Output):RadarSiteEvidence[]{
@@ -338,7 +345,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     output.pages = pages; output.readingComplete = !pages.some(isRetryableRadarPage); output.readerVersion=RADAR_READER_VERSION
     await checkpoint('consolidation')
   }
-  const buildPresenceEvidence=()=>presenceMaterial(pages,discovery.hits)
+  const buildPresenceEvidence=()=>presenceMaterial(pages,discovery.hits,identity,output.presenceResolution?.scope!=='unresolved'?output.presenceResolution?.websiteUrl:undefined)
   let presenceEvidence=buildPresenceEvidence()
   const dependencyInput=(evidence:RadarPresenceEvidence[],criteria:unknown)=>({identity:stableIdentity,criteria,evidence,contacts:pages.flatMap(page=>extractRadarContacts(page,'review'))})
   const oldPresence=presenceMaterial(saved.pages??[],saved.discovery?.hits??saved.discoveryHits??[])

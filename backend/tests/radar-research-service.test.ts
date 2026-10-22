@@ -5,6 +5,27 @@ import { validateRadarCompanyProfile } from '../src/modules/radar/company-profil
 import {radarEvidenceContentHash,radarEvidenceBindings} from '../src/modules/radar/evidence-version.js'
 const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city:'Curitiba',state:'PR',phone:'4133334444' }
 const configuration = resolveRadarSearchConfiguration({ research: { enabled:true, webSearchEnabled:true } })
+it('includes a newly readable company website despite a full window of unrelated publisher pages',async()=>{
+ const config=resolveRadarSearchConfiguration({funnel:{enabled:true},sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:false,presenceResolutionEnabled:true}});
+ const root={url:'https://alfa.example/',text:'Empresa Alfa. Refeições coletivas para empresas.',observedAt:'2026-10-22'};
+ const unrelated=Array.from({length:15},(_,i)=>({url:`https://publisher${i}.example/`,text:`Portal de notícias e vagas número ${i}.`,observedAt:root.observedAt}));
+ const resolvePresence=async(evidence:Array<{id:string;url:string}>)=>{const page=evidence.find(p=>p.url===root.url);return{candidateId:page?.id??null,scope:page?'establishment':'unresolved',reason:'A página institucional apresenta o nome e o serviço da empresa.',claims:page?[{evidenceId:page.id,excerpt:root.text}]:[]}};
+ const result=await runRadarResearchPipeline(identity,config,{funnel:{agentCompleted:true},readingComplete:true,readerVersion:4,discoveryLocked:true,pages:[...unrelated,root],discovery:{association:'review',hits:[],suggestions:[],limitations:[],queries:1}}, {web:vi.fn(),resolvePresence,checkpoint:async()=>{}});
+ expect(result.presenceResolution?.websiteUrl).toBe(root.url);expect(result.siteAssociation).toBe('confirmed');
+});
+it('reconsiders unresolved identity when new evidence arrives but reuses an unchanged negative',async()=>{
+ const config=resolveRadarSearchConfiguration({funnel:{enabled:true},sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:false,presenceResolutionEnabled:true}});
+ const old={url:'https://publisher.example/',text:'Portal de notícias e vagas.',observedAt:'2026-10-22'};
+ const root={url:'https://alfa.example/',text:'Empresa Alfa. Refeições coletivas para empresas.',observedAt:old.observedAt};
+ const resolvePresence=vi.fn(async(evidence:Array<{id:string;url:string}>)=>{const page=evidence.find(p=>p.url===root.url);return{candidateId:page?.id??null,scope:page?'establishment':'unresolved',reason:'A página institucional apresenta o nome e o serviço da empresa.',claims:page?[{evidenceId:page.id,excerpt:root.text}]:[]}});
+ const deps={web:vi.fn(),resolvePresence,checkpoint:async()=>{}};
+ const first=await runRadarResearchPipeline(identity,config,{funnel:{agentCompleted:true},readingComplete:true,readerVersion:4,discoveryLocked:true,pages:[old],discovery:{association:'review',hits:[],suggestions:[],limitations:[],queries:1}},deps);
+ expect(first.presenceResolution?.scope).toBe('unresolved');
+ await runRadarResearchPipeline(identity,config,{...first,readingComplete:true,readerVersion:4,discoveryLocked:true},deps);
+ expect(resolvePresence).toHaveBeenCalledTimes(1);
+ const result=await runRadarResearchPipeline(identity,config,{...first,readingComplete:true,readerVersion:4,discoveryLocked:true,pages:[old,root]},deps);
+ expect(result.presenceResolution?.websiteUrl).toBe(root.url);expect(result.siteAssociation).toBe('confirmed');expect(resolvePresence).toHaveBeenCalledTimes(2);
+});
 it('retains a proven website when unrelated evidence is added, without buying search or identity again',async()=>{
  const config=resolveRadarSearchConfiguration({funnel:{enabled:true},sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:false,presenceResolutionEnabled:true}});
  const page={url:'https://brand.example/',text:'Marca Beta. Refeições para empresas. contato@brand.example',observedAt:'2026-10-22'};
@@ -17,6 +38,16 @@ it('retains a proven website when unrelated evidence is added, without buying se
  expect(resolvePresence).toHaveBeenCalledTimes(1);expect(deps.web).not.toHaveBeenCalled();
  await runRadarResearchPipeline({...identity,cnpj:'99999999000199'},config,{...first,readingComplete:true,readerVersion:4},deps);
  expect(resolvePresence).toHaveBeenCalledTimes(2);
+});
+it('keeps a proven brand website in the evidence window ahead of many unverified name-matching domains',async()=>{
+ const config=resolveRadarSearchConfiguration({funnel:{enabled:true},sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:false,presenceResolutionEnabled:true}});
+ const page={url:'https://brand.example/',text:'Marca Beta. Refeições para empresas.',observedAt:'2026-10-22'};
+ const resolvePresence=vi.fn(async()=>({candidateId:'page-0',scope:'establishment',reason:'A marca foi associada à empresa nas fontes.',claims:[{evidenceId:'page-0',excerpt:page.text}]}));
+ const deps={web:vi.fn(),resolvePresence,checkpoint:async()=>{}};
+ const first=await runRadarResearchPipeline(identity,config,{funnel:{agentCompleted:true},readingComplete:true,readerVersion:4,discoveryLocked:true,pages:[page],discovery:{association:'review',hits:[],suggestions:[],limitations:[],queries:1}},deps);
+ const additions=Array.from({length:15},(_,i)=>({url:`https://alfa-${i}.example/`,text:`Empresa homônima ${i}.`,observedAt:page.observedAt}));
+ const next=await runRadarResearchPipeline(identity,config,{...first,readingComplete:true,readerVersion:4,discoveryLocked:true,pages:[page,...additions]},deps);
+ expect(next.presenceResolution?.websiteUrl).toBe(page.url);expect(next.siteAssociation).toBe('confirmed');expect(resolvePresence).toHaveBeenCalledTimes(1);
 });
 it('does not reuse a qualification from the old over-literal funnel policy',async()=>{
  const config=resolveRadarSearchConfiguration({funnel:{enabled:true},sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:false,semanticQualificationEnabled:true}});

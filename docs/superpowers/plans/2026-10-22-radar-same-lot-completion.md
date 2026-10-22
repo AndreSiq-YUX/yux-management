@@ -104,3 +104,17 @@ Success is not ten positive leads. Each of the same ten must have a truthful fin
 ## Self review
 
 All observed failures map to a task: decision ceiling to Task 1, invalid quotations to Task 2, false completeness to Task 3, third-party contact noise to Task 4, incomplete child reuse and TLS restriction to Task 5, and deployment/runtime proof to Task 6. Market expansion, new providers and new company discovery are excluded. Confidence is tied to evidence and existing calibration governance, not to a new hardcoded numerical threshold.
+
+### Task 7: Finish the authorized TLS recovery's identity handoff
+
+Production follow-up within Tasks 2/5: the specifically authorized Galbiatti homepage was read successfully but lay after fifteen unrelated pages. The eight-page identity window omitted it, and the positive-site reuse helper also reused unresolved answers with no website/claims across changed evidence. No new scope, model, budget, TLS permission or discovery is implied by this correction.
+
+**Files:** `backend/src/modules/radar/research-service.ts`, `backend/tests/radar-research-service.test.ts`; release report above.
+
+**Interfaces:** `presenceMaterial(pages,hits,identity?,provenWebsite?)` keeps original evidence IDs, legacy input order when identity is omitted, and the existing eight-page cap. Current material prioritizes a previously proven institutional origin and then company-domain candidates, without treating rank as identity proof. `revalidateSavedRadarPresence` is a positive-site fallback only; exact unchanged unresolved inputs remain reusable through the normal material binding.
+
+- [x] RED: a newly readable company homepage after fifteen publishers must reach identity; an unresolved result must be reconsidered on new material but reused on unchanged material.
+- [x] GREEN: implement bounded selection and positive-only fallback, retaining citation/source/CNPJ validators.
+- [x] RED/GREEN: a proven differently named brand site must not be displaced by fifteen unverified name-matching domains.
+- [x] Full backend, type-check/build, real PostgreSQL TLS/audience tests; separate author review, no subagents under the user's explicit execution preference.
+- [ ] Publish and verify exact deploy; reschedule the existing request `9b7037b1-3f2d-44a8-bb75-92e071c204f8` with unchanged budget, so the unused authorized analyses can run against the page already collected. Preserve the original run, receipts and Agent result. Verify final persisted identity/contacts/fit and same-lot counters before reporting.
