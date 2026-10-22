@@ -80,6 +80,15 @@ it('revalidates a completed raw profile receipt claim by claim without another A
 })
 const start=(pool:ResearchPool,organizationId='org',configurationRevision=2)=>startRadarCandidateResearch(pool as never,admin,{organizationId,candidateId:'candidate',configurationRevision})
 const pages=[{url:'https://alfa.example',observedAt:'2026-10-08',text:'Empresa Alfa CNPJ 12.345.678/0001-90',html:'<a href="tel:41999998888">Contato</a>'}]
+it('settles a completed semantic receipt even when current identity prevents reaching qualification',async()=>{
+ const pool=new ResearchPool();pool.researchConfiguration={research:{enabled:true,webSearchEnabled:false,presenceResolutionEnabled:false,semanticQualificationEnabled:true}};
+ await start(pool);pool.run!.output={readingComplete:true,readerVersion:4,discoveryLocked:true,pages:[{url:'https://other.example/',text:'Uma marca não associada à empresa.',observedAt:'2026-10-22'}],discovery:{association:'review',hits:[],suggestions:[],limitations:[],queries:1}};
+ pool.run!.calls.semantic={source:'radar_business_qualification',status:'reserved',requestId:'saved-completed',evidenceHash:'saved-hash'};
+ pool.receiptResult={targetStatus:'review',productFit:'unknown',reasons:[],evidenceIds:[],limitations:[]};
+ const runtime=vi.fn();await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:'run',organizationId:'org'},undefined,{runtime});
+ expect(pool.run!.calls.semantic.status).toBe('completed');expect(runtime).not.toHaveBeenCalled();
+ expect(pool.run!.output.qualification).toBeUndefined();
+});
 it('recovers the old exact receipt before deciding whether the changed criteria need an authorized refresh',async()=>{
  const pool=new ResearchPool();pool.researchConfiguration={research:{enabled:true,semanticQualificationEnabled:true}};
  await start(pool);pool.run!.status='partial';pool.run!.output={readingComplete:true,readerVersion:4,discoveryLocked:true,pages,discovery:{association:'confirmed',websiteUrl:pages[0].url,hits:[],suggestions:[],limitations:[],queries:1}};

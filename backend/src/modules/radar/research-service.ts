@@ -88,6 +88,18 @@ export type RadarResearchDossier = { discovery: RadarPresenceDiscovery; pages: R
   documents?:Array<{url:string;sourceUrl:string;observedAt:string;status:'not_read'}>;
   sizeAssessment?:ReturnType<typeof assessRadarCompanySize>; limitations: string[] }
 type Output = Partial<RadarResearchDossier> & { deepResearchCompleted?:boolean;deepResearchStop?:string;historicalRevision?:number;analysisOnly?:boolean;discoveryHits?: RadarWebHit[]; discoveryQueries?: number; readingComplete?: boolean; readerVersion?:number; qualificationEvidenceHash?:string;discoveryLocked?:boolean }
+
+/** Additional unrelated sources do not revoke a previously cited website.
+ * Recheck identity, unchanged cited content, source ownership and scope. */
+function revalidateSavedRadarPresence(saved:Output,identity:RadarBusinessIdentity,evidence:RadarPresenceEvidence[],current:RadarEvidenceVersion):RadarPresenceResolution|undefined{
+ const prior=saved.analysisEvidence?.presence
+ if(!saved.presenceResolution||!prior?.dependencies||prior.dependencies.identityHash!==current.dependencies?.identityHash)return
+ try{
+  const mapped=remapRadarEvidenceResult(saved.presenceResolution,prior.bindings,current.bindings)
+  return validateRadarPresenceResolution({candidateId:evidence.find(item=>item.url===mapped.websiteUrl)?.id??null,scope:mapped.scope,reason:mapped.reason,
+   claims:mapped.claims.map(claim=>({evidenceId:claim.evidenceId,excerpt:claim.excerpt})),provider:mapped.provider,model:mapped.model,usage:mapped.usage},identity,evidence)
+ }catch{return}
+}
 type PipelineDependencies = { local?: () => Promise<RadarWebHit[]>; web: (query: string,source?:RadarWebSearchSource) => Promise<RadarWebHit[]>;
   deepResearch?:(gaps:string[],pages:RadarSiteEvidence[])=>Promise<RadarWebHit[]>;
   decisionMemo?:Map<DecisionContextV1['task'],{action:string}>;
@@ -185,6 +197,7 @@ function legacyQualifiedMaterial(identity:RadarBusinessIdentity,saved:Output):Ra
 export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, configuration: RadarSearchConfiguration,
   saved: Output, dependencies: PipelineDependencies): Promise<RadarResearchDossier> {
   const output = { ...saved }
+  const {websiteUrl:_inferredWebsite,...stableIdentity}=identity
   const readerUpgrade=typeof saved.readerVersion==='number'&&saved.readerVersion<RADAR_READER_VERSION
   if(readerUpgrade&&!saved.analysisOnly&&!output.historicalEvidence)output.historicalEvidence={
     pages:uniqueRadarPages(saved.pages??[]).map(({html:_html,...page})=>page),contacts:saved.contacts??[]}
@@ -242,7 +255,11 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
   const mentionsIdentity=(text:string)=>!cnpjConflict(identity,text,true)&&[identity.name,identity.legalName].some(name=>!!name&&normalizeRadarText(name).length>=5&&normalizeRadarText(text).includes(normalizeRadarText(name)))
   const directlyOwns=(page:RadarSiteEvidence)=>!page.limitation&&matchRadarBusinessIdentity(identity,page.text)==='confirmed'&&hasRadarOwnershipSignal(page.url,identity,page)
   if(funnel){
+    const cachedEvidence=presenceMaterial(pages,output.discovery?.hits??output.discoveryHits??[])
+    const cachedContext:RadarEvidenceVersion={hashVersion:2,hash:'',bindings:radarEvidenceBindings(cachedEvidence),dependencies:radarAnalysisDependencies({identity:stableIdentity,criteria:{},evidence:cachedEvidence},'presence')}
+    const knownPresence=revalidateSavedRadarPresence(saved,identity,cachedEvidence,cachedContext)
     await runRadarFunnelDiscovery(identity,configuration,output,{
+      knownWebsite:knownPresence?.scope==='establishment'?knownPresence.websiteUrl:undefined,
       web:dependencies.web,local:dependencies.local,collect:dependencies.collect,deepResearch:dependencies.deepResearch,
       registryPayload:dependencies.registryPayload,emailPolicy:dependencies.emailPolicy,sourceCostsBrl:dependencies.sourceCostsBrl,
       searchCapacity:dependencies.searchCapacity,searchAttempted:dependencies.searchAttempted,queriesUsed:dependencies.queriesUsed,maxDecisionCalls:dependencies.maxDecisionCalls,
@@ -321,7 +338,6 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
   }
   const buildPresenceEvidence=()=>presenceMaterial(pages,discovery.hits)
   let presenceEvidence=buildPresenceEvidence()
-  const {websiteUrl:_inferredWebsite,...stableIdentity}=identity
   const dependencyInput=(evidence:RadarPresenceEvidence[],criteria:unknown)=>({identity:stableIdentity,criteria,evidence,contacts:pages.flatMap(page=>extractRadarContacts(page,'review'))})
   const oldPresence=presenceMaterial(saved.pages??[],saved.discovery?.hits??saved.discoveryHits??[])
   const presenceVersion=():RadarEvidenceVersion=>({hashVersion:2,hash:radarEvidenceContentHash({identity:stableIdentity,criteria:{},purpose:'presence',evidence:presenceEvidence}),bindings:radarEvidenceBindings(presenceEvidence),dependencies:radarAnalysisDependencies(dependencyInput(presenceEvidence,{}),'presence'),
@@ -336,6 +352,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     presenceResolution=validateRadarPresenceResolution({candidateId:presenceEvidence.find(item=>item.url===mapped.websiteUrl)?.id??null,scope:mapped.scope,reason:mapped.reason,
       claims:mapped.claims.map(claim=>({evidenceId:claim.evidenceId,excerpt:claim.excerpt})),provider:mapped.provider,model:mapped.model,usage:mapped.usage},identity,presenceEvidence)
   }catch{limits.push('radar_analysis_saved_citations_require_review')}
+  presenceResolution??=revalidateSavedRadarPresence(saved,identity,presenceEvidence,presenceContext)
   // A dependency-derived validation is not an alias for a different paid input.
   if(presenceResolution)output.analysisEvidence={...output.analysisEvidence,presence:persistedRadarEvidenceVersion({...presenceContext,...(!savedPresenceBindings?{derivedFromHash:saved.presenceEvidenceHash}:{})},savedPresenceBindings?saved.presenceEvidenceHash:undefined)}
   let directlyAssociated=pages.find(directlyOwns)
@@ -877,7 +894,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
     // A received reply belongs to the original reservation. Normalize it for
     // free after a parser/checkpoint failure; never purchase the query again.
     for(const call of Object.values(run.calls)){
-      if(call.status==='completed'||!call.responseBody||!call.query||!['perplexity_search_fast','perplexity_search_web'].includes(call.source))continue
+      if(call.status==='completed'||!call.responseBody||!call.query||!['brave_web_search','serper_web_search','perplexity_search_fast','perplexity_search_web'].includes(call.source))continue
       try{call.result=await normalizeSavedRadarWeb({provider:call.source as RadarWebSearchProvider,query:call.query,limit:20},call.responseBody);call.status='completed'}
       catch{continue} // Preserve unreadable raw material and its uncertain hold.
     }
@@ -920,7 +937,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         throw cause
       }
     }
-    const recoverAnalysis=async(key:'presence'|'semantic',evidenceHash:string)=>{
+    const recoverAnalysis=async(key:'presence'|'semantic',evidenceHash:string,completedOnly=false)=>{
       const previous=run.calls[key]
       if(!previous||previous.status==='completed'||canRetryPreProviderRejection(previous))return
       const action=key==='presence'?'radar_presence_resolution':'radar_business_qualification'
@@ -937,7 +954,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
       const bindResult=(result:unknown)=>requestBindings&&previous.evidenceVersion?remapRadarEvidenceResult(result,requestBindings,previous.evidenceVersion.bindings):result
       if(receipt?.status==='rejected_before_provider'||receipt?.status==='completed'&&receipt.result){run.calls[key]=receipt.status==='completed'?{...previous,status:'completed',result:bindResult(receipt.result)}:{...previous,status:'rejected_before_provider',retryProvenByReceipt:true,error:'radar_analysis_rejected_before_provider'}
         await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb,updated_at=NOW() WHERE id=$1 AND lease_id=$2',[run.id,lease,JSON.stringify(run.calls)])}
-      else if(receipt?.transport_outcome==='received'&&receipt.input_hash&&receipt.input_request){
+      else if(!completedOnly&&receipt?.transport_outcome==='received'&&receipt.input_hash&&receipt.input_request){
         await assertEffectAuthorization()
         try{
           const result=await(dependencies.runtime??invokeAgentRuntime)<unknown>(env,'/radar/revalidate',{
@@ -992,6 +1009,9 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         if(savedCalls)run.calls=savedCalls
       }
     }
+    // A later missing identity must not strand a completed receipt as reserved.
+    // This recovery only reads completed receipts; no provider or revalidation.
+    for(const key of ['presence','semantic'] as const)if(run.calls[key]?.evidenceHash)await recoverAnalysis(key,run.calls[key].evidenceHash!,true)
     const dossier = await runRadarResearchPipeline(identity,configuration,{...run.output,
       ...(run.operation==='reanalyze'?{analysisOnly:true,discoveryLocked:true,readingComplete:true}:{}),
       discoveryHits:[...(run.output.discoveryHits??run.output.discovery?.hits??[]),...cachedHits,...cachedLocal],
@@ -1026,12 +1046,12 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         const source=selectedSource??configuration.research.webSearchProviders.find(source=>hasRadarSearchCapacity(searchCapacity(),source))
         if(!source||!configuration.research.webSearchProviders.includes(source))throw error('candidate_search_limit_reached')
         return paid(source,query,key=>(dependencies.web??searchRadarWeb)({provider:source,apiKey:key,query,limit:5,
-          ...(source.startsWith('perplexity_')?{onResponse:async(body:unknown)=>{
+          onResponse:async(body:unknown)=>{
             const callKey=createHash('sha256').update(`${source}:${query}`).digest('hex')
             run.calls[callKey]={...run.calls[callKey],responseBody:sanitizeRadarEffectBody(body),billingOutcome:'billed',queryCount:1,billableRequestCount:1}
             const stored=await pool.query(`UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2 AND lease_until>NOW() RETURNING id`,[run.id,lease,JSON.stringify(run.calls)])
             if(!stored.rows[0])throw error('radar_research_lease_lost')
-          }}:{})}))
+          }}))
       },
       resolvePresence:async(evidence,evidenceHash,version)=>{
         const bindings=run.calls.presence&&radarEvidenceBindingMatch(run.calls.presence,version)

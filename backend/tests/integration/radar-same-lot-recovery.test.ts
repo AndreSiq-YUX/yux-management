@@ -60,7 +60,8 @@ describe.skipIf(!connectionString)('same ten-company recovery with real PostgreS
     expect(run.status).toBe('queued');expect(run.output.funnel.decisionRound).toBe(1);
     expect(run.output.funnel.decisionRecoveryRequestId).toBe(requestId);
     const before=snapshots[runs.indexOf(run.id)] as Record<string,unknown>;
-    for(const [key,call]of Object.entries(before))expect(run.calls[key]).toEqual(call);
+    for(const [key,call]of Object.entries(before))expect(run.calls[key]).toMatchObject(call as Record<string,unknown>);
+    if(run.calls.presence)expect(run.calls.presence.refreshAuthorized).toBe(true);
    }
    const after=await getRadarCaptureOperation(f.pool,admin,organizationId,start.operationId);
    expect(after.queries).toBe(7);expect(after.discoveryStopped).toBe(true);

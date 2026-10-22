@@ -6,7 +6,7 @@ Correção publicada na main em `a2e9f762709f8d2f139752a67a5c827fa29f8fc3`, a pa
 
 ## Evidências de desenvolvimento
 
-- Backend completo: 1.467 testes aprovados, 126 skips de ambientes opcionais; build aprovado.
+- Backend completo: 1.471 testes aprovados, 126 skips de ambientes opcionais; build aprovado.
 - Runtime completo: 388 aprovados, 7 skips opcionais.
 - Integração com PostgreSQL isolado e provedores sintéticos: 37 aprovados, incluindo o lote com duas antigas conclusões, cinco lacunas, duas respostas pagas inválidas e uma restrição TLS.
 - Audiência HTTP: 27 aprovados; ferramentas, modelos, custos e diagnósticos continuam exclusivos do Admin YUX.
@@ -30,3 +30,7 @@ Sete consultas de descoberta; dez empresas admitidas. Duas execuções encerrada
 Primeira implantação `a2e9f76` confirmada no Dokploy: migração terminou com código zero; API, runtime e worker externo novos em execução. Revalidação gratuita: Qualita recuperada; Grupocine ainda inválido. O descarte humano reversível do cinema mudou os contadores para uma empresa fora do perfil e duas falhas técnicas, preservando as sete consultas e o histórico pago.
 
 A conciliação identificou e ganhou uma regressão adicional: recuperar o recibo exato anterior antes de comparar o hash dos critérios atuais, sem confundir uma resposta salva com permissão de repetir sua compra. A retomada paga do lote só começa após a implantação dessa correção adicional. Validação final das dez empresas ainda em andamento.
+
+Rodada real em `f4633a2`: Novita e L'Allegro passaram de possível a confirmado; Grupocine permanece descartado por revisão humana. Três consultas estreitas retornaram erro de interpretação, e o checkpoint antigo da Qualita permaneceu reservado atrás da etapa de identidade. Os erros foram rastreados sem refazer consultas.
+
+O adaptador passou a aceitar a seção `web` nula somente em uma resposta tipada de sucesso, conforme a [referência oficial Brave](https://api-dashboard.search.brave.com/api-reference/web/search/post), e a preservar respostas brutas de todas as buscas licenciadas. Falha de busca complementar esgotada permanece auditada, mas não mantém um lote encerrado preso em retomadas. Recibos concluídos são conciliados mesmo quando uma etapa anterior impede o avanço. A associação comprovada de um site só é reaproveitada com a mesma identidade, as mesmas fontes citadas e nova validação de propriedade/escopo; novas páginas irrelevantes não compram outra identificação por si só.

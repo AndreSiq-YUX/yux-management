@@ -7,7 +7,7 @@ import {radarDecisionHash} from './decision-service.js';
 import {radarScopedFunnelOverrides} from './funnel-gate-application.js';
 import {summarizeRadarFunnelCosts} from './funnel-costs.js';
 import {radarFunnelReportDecision,summarizeRadarFunnelOutcomes} from './funnel-report-summary.js';
-import {assessRadarCaptureResearch} from './capture-research-state.js';
+import {assessRadarCaptureResearch,assessRadarResearchProgress} from './capture-research-state.js';
 
 const scope=z.object({organizationId:z.uuid(),campaignId:z.uuid()}).strict();
 const fail=(code:string,statusCode=409)=>Object.assign(Error(code),{statusCode});
@@ -39,10 +39,11 @@ export async function getRadarFunnelReport(pool:pg.Pool,user:AuthUser,value:unkn
    return{id:event.id,gate:event.gate,mode:event.mode,outcome:event.outcome,reason:event.reason_code,evidenceIds:event.evidence_ids,requestId:event.decision_request_id,estimatedBrl:event.cost_estimate_brl,sampled,audit:audits.find(audit=>audit.event_id===event.id)??null,...radarFunnelReportDecision(event as {gate:string;mode:string;decision_request_id?:string;would_block:boolean},row.calls,row.output)};
   });
   const assessment=row.run_id?assessRadarCaptureResearch({status:row.run_status,stage:row.run_stage,error_code:row.error_code,calls:row.calls,output:row.output}):undefined;
-  const operational=assessment?.status==='blocked'?assessment:undefined;
+  const progress=row.run_id?assessRadarResearchProgress({status:row.run_status,stage:row.run_stage,error_code:row.error_code,calls:row.calls,output:row.output}):undefined;
+  const operational=progress?.status==='blocked'?assessment:undefined;
   const reason=[...path].reverse().find(event=>event.gate===gate)?.reason??row.error_code??operational?.reason??row.item_blocker??row.output?.limitations?.[0]??(!input.operationId&&!row.run_id?payload.triageReasons?.[0]:undefined);
   const manuallyDiscarded=!gate&&row.item_outcome==='out_of_profile'&&row.item_status==='completed'&&!payload.decisionExclusion?.active;
-  const blocking=manuallyDiscarded?null:gate?{stage:gate,reason:reason??'unknown'}:row.funnel_outcome==='technical_failure'||row.item_outcome==='technical_failure'||row.run_status==='blocked'||row.run_status==='failed'||row.item_status==='blocked'?{stage:operational?.stage??row.run_stage??'research',reason:reason??'unknown'}:null;
+  const blocking=manuallyDiscarded?null:gate?{stage:gate,reason:reason??'unknown'}:operational||row.item_status==='blocked'?{stage:operational?.stage??row.run_stage??'research',reason:reason??'unknown'}:null;
   return{id:row.id,name:row.title,runId:row.run_id,outcome:row.item_outcome??row.funnel_outcome,qualificationStatus:row.output?.qualification?.targetStatus,gate,blocking,reviewRequested:!!payload.funnelReviewRequest&&!payload.funnelReviewRequest.handledAt,reason,currentReview:{gate:payload.decisionExclusion?.active?payload.decisionExclusion.gate:null,reason:payload.triageReasons?.[0]??null},registryPreview:{...registry,blocked:previewBlocked,verifiedPositive:positives.has(row.id)},path,
    emailSignal:row.output?.funnel?.emailSignal,agentUsed:row.output?.funnel?.agentAttempted===true,weakFit:row.output?.funnel?.initial?.action==='short_investigation'||row.output?.funnel?.fit?.action==='short_investigation',historical:!!row.historical_closed_at};
  });

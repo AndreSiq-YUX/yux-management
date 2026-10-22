@@ -24,7 +24,8 @@ export function assessRadarFunnelResearch(run:Child):{outcome:RadarFunnelOutcome
  // A completed, authorized exclusion supersedes irrelevant enrichment failures;
  // their paid receipts remain audited. Never finalize an active or failed worker.
  if(['partial','succeeded'].includes(run.status)&&run.output?.decisionExcluded===true)return{outcome:'out_of_profile',retryable:false}
- const assessment=assessRadarCaptureResearch(run.output?.funnel?{...run,calls:Object.fromEntries(Object.entries(run.calls??{}).filter(([,call])=>call.source!=='openrouter_decision'))}:run)
+ const finishedFallback=run.output?.readingComplete===true&&['eligible_actions_exhausted','decision_stop','identity_found'].includes(String((run.output?.funnel as {stopReason?:string}|undefined)?.stopReason))
+ const assessment=assessRadarCaptureResearch(run.output?.funnel?{...run,calls:Object.fromEntries(Object.entries(run.calls??{}).filter(([,call])=>call.source!=='openrouter_decision'&&!(finishedFallback&&call.status==='failed'&&call.error==='radar_web_response_invalid'&&['brave_web_search','serper_web_search'].includes(call.source??''))))}:run)
  if(assessment.status==='researching')return{outcome:null,retryable:false}
  if(assessment.status==='blocked')return{outcome:'technical_failure',retryable:true,reason:assessment.reason}
  if(run.output?.decisionExcluded===true)return{outcome:'out_of_profile',retryable:false}

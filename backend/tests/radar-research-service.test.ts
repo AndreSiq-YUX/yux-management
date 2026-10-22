@@ -5,6 +5,19 @@ import { validateRadarCompanyProfile } from '../src/modules/radar/company-profil
 import {radarEvidenceContentHash,radarEvidenceBindings} from '../src/modules/radar/evidence-version.js'
 const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city:'Curitiba',state:'PR',phone:'4133334444' }
 const configuration = resolveRadarSearchConfiguration({ research: { enabled:true, webSearchEnabled:true } })
+it('retains a proven website when unrelated evidence is added, without buying search or identity again',async()=>{
+ const config=resolveRadarSearchConfiguration({funnel:{enabled:true},sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:false,presenceResolutionEnabled:true}});
+ const page={url:'https://brand.example/',text:'Marca Beta. Refeições para empresas. contato@brand.example',observedAt:'2026-10-22'};
+ const resolvePresence=vi.fn(async()=>({candidateId:'page-0',scope:'establishment',reason:'A marca foi associada à empresa nas fontes.',claims:[{evidenceId:'page-0',excerpt:'Marca Beta. Refeições para empresas.'}]}));
+ const deps={web:vi.fn(async()=>[]),resolvePresence,checkpoint:async()=>{}};
+ const first=await runRadarResearchPipeline(identity,config,{funnel:{agentCompleted:true},readingComplete:true,readerVersion:4,pages:[page],discovery:{association:'review',hits:[],suggestions:[],limitations:[],queries:1}},deps);
+ expect(first.siteAssociation).toBe('confirmed');
+ const next=await runRadarResearchPipeline(identity,{...config,research:{...config.research,webSearchEnabled:true}}, {...first,readingComplete:true,readerVersion:4,funnel:{...first.funnel,recoverySearchRequestId:'approved'},pages:[...first.pages,{url:'https://www.gov.br/',text:'Portal do governo e contatos do editor.',observedAt:page.observedAt}]},deps);
+ expect(next.siteAssociation).toBe('confirmed');expect(next.discovery.websiteUrl).toBe(page.url);
+ expect(resolvePresence).toHaveBeenCalledTimes(1);expect(deps.web).not.toHaveBeenCalled();
+ await runRadarResearchPipeline({...identity,cnpj:'99999999000199'},config,{...first,readingComplete:true,readerVersion:4},deps);
+ expect(resolvePresence).toHaveBeenCalledTimes(2);
+});
 it('does not reuse a qualification from the old over-literal funnel policy',async()=>{
  const config=resolveRadarSearchConfiguration({funnel:{enabled:true},sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:false,semanticQualificationEnabled:true}});
  const page={url:'https://alfa.example/',text:'Empresa Alfa CNPJ 12.345.678/0001-90. Refeições para empresas.',observedAt:'2026-10-22'};

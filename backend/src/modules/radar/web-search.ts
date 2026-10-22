@@ -36,7 +36,10 @@ export async function normalizeSavedRadarWeb(input:{provider?:RadarWebSearchProv
     if(!Array.isArray(body.organic))throw Error('radar_web_response_invalid')
     return body.organic.slice(0,maximum).flatMap(item=>{const url=publicRadarUrl(item.link);return url?[{url,title:plain(item.title),snippets:[plain(item.snippet)].filter(Boolean),observedAt:new Date().toISOString(),provider:input.provider,query:input.query,position:item.position}]:[]})
   }
-  const body=raw as {web?:{results?:Array<{url?:string;title?:string;description?:string;extra_snippets?:string[]}>}}
+  const body=raw as {type?:string;query?:{original?:string};error?:unknown;web?:{results?:Array<{url?:string;title?:string;description?:string;extra_snippets?:string[]}>}|null}
+  // Brave documents web as nullable. A typed successful search with no web
+  // section is empty, not a malformed result. Never accept error envelopes.
+  if(body.web==null&&body.type==='search'&&typeof body.query?.original==='string'&&!body.error)return[]
   if(!Array.isArray(body.web?.results))throw Error('radar_web_response_invalid')
   return body.web.results.slice(0,maximum).flatMap(item => {
     const safeUrl = publicRadarUrl(item.url)

@@ -7,7 +7,23 @@ import {reopenRadarFunnelCandidate} from '../../src/modules/radar/funnel-control
 import {restoreRadarDecisionExclusion} from '../../src/modules/radar/decision-review.js';
 import {startRadarCaptureOperation} from '../../src/modules/radar/capture-operation.js';
 import {available} from '../support/radar-capture-fixture.js';
+import {reconcileRadarCaptureItems} from '../../src/modules/radar/capture-reconciliation.js';
 describe.skipIf(!connectionString)('funnel report and scoped reopen',()=>{
+ it('reports the reconciled terminal gaps while preserving the old technical checkpoint and failed source audit',async()=>{
+  const f=await captureFixture();try{
+   const op=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:1},{availability:available});
+   const candidate=(await f.pool.query(`INSERT INTO radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'manual','Sparse fixture',$3,'{}') RETURNING id`,[organizationId,f.campaign.id,randomUUID()])).rows[0];
+   const output={funnel:{stopReason:'eligible_actions_exhausted'},readingComplete:true,siteAssociation:'review',quality:{readyForReview:false},limitations:['radar_qualification_waiting_identity']};
+   const calls={search:{source:'brave_web_search',status:'failed',error:'radar_web_response_invalid'}};
+   const run=(await f.pool.query(`INSERT INTO radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,status,stage,funnel_outcome,output,calls) VALUES($1,$2,$3,$4,1,'partial','review','technical_failure',$5,$6) RETURNING id`,[organizationId,f.campaign.id,candidate.id,admin.id,JSON.stringify(output),JSON.stringify(calls)])).rows[0];
+   await f.pool.query("UPDATE radar_capture_operations SET funnel_enabled=TRUE,discovery_stopped=TRUE,discovery_reason='target_reached',status='blocked' WHERE id=$1",[op.operationId]);
+   await f.pool.query("INSERT INTO radar_capture_items(operation_id,organization_id,campaign_id,candidate_id,run_id,status,funnel_outcome) VALUES($1,$2,$3,$4,$5,'blocked','technical_failure')",[op.operationId,organizationId,f.campaign.id,candidate.id,run.id]);
+   const client=await f.pool.connect();try{await client.query('BEGIN');await reconcileRadarCaptureItems(client,{organizationId,candidateId:candidate.id,runId:run.id});await client.query('COMMIT')}finally{client.release()}
+   const report=await getRadarFunnelReport(f.pool,admin,{organizationId,campaignId:f.campaign.id,operationId:op.operationId});
+   expect(report.companies[0]).toMatchObject({outcome:'completed_with_gaps',blocking:null});
+   expect((await f.pool.query('SELECT funnel_outcome,calls FROM radar_candidate_research_runs WHERE id=$1',[run.id])).rows[0]).toEqual({funnel_outcome:'technical_failure',calls});
+  }finally{await f.close()}
+ });
  it('reports the required qualification conflict instead of an earlier optional HTTP 404',async()=>{
   const f=await captureFixture();try{
    const candidate=(await f.pool.query(`INSERT INTO radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'manual','Premium fixture',$3,'{}') RETURNING id`,[organizationId,f.campaign.id,randomUUID()])).rows[0];

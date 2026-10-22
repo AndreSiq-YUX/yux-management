@@ -180,7 +180,7 @@ export async function resumeRadarCaptureOperation(pool:pg.Pool,user:AuthUser,inp
     await client.query('UPDATE public.radar_capture_operations SET analysis_refresh_authorizations=analysis_refresh_authorizations||$3::jsonb WHERE id=$1 AND organization_id=$2',[op.id,input.organizationId,JSON.stringify([grant])])
    }
    for(const item of limitPause?[]:items){
-    await client.query("UPDATE public.radar_capture_items SET status='queued',blocker=NULL,dispatch_generation=dispatch_generation+1 WHERE id=$1",[item.id])
+    await client.query("UPDATE public.radar_capture_items SET status='queued',blocker=NULL,funnel_outcome=NULL,dispatch_generation=dispatch_generation+1 WHERE id=$1",[item.id])
    }
    const blockers=limitPause?(current.blockers as string[]).filter(code=>!['radar_capture_page_limit','radar_capture_query_limit'].includes(code)):[]
    await client.query("UPDATE public.radar_capture_operations SET status='queued',blockers=$4,resume_request_id=$2,resume_generation=resume_generation+1,discovery_stopped=CASE WHEN $3 THEN FALSE ELSE discovery_stopped END,discovery_reason=CASE WHEN $3 THEN NULL ELSE discovery_reason END WHERE id=$1",[op.id,input.requestId,limitPause,JSON.stringify(blockers)])

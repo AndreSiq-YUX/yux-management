@@ -4,6 +4,13 @@ import {summarizeRadarCaptureItems} from '../src/modules/radar/capture-reconcili
 
 const assess=(run:Record<string,unknown>)=>(states as any).assessRadarFunnelResearch(run)
 describe('terminal commercial research outcomes',()=>{
+ it('settles exhausted fallback searches as explained gaps while retaining their exact failed receipt',()=>{
+  const call={source:'brave_web_search',status:'failed',error:'radar_web_response_invalid'};
+  const run={status:'partial',output:{funnel:{stopReason:'eligible_actions_exhausted'},readingComplete:true,siteAssociation:'review',quality:{readyForReview:false},limitations:['radar_qualification_waiting_identity']},calls:{search:call}};
+  expect(assess(run)).toMatchObject({outcome:'completed_with_gaps',retryable:false});
+  expect(run.calls.search).toEqual(call);
+  expect(assess({...run,calls:{presence:{source:'radar_presence_resolution',status:'uncertain'}}})).toMatchObject({outcome:'technical_failure'});
+ });
  it('keeps optional decision receipts without pausing otherwise complete research in the new funnel',()=>{
   const run={status:'succeeded',output:{funnel:{},siteAssociation:'confirmed',quality:{readyForReview:true}},calls:{decision:{source:'openrouter_decision',status:'uncertain'}}}
   expect(assess(run)).toMatchObject({outcome:'completed',retryable:false})

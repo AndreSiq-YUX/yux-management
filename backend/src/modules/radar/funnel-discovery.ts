@@ -40,6 +40,7 @@ export type RadarFunnelDiscoveryOutput = {
     deepResearchCompleted?: boolean; deepResearchStop?: string;
 };
 type Dependencies = {
+    knownWebsite?: string;
     web: (query: string, source?: RadarWebSearchSource) => Promise<RadarWebHit[]>;
     local?: () => Promise<RadarWebHit[]>;
     collect?: typeof collectRadarSiteEvidence;
@@ -93,7 +94,8 @@ export async function runRadarFunnelDiscovery(identity: RadarBusinessIdentity, c
     state.cheapSearches=Math.max(state.cheapSearches,deps.queriesUsed?.()??0);
     let pages = uniquePages(output.pages ?? []);
     let hits = uniqueHits([...(output.discoveryHits ?? []), ...(output.discovery?.hits ?? []), ...(output.discovery?.suggestions ?? [])]);
-    const owns = (page: RadarSiteEvidence) => !page.limitation && isRadarInstitutionalSource(page.url, { text: page.text, html: page.html }) && matchRadarBusinessIdentity(identity, page.text) === 'confirmed' && hasRadarOwnershipSignal(page.url, identity, page);
+    const owns = (page: RadarSiteEvidence) => !page.limitation && isRadarInstitutionalSource(page.url, { text: page.text, html: page.html }) &&
+        (deps.knownWebsite===page.url||matchRadarBusinessIdentity(identity, page.text) === 'confirmed' && hasRadarOwnershipSignal(page.url, identity, page));
     const flush = () => { output.pages = pages; output.discoveryHits = hits; };
     const read = async (url: string, maximum: number) => {
         const prior = pages.filter(page => new URL(page.url).origin === new URL(url).origin);
@@ -138,7 +140,7 @@ export async function runRadarFunnelDiscovery(identity: RadarBusinessIdentity, c
     while (true) {
         deps.signal?.throwIfAborted();
         const directlyOwned = pages.find(owns);
-        if (!state.pendingAction && directlyOwned && (!state.agentCompleted||state.recoverySearchRequestId)) { state.stopReason = 'identity_found'; break; }
+        if (!state.pendingAction && directlyOwned && (!state.agentCompleted||state.recoverySearchRequestId||deps.knownWebsite)) { state.stopReason = 'identity_found'; break; }
         const readOptions: Action[] = [];
         if (pages.filter(page => !page.limitation).length < configuration.research.maxPagesPerCandidate && pages.length < configuration.research.maxPagesPerCandidate * 2) {
             for (const hit of hits.filter(hit => isRadarInstitutionalSource(hit.url, { title: hit.title, text: hit.snippets.join(' ') }))) {

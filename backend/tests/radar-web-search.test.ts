@@ -1,5 +1,11 @@
 import { expect, it, vi } from 'vitest'
 import { searchRadarWeb } from '../src/modules/radar/web-search.js'
+it('accepts the documented nullable web section only in a recognizable Brave search response',async()=>{
+ const fetchImpl=vi.fn(async()=>new Response(JSON.stringify({type:'search',query:{original:'"00000000000100"',more_results_available:false},web:null})));
+ expect(await searchRadarWeb({apiKey:'fixture',query:'"00000000000100"',limit:5,fetchImpl})).toEqual([]);
+ const invalid=vi.fn(async()=>new Response(JSON.stringify({error:{code:'LIMIT'}})));
+ await expect(searchRadarWeb({apiKey:'fixture',query:'x',limit:5,fetchImpl:invalid})).rejects.toThrow('radar_web_response_invalid');
+});
 it('normalizes Google organic results without treating knowledge-graph or unsafe URLs as confirmed companies',async()=>{
   const fetchImpl=vi.fn(async(_input:unknown,_init?:RequestInit)=>new Response(JSON.stringify({organic:[{link:'https://embrare.com.br/',title:'Embrare',snippet:'Empresa brasileira de refeições',position:1},{link:'javascript:alert(1)',title:'invalid'}],knowledgeGraph:{website:'https://other.example'}})))
   const results=await searchRadarWeb({provider:'serper_web_search',apiKey:'fixture',query:'Empresa Brasileira de Refeicoes',limit:5,fetchImpl})
