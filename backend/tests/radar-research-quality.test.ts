@@ -24,3 +24,8 @@ it('separates low commercial fit from unknown size and requires explicitly selec
   expect(result.fit).toBe('low');expect(result.potential.score).toBeNull()
   expect(result.missing).toContain('contact')
 })
+it.each([undefined,{...dossier.qualification!,targetStatus:'review' as const,productFit:'possible' as const}])('does not complete the enabled funnel using contacts before a confirmed commercial qualification',qualification=>{
+ const loose=resolveRadarSearchConfiguration({research:{semanticQualificationEnabled:true,completion:{enabled:true,requireWebsite:false,requireSegment:false}}}).research;
+ expect(evaluateRadarResearchQuality({dossier:{...dossier,funnel:{},qualification},policy:loose,currentRevision:true})).toMatchObject({readyForReview:false,missing:['segment']});
+ expect(evaluateRadarResearchQuality({dossier:{...dossier,qualification},policy:loose,currentRevision:true}).readyForReview).toBe(true);
+});

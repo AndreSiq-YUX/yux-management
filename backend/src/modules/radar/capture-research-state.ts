@@ -11,6 +11,9 @@ export function assessRadarResearchProgress(run:Child):RadarCaptureResearchAsses
 // Commercial outcome is independent of the durable queue/lease status. Keep
 // those legacy statuses stable so in-flight jobs and old receipts still recover.
 export function assessRadarFunnelResearch(run:Child):{outcome:RadarFunnelOutcome|null;retryable:boolean;reason?:string}{
+ // A completed, authorized exclusion supersedes irrelevant enrichment failures;
+ // their paid receipts remain audited. Never finalize an active or failed worker.
+ if(['partial','succeeded'].includes(run.status)&&run.output?.decisionExcluded===true)return{outcome:'out_of_profile',retryable:false}
  const assessment=assessRadarCaptureResearch(run.output?.funnel?{...run,calls:Object.fromEntries(Object.entries(run.calls??{}).filter(([,call])=>call.source!=='openrouter_decision'))}:run)
  if(assessment.status==='researching')return{outcome:null,retryable:false}
  if(assessment.status==='blocked')return{outcome:'technical_failure',retryable:true,reason:assessment.reason}

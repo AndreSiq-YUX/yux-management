@@ -18,7 +18,8 @@ export function evaluateRadarResearchQuality({dossier,policy,currentRevision}:{d
   const rule=policy.completion,missing:RadarResearchGap[]=[]
   if((rule.enabled?rule.requireIdentity:true)&&!identity)missing.push('identity')
   if(rule.enabled&&rule.requireWebsite&&!website)missing.push('website')
-  if(rule.enabled&&rule.requireSegment&&dossier.qualification?.targetStatus!=='confirmed')missing.push('segment')
+  const requireQualification=!!dossier.funnel&&policy.semanticQualificationEnabled;
+  if((rule.enabled&&rule.requireSegment||requireQualification)&&dossier.qualification?.targetStatus!=='confirmed')missing.push('segment')
   if(contacts.length<(rule.enabled?rule.minimumUsefulContacts:1))missing.push('contact')
   const size=dossier.sizeAssessment
   const score=size&&size.evidenceCoverage>0&&typeof size.score==='number'&&Number.isFinite(size.score)?size.score:null

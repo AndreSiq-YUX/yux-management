@@ -38,6 +38,7 @@ export function projectRadarCommercialResearchStatus(input:{run?:unknown;previou
  for(const field of requested){
   let reason:CommercialResearchStatusV1['unresolvedFields'][number]['reason']|undefined
   if(field==='fit'&&outside)reason='outside_profile'
+  else if(field==='fit'&&output.funnel&&object(output.qualification).targetStatus!=='confirmed')reason=output.siteAssociation==='confirmed'?'verification_pending':'identity_unresolved'
   else if(current[field]===undefined){
    if(active||!output.readingComplete&&!terminalFunnel)reason='verification_pending'
    else if(restricted&&!read)reason='reading_restricted'

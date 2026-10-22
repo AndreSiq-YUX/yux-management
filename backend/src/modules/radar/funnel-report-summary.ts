@@ -17,10 +17,14 @@ export function radarFunnelReportDecision(event:{gate:string;mode:string;event_k
  const wouldBlock=task&&(event.mode==='enforce'||result&&threshold!==null)?event.would_block:null;
  return{probabilities,selectedProbability:result?.choice?probabilities?.[result.choice]??null:null,outsideProbability:probabilities?.outside_profile??null,threshold,wouldBlock};
 }
-export function summarizeRadarFunnelOutcomes(companies:Array<{blocking:{stage:string;reason:string}|null;path:Array<{gate:string;outcome:string;wouldBlock:boolean|null}>}>){
+export function summarizeRadarFunnelOutcomes(companies:Array<{blocking:{stage:string;reason:string}|null;qualificationStatus?:string;path:Array<{gate:string;outcome:string;wouldBlock:boolean|null}>}>){
  const blocks=new Map<string,{stage:string;reason:string;count:number}>(),classes=new Map<string,{gate:string;classification:string;count:number}>();
  const counterfactual={evaluable:0,notEvaluable:0,wouldBlock:0};
+ const commercialQualifications={confirmed:0,review:0,notTarget:0,insufficient:0,notCompleted:0};
  for(const company of companies){
+  const key=company.qualificationStatus==='not_target'?'notTarget':company.qualificationStatus;
+  if(key==='confirmed'||key==='review'||key==='notTarget'||key==='insufficient')commercialQualifications[key]++;
+  else commercialQualifications.notCompleted++;
   if(company.blocking){const key=JSON.stringify(company.blocking),prior=blocks.get(key);blocks.set(key,{...company.blocking,count:(prior?.count??0)+1})}
   const latest=new Map(company.path.filter(step=>step.gate==='g1'||step.gate==='g5').map(step=>[step.gate,step]));
   for(const step of latest.values()){
@@ -29,5 +33,5 @@ export function summarizeRadarFunnelOutcomes(companies:Array<{blocking:{stage:st
    if(step.wouldBlock===null)counterfactual.notEvaluable++;else{counterfactual.evaluable++;if(step.wouldBlock)counterfactual.wouldBlock++}
   }
  }
- return{blocksByReason:[...blocks.values()].sort((a,b)=>a.stage.localeCompare(b.stage)||a.reason.localeCompare(b.reason)),classifications:[...classes.values()].sort((a,b)=>a.gate.localeCompare(b.gate)||a.classification.localeCompare(b.classification)),counterfactual};
+ return{blocksByReason:[...blocks.values()].sort((a,b)=>a.stage.localeCompare(b.stage)||a.reason.localeCompare(b.reason)),classifications:[...classes.values()].sort((a,b)=>a.gate.localeCompare(b.gate)||a.classification.localeCompare(b.classification)),counterfactual,commercialQualifications};
 }

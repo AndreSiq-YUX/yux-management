@@ -2,6 +2,10 @@ import {expect,it} from 'vitest'
 import {validateRadarResearchContract} from '../src/modules/radar/effect-receipts.js'
 const api=await import('../src/modules/radar/commercial-status.js').catch(()=>({})) as Record<string,any>
 const observedAt='2026-10-19T10:00:00Z'
+it('explains that a possible fit is not a finished segment verification',()=>{
+ const result=api.projectRadarCommercialResearchStatus({requestedFields:['fit'],run:{status:'partial',output:{funnel:{},readingComplete:true,siteAssociation:'confirmed',quality:{readyForReview:false},qualification:{targetStatus:'review',productFit:'possible'}}}});
+ expect(result.status).toBe('incomplete');expect(result.unresolvedFields).toContainEqual({field:'fit',reason:'verification_pending'});
+});
 it.each(['gaps','excluded','optional_uncertain'])('finishes a terminal funnel %s without offering the same continuation',kind=>{
  const output={funnel:{},readingComplete:true,siteAssociation:'review',quality:{readyForReview:false},limitations:['radar_qualification_waiting_public_read'],...(kind==='excluded'?{decisionExcluded:true,funnel:{blockedGate:'g1'},readingComplete:false}:{})}
  const calls=kind==='optional_uncertain'?{decision:{source:'openrouter_decision',status:'uncertain'}}:{}

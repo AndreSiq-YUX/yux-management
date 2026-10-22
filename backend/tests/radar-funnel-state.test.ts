@@ -12,6 +12,7 @@ describe('terminal commercial research outcomes',()=>{
  })
  it('finishes an explicit commercial exclusion without calling it a technical failure',()=>{
   expect(assess({status:'partial',output:{decisionExcluded:true}})).toEqual({outcome:'out_of_profile',retryable:false})
+  expect(assess({status:'partial',output:{decisionExcluded:true,funnel:{}},calls:{presence:{source:'radar_presence_resolution',status:'received_invalid',error:'radar_presence_unverifiable'}}})).toEqual({outcome:'out_of_profile',retryable:false})
  })
  it('finishes missing public identity as explained gaps, but preserves uncertain billing as retryable',()=>{
   expect(assess({status:'partial',output:{siteAssociation:'review',limitations:['radar_qualification_waiting_identity']}})).toMatchObject({outcome:'completed_with_gaps',retryable:false})
