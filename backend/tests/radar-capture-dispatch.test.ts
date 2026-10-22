@@ -44,6 +44,10 @@ describe('capture outcomes',()=>{
   expect(api.classifyRadarCaptureResearch({status:'partial',stage:'review',calls:{},output})).toBe('completed')
   expect(state.assessRadarCaptureResearch({status:'partial',output:{limitations:['source_limit_exceeded','radar_qualification_waiting_public_read']}})).toEqual({status:'blocked',stage:'discovery',reason:'source_limit_exceeded'})
  })
+ it('keeps a rejected authorization actionable even with an incidental page warning first',()=>{
+  expect(state.assessRadarCaptureResearch({status:'partial',calls:{semantic:{status:'rejected_before_provider',error:'radar_analysis_retry_policy_changed'}},output:{limitations:['https://company.example/compras/: http_404','Qualificação semântica pendente (radar_analysis_retry_policy_changed). Os fatos foram preservados.']}})).toEqual({status:'blocked',stage:'qualification',reason:'radar_analysis_retry_policy_changed'})
+  expect(state.assessRadarCaptureResearch({status:'partial',output:{limitations:['Qualificação semântica pendente (radar_analysis_retry_policy_changed). Os fatos foram preservados.']}})).toEqual({status:'blocked',stage:'qualification',reason:'radar_analysis_retry_policy_changed'})
+ })
  it('keeps a precise operational reason without interpreting arbitrary public text as an error',()=>{
   expect(state.assessRadarCaptureResearch({status:'partial',calls:{semantic:{status:'uncertain'}},output:{}})).toEqual({status:'blocked',stage:'qualification',reason:'radar_research_call_uncertain'})
   expect(state.assessRadarCaptureResearch({status:'partial',output:{limitations:['Qualificação semântica pendente (agent_runtime_422). Os fatos foram preservados.']}})).toEqual({status:'blocked',stage:'qualification',reason:'agent_runtime_422'})

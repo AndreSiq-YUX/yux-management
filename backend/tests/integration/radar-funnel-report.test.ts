@@ -8,6 +8,15 @@ import {restoreRadarDecisionExclusion} from '../../src/modules/radar/decision-re
 import {startRadarCaptureOperation} from '../../src/modules/radar/capture-operation.js';
 import {available} from '../support/radar-capture-fixture.js';
 describe.skipIf(!connectionString)('funnel report and scoped reopen',()=>{
+ it('reports the required qualification conflict instead of an earlier optional HTTP 404',async()=>{
+  const f=await captureFixture();try{
+   const candidate=(await f.pool.query(`INSERT INTO radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'manual','Premium fixture',$3,'{}') RETURNING id`,[organizationId,f.campaign.id,randomUUID()])).rows[0];
+   await f.pool.query(`INSERT INTO radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,status,stage,funnel_outcome,output,calls) VALUES($1,$2,$3,$4,1,'partial','review','technical_failure',$5,$6)`,[organizationId,f.campaign.id,candidate.id,admin.id,JSON.stringify({limitations:['https://premium.example/compras/: http_404','Qualificação semântica pendente (radar_analysis_retry_policy_changed). Os fatos foram preservados.']}),JSON.stringify({semantic:{status:'rejected_before_provider',error:'radar_analysis_retry_policy_changed'}})]);
+   const report=await getRadarFunnelReport(f.pool,admin,{organizationId,campaignId:f.campaign.id});
+   expect(report.companies[0]).toMatchObject({reason:'radar_analysis_retry_policy_changed',blocking:{stage:'qualification',reason:'radar_analysis_retry_policy_changed'}});
+   expect(report.summary.blocksByReason).toEqual([{stage:'qualification',reason:'radar_analysis_retry_policy_changed',count:1}]);
+  }finally{await f.close()}
+ });
  it('binds a zero-call G0 admission to its own lot rather than later company review',async()=>{
   const f=await captureFixture();try{
    const op=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:1},{availability:available});

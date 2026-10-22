@@ -886,6 +886,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         // no provider started. Other 422 responses may follow a paid generation.
         const rejection=/^agent_runtime_402:(radar_ai_wallet_missing|radar_ai_credits_insufficient)$/.exec(message)?.[1]
           ??(message==='agent_runtime_422:radar_request_invalid'?'radar_request_invalid':undefined)
+          ??/^agent_runtime_409:(radar_analysis_retry_(?:policy_changed|authorization_invalid|scope_invalid|not_required))$/.exec(message)?.[1]
         if(rejection){
           const call=run.calls[key]
           run.calls[key]={...call,status:'rejected_before_provider',error:rejection,
@@ -950,7 +951,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         const result=await decideRadarAction(pool,decisionRequester,decisionContext,{env,runId:run.id,leaseId:lease,runtime,authorize:assertEffectAuthorization,beforeEffect})
         if(configuration.funnel.enabled){
           if(task==='radar_next_action')return applyRadarFunnelNextAction(pool,{...funnelScope,result:result.result,requestId:result.requestId,options,step:meta?.step??0},{authorize:assertEffectAuthorization})
-          if(task==='radar_initial_triage'||task==='radar_fit_gate')return applyRadarFunnelGateDecision(pool,{...funnelScope,gate:task==='radar_initial_triage'?'g1':'g5',result:result.result,routeFingerprint:result.routeFingerprint,requestId:result.requestId,evidence:decisionContext.evidence,associatedWebsite:meta?.associatedWebsite},{authorize:assertEffectAuthorization})
+          if(task==='radar_initial_triage'||task==='radar_fit_gate')return applyRadarFunnelGateDecision(pool,{...funnelScope,gate:task==='radar_initial_triage'?'g1':'g5',result:result.result,failureCode:result.result?undefined:result.reasonCode,routeFingerprint:result.routeFingerprint,requestId:result.requestId,evidence:decisionContext.evidence,associatedWebsite:meta?.associatedWebsite},{authorize:assertEffectAuthorization})
         }
         return{action:result.action}
       }catch(cause){

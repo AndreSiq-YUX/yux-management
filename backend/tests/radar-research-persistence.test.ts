@@ -299,6 +299,17 @@ it.each(['agent_runtime_402:openrouter_credit_required','agent_runtime_402','age
   expect(runtime).toHaveBeenCalledTimes(1)
   expect(JSON.stringify(pool.run!.output.limitations)).toContain('radar_presence_previous_request_uncertain')
 })
+it('preserves a typed pre-provider retry-policy rejection without allowing blind repurchase',async()=>{
+ const pool=new ResearchPool();pool.researchConfiguration={sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:true,semanticQualificationEnabled:true}};
+ const run=await start(pool);
+ pool.run!.output={readingComplete:true,readerVersion:4,discoveryLocked:true,pages,discovery:{association:'confirmed',websiteUrl:pages[0].url,hits:[],suggestions:[],limitations:[],queries:1}};
+ const runtime=vi.fn().mockRejectedValue(Error('agent_runtime_409:radar_analysis_retry_policy_changed'));
+ await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{runtime});
+ expect(pool.run!.calls.semantic).toMatchObject({status:'rejected_before_provider',error:'radar_analysis_retry_policy_changed'});
+ expect(JSON.stringify(pool.run!.output.limitations)).toContain('radar_analysis_retry_policy_changed');
+ await start(pool);await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{runtime});
+ expect(runtime).toHaveBeenCalledTimes(1);
+});
 it('marks a typed request-validation rejection as pre-provider, without treating generic 422 as safe to retry',async()=>{
  for(const failure of ['agent_runtime_422:radar_request_invalid','agent_runtime_422:radar_qualification_invalid_json']){
   const pool=new ResearchPool()

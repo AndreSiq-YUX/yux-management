@@ -48,6 +48,11 @@ type DecisionCall = {
     error?: string;
 };
 const failure = (code: string, statusCode = 409) => Object.assign(Error(code), { statusCode });
+export function radarInitialObservationReserve(funnel: ReturnType<typeof resolveRadarSearchConfiguration>['funnel']): number {
+    // Reserve one first decision for each effective downstream stage. Reserving
+    // the entire company ceiling for a possible G3 loop starves G1 at any limit.
+    return Number(funnel.g3.mode === 'effective') + Number(funnel.g5.mode === 'enforce');
+}
 function canonical(value: unknown): string { if (Array.isArray(value))
     return `[${value.map(canonical).join(',')}]`; if (value && typeof value === 'object')
     return `{${Object.entries(value).filter(([, v]) => v !== undefined).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(',')}}`; return JSON.stringify(value); }
@@ -184,10 +189,9 @@ export async function decideRadarAction(pool: pg.Pool, user: AuthUser, value: De
         if (!call) {
             const funnel=campaign?resolveRadarSearchConfiguration(campaign.search_configuration).funnel:undefined;
             if(funnel?.enabled&&input.task==='radar_initial_triage'&&funnel.g1.mode==='shadow'){
-                // Observations have no extra implicit budget. G3 may need every
-                // remaining slot; G5, if effective, needs at least its own slot.
-                // Skip this optional purchase instead of changing factual flow.
-                const reserve=funnel.g3.mode==='effective'?policy.limits.maxDecisionCallsPerCompany:funnel.g5.mode==='enforce'?1:0;
+                // Keep required downstream stages possible without silently
+                // suppressing every configured initial observation.
+                const reserve=radarInitialObservationReserve(funnel);
                 const used=Object.values(row.calls??{}).filter(entry=>(entry as {source?:string}).source==='openrouter_decision').length;
                 if(policy.limits.maxDecisionCallsPerCompany-used<=reserve)return{action:'continue',effectiveMode:'observe',reasonCode:'decision_observation_capacity_reserved',evidenceIds:[]};
             }

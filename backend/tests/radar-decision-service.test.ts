@@ -1,9 +1,14 @@
 import { expect, it, vi } from 'vitest';
 import type pg from 'pg';
-import { loadRadarDecisionRoute, radarDecisionPrice } from '../src/modules/radar/decision-service.js';
+import { loadRadarDecisionRoute, radarDecisionPrice, radarInitialObservationReserve } from '../src/modules/radar/decision-service.js';
 const tenant = { organizationId: 'org', clientId: 'client', contractId: 'contract' };
 const row = (patch: Record<string, unknown> = {}) => ({ id: 'route', version: '1', agent_type: 'radar_decision_default', routing_tier: 'default', status: 'active', kind: 'decision', protocol: 'openrouter-decisions-alpha-v1', provider: 'openrouter', model_name: 'fixture/primary', fallback_routes: [], decision_config: { enabled: true, mode: 'observe', maxAttempts: 2, modelPolicies: { 'fixture/primary': { estimatedUsdPerAttempt: 1e-15 }, 'fixture/reserve': { estimatedUsdPerAttempt: 1e-15 } } }, ...patch });
 const db = (rows: Record<string, unknown>[]) => ({ query: vi.fn(async () => ({ rows })) }) as unknown as pg.Pool;
+it.each([
+    ['effective','shadow',1], ['effective','enforce',2], ['off','enforce',1], ['off','shadow',0],
+])('reserves only the minimum downstream decisions for G3=%s and G5=%s', (g3,g5,expected) => {
+    expect(radarInitialObservationReserve({g3:{mode:g3},g5:{mode:g5}} as never)).toBe(expected);
+});
 it('resolves a scoped principal, scoped fallbacks and compatible reserves only, with an exact version fingerprint', async () => {
     const primary = row({ id: 'scoped', organization_id: 'org', agent_type: 'radar_initial_triage', fallback_routes: [{ provider: 'openrouter', modelName: 'fixture/manual' }] }), general = row({ id: 'general', agent_type: 'radar_initial_triage', model_name: 'fixture/general' }), reserve = row({ id: 'reserve', model_name: 'fixture/reserve' });
     const route = await loadRadarDecisionRoute(db([general, reserve, primary]), 'radar_initial_triage', tenant);

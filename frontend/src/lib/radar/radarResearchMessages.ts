@@ -1,5 +1,10 @@
 import { radarSizeMetricLabels, type RadarSizeMetric } from './radarSearchConfiguration'
 const explanations:Record<string,string>={
+  radar_analysis_retry_policy_changed:'A autorização não corresponde aos limites ou modelos atuais. Nenhuma chamada ao modelo foi iniciada nesta tentativa. Atualize a conciliação no Admin e confirme a retomada com a configuração atual; os dados encontrados foram preservados.',
+  radar_analysis_retry_authorization_invalid:'A autorização de retomada venceu, já foi usada ou não corresponde a esta análise. Nenhuma chamada ao modelo foi iniciada nesta tentativa. Atualize a conciliação no Admin antes de confirmar novamente.',
+  radar_analysis_retry_scope_invalid:'A retomada não corresponde à empresa ou à análise autorizada. Nenhuma chamada ao modelo foi iniciada nesta tentativa. Confira a seleção na conciliação do Admin.',
+  radar_analysis_retry_not_required:'A análise anterior mudou de situação e esta autorização não pode mais ser usada. Atualize o acompanhamento para recuperar o resultado ou verificar a execução em andamento.',
+  decision_observation_capacity_reserved:'A triagem em observação não foi executada: a capacidade restante foi reservada para as próximas decisões obrigatórias. A coleta de dados continua; confira o teto de decisões por empresa no Admin.',
   radar_discovery_qualification_criteria_required:'Esta pesquisa conta empresas aderentes, mas a campanha ainda não definiu como confirmar a aderência. Configure critérios positivos de inclusão ou habilite a análise comercial antes de pesquisar novas empresas. Nenhuma consulta foi comprada.',
   radar_capture_source_exhausted:'Não há novas páginas disponíveis nas regiões e nos critérios atuais. Aumentar o limite de páginas não reabre uma fonte esgotada. Revise o público ou as regiões em Editar configuração para uma nova pesquisa; os resultados anteriores foram preservados.',
   radar_operational_limit_exceeded:'Um valor ultrapassa o teto operacional do Radar. O Admin YUX pode ajustar os tetos em Admin → Integrações → Limites operacionais do Radar; depois revise os limites da campanha e confirme a retomada do lote.',

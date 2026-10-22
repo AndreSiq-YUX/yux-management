@@ -2,8 +2,40 @@ import {describe,it,expect} from 'vitest'
 import {randomUUID} from 'node:crypto'
 import {captureFixture,connectionString,organizationId,admin} from '../support/radar-capture-fixture.js'
 import {getRadarOperationalLimits,updateRadarOperationalLimits} from '../../src/modules/radar/operational-limits.js'
+import {authorizeRadarAnalysisRetries,resolveRadarAnalysisRetry} from '../../src/modules/radar/analysis-retry-authorizations.js'
 const api=await import('../../src/modules/radar/administrative-research.js').catch(()=>({})) as Record<string,any>
 describe.skipIf(!connectionString)('Radar administrative recovery in isolated PostgreSQL',()=>{
+ it('recovers the exact predecessor of an unstarted retry, never a consumed grant or an existing uncertain receipt',async()=>{
+  const f=await captureFixture(),receipts:string[]=[];let routeId:string|undefined;
+  try{
+   await f.pool.query(`UPDATE radar_campaigns SET search_configuration=jsonb_set(search_configuration,'{research,semanticQualificationEnabled}','true') WHERE id=$1`,[f.campaign.id]);
+   routeId=(await f.pool.query(`INSERT INTO model_routing_rules(agent_type,organization_id,provider,model_name) VALUES('radar_business_qualification',$1,'openrouter','fixture-only') RETURNING id`,[organizationId])).rows[0].id;
+   const candidate=(await f.pool.query(`INSERT INTO radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'manual','Premium synthetic',$3,'{}') RETURNING id`,[organizationId,f.campaign.id,randomUUID()])).rows[0];
+   const oldRun=(await f.pool.query(`INSERT INTO radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,status) VALUES($1,$2,$3,$4,1,'partial') RETURNING id`,[organizationId,f.campaign.id,candidate.id,admin.id])).rows[0];
+   const oldRequest=`${oldRun.id}:old`,receipt=(await f.pool.query(`INSERT INTO radar_analysis_receipts(organization_id,action,request_id,input_hash,owner_token,status) VALUES($1,'radar_business_qualification',$2,$3,$4,'uncertain') RETURNING id`,[organizationId,oldRequest,'a'.repeat(64),randomUUID()])).rows[0];receipts.push(receipt.id);
+   await f.pool.query('UPDATE radar_candidate_research_runs SET calls=$2 WHERE id=$1',[oldRun.id,JSON.stringify({semantic:{source:'radar_business_qualification',status:'uncertain',requestId:oldRequest,evidenceHash:'old'}})]);
+   const scope={organizationId,campaignId:f.campaign.id},approval={...scope,configurationRevision:1,requestId:randomUUID(),expiresAt:new Date(Date.now()+3600000).toISOString(),acknowledgePreviousChargeMayExist:true as const,items:[{candidateId:candidate.id,previousReceiptId:receipt.id}]};
+   const approved=await authorizeRadarAnalysisRetries(f.pool,admin,approval),grant=(await f.pool.query('SELECT * FROM radar_analysis_retry_authorizations WHERE id=$1',[approved.items[0].authorizationId])).rows[0];
+   const current=(await f.pool.query(`INSERT INTO radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,status) VALUES($1,$2,$3,$4,1,'partial') RETURNING id`,[organizationId,f.campaign.id,candidate.id,admin.id])).rows[0];
+   const failedRequest=`${current.id}:retry:${grant.id}`;
+   await f.pool.query('UPDATE radar_candidate_research_runs SET calls=$2 WHERE id=$1',[current.id,JSON.stringify({semantic:{source:'radar_business_qualification',status:'reserved',requestId:failedRequest,evidenceHash:'same',retryAuthorization:{authorization_id:grant.id,policy_hash:grant.policy_hash},previous:{requestId:oldRequest,status:'uncertain'}}})]);
+   const selectable=async()=>(await api.getRadarAdministrativeResearch(f.pool,admin,scope)).analyses.find((item:any)=>item.receiptId===receipt.id)?.canAuthorizeRetry;
+   expect(await selectable()).toBe(true);
+   await f.pool.query('UPDATE radar_analysis_retry_authorizations SET consumed_at=NOW(),consumed_by_analysis_receipt_id=$2 WHERE id=$1',[grant.id,receipt.id]);
+   expect(await selectable()).toBe(false);
+   await f.pool.query('UPDATE radar_analysis_retry_authorizations SET consumed_at=NULL,consumed_by_analysis_receipt_id=NULL WHERE id=$1',[grant.id]);
+   const actual=(await f.pool.query(`INSERT INTO radar_analysis_receipts(organization_id,action,request_id,input_hash,owner_token,status) VALUES($1,'radar_business_qualification',$2,$3,$4,'uncertain') RETURNING id`,[organizationId,failedRequest,'b'.repeat(64),randomUUID()])).rows[0];
+   expect(await selectable()).toBe(false);await f.pool.query('DELETE FROM radar_analysis_receipts WHERE id=$1',[actual.id]);
+   const policy=await getRadarOperationalLimits(f.pool,admin);await updateRadarOperationalLimits(f.pool,admin,{expectedVersion:policy.version,limits:policy.limits,costPolicy:policy.costPolicy});
+   const result=await api.resumeRadarAdministrativeResearch(f.pool,admin,{...scope,configurationRevision:1,expiresAt:approval.expiresAt,acknowledgePreviousChargeMayExist:true,receiptIds:[receipt.id],requestId:randomUUID()});
+   expect(result.items[0]).toMatchObject({state:'queued',candidateId:candidate.id});
+   await f.pool.query(`UPDATE radar_research_request_items SET run_id=$2 WHERE candidate_id=$1`,[candidate.id,current.id]);
+   const config=(await f.pool.query('SELECT search_configuration FROM radar_campaigns WHERE id=$1',[f.campaign.id])).rows[0].search_configuration;
+   const resolved=await resolveRadarAnalysisRetry(f.pool,{...scope,candidateId:candidate.id,runId:current.id,configurationRevision:1,action:'radar_business_qualification',previousRequestId:failedRequest,searchConfiguration:config});
+   expect(resolved?.authorization_id).toBeTruthy();expect(resolved?.authorization_id).not.toBe(grant.id);
+   expect((await f.pool.query('SELECT status FROM radar_analysis_receipts WHERE id=$1',[receipt.id])).rows[0].status).toBe('uncertain');
+  }finally{if(routeId)await f.pool.query('DELETE FROM model_routing_rules WHERE id=$1',[routeId]);await f.pool.query('DELETE FROM radar_analysis_retry_authorizations WHERE campaign_id=$1',[f.campaign.id]);await f.pool.query('DELETE FROM radar_analysis_receipts WHERE id=ANY($1::uuid[])',[receipts]);await f.close()}
+ });
  it('revalidates the two saved replies in a five-item group for free and leaves three unknown effects untouched',async()=>{
   const f=await captureFixture(),ids:string[]=[],originalPolicy=await getRadarOperationalLimits(f.pool,admin)
   try{

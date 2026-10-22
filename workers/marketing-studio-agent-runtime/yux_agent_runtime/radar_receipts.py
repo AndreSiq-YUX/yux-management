@@ -122,7 +122,16 @@ def execute_radar_receipt(store, *, action, request, compute, debit, validate_ef
     input_hash = sha256(json.dumps(request.model_dump(), sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
     key = dict(organization_id=request.organization_id, action=action, request_id=request.request_id)
     owner_token = str(uuid4())
-    receipt, claimed = store.claim_radar_receipt(**key, input_hash=input_hash, owner_token=owner_token, input_request=request.model_dump())
+    try:
+        receipt, claimed = store.claim_radar_receipt(**key, input_hash=input_hash, owner_token=owner_token, input_request=request.model_dump())
+    except Exception as cause:
+        # These exact database guards reject before the receipt transaction
+        # commits and before debit/provider. Never expose SQL/CONTEXT to callers.
+        code = str(cause).split('\n', 1)[0]
+        if code in {'radar_analysis_retry_policy_changed', 'radar_analysis_retry_authorization_invalid',
+                    'radar_analysis_retry_scope_invalid', 'radar_analysis_retry_not_required'}:
+            raise HTTPException(status_code=409, detail=code) from None
+        raise
     if receipt['input_hash'] != input_hash:
         raise HTTPException(status_code=409, detail='radar_analysis_request_conflict')
     if not claimed:

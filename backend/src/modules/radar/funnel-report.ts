@@ -7,6 +7,7 @@ import {radarDecisionHash} from './decision-service.js';
 import {radarScopedFunnelOverrides} from './funnel-gate-application.js';
 import {summarizeRadarFunnelCosts} from './funnel-costs.js';
 import {radarFunnelReportDecision,summarizeRadarFunnelOutcomes} from './funnel-report-summary.js';
+import {assessRadarCaptureResearch} from './capture-research-state.js';
 
 const scope=z.object({organizationId:z.uuid(),campaignId:z.uuid()}).strict();
 const fail=(code:string,statusCode=409)=>Object.assign(Error(code),{statusCode});
@@ -37,8 +38,10 @@ export async function getRadarFunnelReport(pool:pg.Pool,user:AuthUser,value:unkn
    const sampled=event.mode==='enforce'&&event.would_block&&event.outcome==='outside_profile'&&parseInt(radarDecisionHash({candidateId:row.id,gate:event.gate,revision:event.configuration_revision}).slice(0,8),16)/0x100000000<rate;
    return{id:event.id,gate:event.gate,mode:event.mode,outcome:event.outcome,reason:event.reason_code,evidenceIds:event.evidence_ids,requestId:event.decision_request_id,estimatedBrl:event.cost_estimate_brl,sampled,audit:audits.find(audit=>audit.event_id===event.id)??null,...radarFunnelReportDecision(event as {gate:string;mode:string;decision_request_id?:string;would_block:boolean},row.calls,row.output)};
   });
-  const reason=[...path].reverse().find(event=>event.gate===gate)?.reason??row.output?.limitations?.[0]??row.item_blocker??(!input.operationId&&!row.run_id?payload.triageReasons?.[0]:undefined);
-  const blocking=gate?{stage:gate,reason:reason??'unknown'}:row.funnel_outcome==='technical_failure'||row.item_outcome==='technical_failure'||row.run_status==='blocked'||row.item_status==='blocked'?{stage:row.run_stage??'research',reason:row.error_code??row.item_blocker??reason??'unknown'}:null;
+  const assessment=row.run_id?assessRadarCaptureResearch({status:row.run_status,stage:row.run_stage,error_code:row.error_code,calls:row.calls,output:row.output}):undefined;
+  const operational=assessment?.status==='blocked'?assessment:undefined;
+  const reason=[...path].reverse().find(event=>event.gate===gate)?.reason??row.error_code??operational?.reason??row.item_blocker??row.output?.limitations?.[0]??(!input.operationId&&!row.run_id?payload.triageReasons?.[0]:undefined);
+  const blocking=gate?{stage:gate,reason:reason??'unknown'}:row.funnel_outcome==='technical_failure'||row.item_outcome==='technical_failure'||row.run_status==='blocked'||row.run_status==='failed'||row.item_status==='blocked'?{stage:operational?.stage??row.run_stage??'research',reason:reason??'unknown'}:null;
   return{id:row.id,name:row.title,runId:row.run_id,outcome:row.funnel_outcome??row.item_outcome,gate,blocking,reviewRequested:!!payload.funnelReviewRequest&&!payload.funnelReviewRequest.handledAt,reason,currentReview:{gate:payload.decisionExclusion?.active?payload.decisionExclusion.gate:null,reason:payload.triageReasons?.[0]??null},registryPreview:{...registry,blocked:previewBlocked,verifiedPositive:positives.has(row.id)},path,
    emailSignal:row.output?.funnel?.emailSignal,agentUsed:row.output?.funnel?.agentAttempted===true,weakFit:row.output?.funnel?.initial?.action==='short_investigation'||row.output?.funnel?.fit?.action==='short_investigation',historical:!!row.historical_closed_at};
  });

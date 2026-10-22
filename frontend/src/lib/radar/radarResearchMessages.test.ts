@@ -1,5 +1,10 @@
 import {it,expect} from 'vitest'
 import {radarResearchMessage} from './radarResearchMessages'
+it('distinguishes a pre-provider authorization mismatch from an uncertain paid call',()=>{
+ const message=radarResearchMessage('radar_analysis_retry_policy_changed');
+ expect(message).toContain('limites ou modelos');expect(message).toContain('Nenhuma chamada ao modelo');expect(message).toContain('conciliação');
+ expect(radarResearchMessage('decision_observation_capacity_reserved')).toContain('não foi executada');
+})
 it('explains a stale continuation confirmation without leaking technical codes',()=>{
   expect(radarResearchMessage('radar_capture_continuation_confirmation_stale')).toContain('Atualize')
   expect(radarResearchMessage('radar_capture_continuation_confirmation_required')).toContain('confirmação')

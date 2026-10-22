@@ -5,6 +5,7 @@ import type {AuthUser} from '../../auth/routes.js'
 import {loadRadarOperationalLimits} from './operational-limits.js'
 import {resolveRadarSearchConfiguration} from './search-configuration.js'
 import {isRadarDecisionTask} from './decision-contracts.js'
+import {findRadarUnstartedAnalysisRetries} from './unstarted-analysis-retries.js'
 
 const fail=(code:string,statusCode=409)=>Object.assign(Error(code),{statusCode})
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -20,12 +21,14 @@ export const radarAnalysisRetryAuthorizationSchema=z.object({organizationId:z.uu
 export type RadarAnalysisRetryAuthorizationInput=z.infer<typeof radarAnalysisRetryAuthorizationSchema>
 export type RadarAnalysisRetryBinding={authorization_id:string;candidate_id:string;campaign_id:string;configuration_revision:number;policy_hash:string}
 export async function resolveRadarAnalysisRetry(db:Pick<pg.Pool,'query'>,input:{organizationId:string;campaignId:string;candidateId:string;runId:string;configurationRevision:number;action:string;previousRequestId:string;searchConfiguration:unknown}):Promise<RadarAnalysisRetryBinding|undefined>{
+ const interrupted=(await findRadarUnstartedAnalysisRetries(db,input)).find(row=>row.current_request_id===input.previousRequestId)
+ const previousRequestId=interrupted?.previous_request_id??input.previousRequestId
  const row=(await db.query(`SELECT grant_row.* FROM public.radar_research_request_items item
   JOIN public.radar_research_requests request ON request.id=item.research_request_id AND request.organization_id=item.organization_id
   JOIN public.radar_analysis_retry_authorizations grant_row ON grant_row.request_id=request.analysis_authorization_id AND grant_row.organization_id=request.organization_id AND grant_row.campaign_id=request.campaign_id AND grant_row.candidate_id=item.candidate_id
   JOIN public.radar_analysis_receipts receipt ON receipt.id=grant_row.previous_analysis_receipt_id AND receipt.organization_id=grant_row.organization_id
   WHERE item.organization_id=$1 AND item.campaign_id=$2 AND item.candidate_id=$3 AND item.run_id=$4 AND grant_row.configuration_revision=$5 AND grant_row.action=$6 AND receipt.request_id=$7
-   AND grant_row.consumed_at IS NULL AND grant_row.expires_at>NOW() ORDER BY request.created_at DESC LIMIT 1`,[input.organizationId,input.campaignId,input.candidateId,input.runId,input.configurationRevision,input.action,input.previousRequestId])).rows[0]
+   AND grant_row.consumed_at IS NULL AND grant_row.expires_at>NOW() ORDER BY request.created_at DESC LIMIT 1`,[input.organizationId,input.campaignId,input.candidateId,input.runId,input.configurationRevision,input.action,previousRequestId])).rows[0]
  if(!row)return
  const campaign=(await db.query('SELECT operational_policy_version FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2',[input.campaignId,input.organizationId])).rows[0]
  const actions=(row.policy_snapshot?.routes??[]).map((route:{action:string})=>route.action)

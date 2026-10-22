@@ -17,6 +17,28 @@ def request(org='org'):
     return SimpleNamespace(**value, model_dump=lambda: value)
 
 
+@pytest.mark.parametrize('code', ['radar_analysis_retry_policy_changed', 'radar_analysis_retry_authorization_invalid', 'radar_analysis_retry_scope_invalid', 'radar_analysis_retry_not_required'])
+def test_claim_rejection_reports_safe_conflict_without_provider_or_debit(code):
+    class RejectedStore:
+        def claim_radar_receipt(self, **kwargs):
+            raise RuntimeError(code + '\nCONTEXT: private database detail')
+    calls = []
+    with pytest.raises(HTTPException) as failure:
+        execute_radar_receipt(RejectedStore(), action='radar_business_qualification', request=request(),
+            debit=lambda: calls.append('debit'), compute=lambda before_call: calls.append('provider'))
+    assert failure.value.status_code == 409
+    assert failure.value.detail == code
+    assert calls == []
+
+
+def test_unknown_claim_failure_is_not_exposed_as_a_safe_policy_conflict():
+    class FailedStore:
+        def claim_radar_receipt(self, **kwargs):
+            raise RuntimeError('private connection detail')
+    with pytest.raises(RuntimeError, match='private connection detail'):
+        execute_radar_receipt(FailedStore(), action='radar_business_qualification', request=request(), debit=lambda: None, compute=lambda before_call: None)
+
+
 def test_concurrent_receipt_never_calls_provider_twice():
     entered, release = Event(), Event()
     store = InMemoryAgentRuntimeStore()

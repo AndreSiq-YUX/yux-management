@@ -9,6 +9,7 @@ import {radarReportedCostAmount} from './cost-conversion.js'
 import {createHash} from 'node:crypto'
 import {authorizeRadarAnalysisRetries} from './analysis-retry-authorizations.js'
 import {queueRadarResearchRequest} from './research-requests.js'
+import {findRadarUnstartedAnalysisRetries} from './unstarted-analysis-retries.js'
 
 export const radarAdministrativeScopeSchema=z.object({organizationId:z.uuid(),campaignId:z.uuid()}).strict()
 export const radarAdministrativeRevalidationSchema=radarAdministrativeScopeSchema.extend({receiptIds:z.array(z.uuid()).min(1)}).strict()
@@ -24,7 +25,7 @@ async function authorize(pool:pg.Pool,user:AuthUser,input:Scope){
 }
 async function analyses(pool:Pick<pg.Pool,'query'>,input:Scope,ids?:string[]){
  // Select metadata only. Raw reply, saved input and ownership tokens stay in SQL.
- return(await pool.query(`SELECT receipt.id,receipt.action,receipt.request_id,receipt.status,receipt.input_hash,
+ const rows=(await pool.query(`SELECT receipt.id,receipt.action,receipt.request_id,receipt.status,receipt.input_hash,
   receipt.lease_until>NOW() AS lease_active,receipt.created_at,
   jsonb_typeof(receipt.input_request)='object' AS has_saved_input,
   receipt.input_request->>'client_id' AS client_id,receipt.input_request->>'contract_id' AS contract_id,
@@ -44,6 +45,11 @@ async function analyses(pool:Pick<pg.Pool,'query'>,input:Scope,ids?:string[]){
   WHERE receipt.organization_id=$1 AND run.campaign_id=$2 AND receipt.action IN('radar_presence_resolution','radar_business_qualification','radar_initial_triage','radar_next_action','radar_quality_gate','radar_fit_gate','radar_deep_research')
    AND (($3::uuid[] IS NULL AND receipt.status<>'completed') OR receipt.id=ANY($3::uuid[]))
   ORDER BY receipt.created_at DESC,receipt.id DESC`,[input.organizationId,input.campaignId,ids??null])).rows
+ const interrupted=await findRadarUnstartedAnalysisRetries(pool,input)
+ return rows.map(row=>{
+  const retry=interrupted.find(item=>item.receipt_id===row.id)
+  return retry?{...row,current_scope:true,current_call:retry.current_call,configuration_revision:retry.configuration_revision,unstarted_retry:true}:row
+ })
 }
 function recoveryId(value:string){
  const bytes=createHash('sha256').update(value).digest().subarray(0,16);bytes[6]=(bytes[6]&15)|80;bytes[8]=(bytes[8]&63)|128
@@ -100,7 +106,7 @@ export async function getRadarAdministrativeResearch(pool:pg.Pool,user:AuthUser,
     transport:row.transport_outcome??null,validation:row.validation_outcome??null,billing:row.billing_outcome??'uncertain',failureCode:row.failure_code??null,provider:row.provider??null,model:row.model_snapshot??null,
     reportedUsd:radarReportedCostAmount(usage.costUsd),estimatedBrl:bound?radarReportedCostAmount(estimate.amountBrl??call.reservedBrl):null,
     canRevalidate:row.has_saved_response===true&&row.has_saved_input===true&&!row.lease_active,
-    canAuthorizeRetry:bound&&call.status!=='completed'&&row.current_scope===true&&row.status==='uncertain'&&!row.lease_active}
+    canAuthorizeRetry:(bound||row.unstarted_retry===true)&&call.status!=='completed'&&row.current_scope===true&&row.status==='uncertain'&&!row.lease_active}
   })}
 }
 export async function revalidateRadarAdministrativeResearch(pool:pg.Pool,user:AuthUser,env:AppEnv,value:z.infer<typeof radarAdministrativeRevalidationSchema>,dependencies:{runtime?:typeof invokeAgentRuntime}={}){
