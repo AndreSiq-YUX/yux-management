@@ -13,3 +13,13 @@ it('keeps the original receipt identity of legacy presence and qualification res
  expect(result.calls.presence.requestId).toBe('historical-run:presence:presence-hash');
  expect(result.calls.semantic.requestId).toBe('historical-run:qualification-hash');
 });
+it('opens decision capacity only on a distinct explicit recovery intent and keeps paid effects intact',()=>{
+ const calls={a:{source:'openrouter_decision',status:'completed'},b:{source:'openrouter_decision',status:'completed'},agent:{source:'perplexity_agent',status:'completed',requestId:'already-paid'}};
+ const output={funnel:{fit:{reasonCode:'decision_limit_reached'},agentCompleted:true,executedActions:['agent_research'],decisionCalls:2}};
+ const result=api.prepareRadarDecisionRecovery(output,calls,{requestId:'approved-resume',maximum:2});
+ expect(result).toMatchObject({funnel:{decisionRound:1,decisionRecoveryRequestId:'approved-resume',decisionCalls:0,agentCompleted:true,executedActions:['agent_research']}});
+ expect(result.funnel.fit).toBeUndefined();
+ expect(api.prepareRadarDecisionRecovery(result,calls,{requestId:'approved-resume',maximum:2})).toBe(result);
+ expect(api.prepareRadarDecisionRecovery(output,calls,{maximum:2})).toBe(output);
+ expect(calls.agent.requestId).toBe('already-paid');expect(Object.keys(calls)).toHaveLength(3);
+});

@@ -44,6 +44,24 @@ describe.skipIf(!connectionString)('real backend → HTTP runtime → per-attemp
         throw Error(`fixture_runtime_not_ready ${errors}`);
     }, 20000);
     afterAll(() => child?.kill());
+    it('keeps a shared slot for G5 under real transactional G3 reservations and reuses paid choices',async()=>{
+        const f=await captureFixture(),policy=await getRadarOperationalLimits(f.pool,admin);let routeId:string|undefined;
+        try{
+            await updateRadarOperationalLimits(f.pool,admin,{expectedVersion:policy.version,limits:{...policy.limits,maxDecisionCallsPerCompany:6},costPolicy:{usdToBrl:'5',rateAsOf:'2026-10-19T12:00:00Z',rateSource:'manual',marginPercent:'0'}});
+            routeId=(await upsertAdminLlmRoute(f.pool,{agentType:'radar_decision_default',organizationId,provider:'openrouter',kind:'decision',modelName:'fixture/primary',decisionConfig:{enabled:true,mode:'observe',maxAttempts:1,modelPolicies:{'fixture/primary':{estimatedUsdPerAttempt:.001}}}})).id;
+            await f.pool.query(`UPDATE radar_campaigns SET search_configuration=jsonb_set(search_configuration,'{funnel}','{"enabled":true,"g1":{"mode":"shadow"},"g3":{"mode":"effective"},"g5":{"mode":"shadow"}}') WHERE id=$1`,[f.campaign.id]);
+            const candidate=(await f.pool.query(`INSERT INTO radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'manual','Empresa Alfa',$3,'{}') RETURNING id`,[organizationId,f.campaign.id,randomUUID()])).rows[0],lease=randomUUID();
+            const run=(await f.pool.query(`INSERT INTO radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,status,lease_id,lease_until) VALUES($1,$2,$3,$4,1,'running',$5,NOW()+INTERVAL '5 minutes') RETURNING id`,[organizationId,f.campaign.id,candidate.id,admin.id,lease])).rows[0];
+            const input:DecisionContextV1={schemaVersion:1,contextVersion:'radar-decision-context-v2',organizationId,campaignId:f.campaign.id,candidateId:candidate.id,configurationRevision:1,task:'radar_initial_triage',identity:{name:'Empresa Alfa'},criteria:{segment:'Empresas'},evidence:[],options:[],humanReviewed:false},deps={env,runId:run.id,leaseId:lease,authorize:async()=>{}};
+            await decideRadarAction(f.pool,admin,input,deps);
+            const g3=(step:number):DecisionContextV1=>({...input,task:'radar_next_action',step,options:[{id:'read_alfa',description:'Ler Alfa'},{id:'search_other',description:'Outra fonte'}]});
+            for(let step=0;step<4;step++)expect(await decideRadarAction(f.pool,admin,g3(step),deps)).toHaveProperty('requestId');
+            expect(await decideRadarAction(f.pool,admin,g3(4),deps)).toMatchObject({reasonCode:'decision_final_capacity_reserved'});
+            expect(await decideRadarAction(f.pool,admin,g3(0),deps)).toHaveProperty('requestId');
+            expect(await decideRadarAction(f.pool,admin,{...input,task:'radar_fit_gate'},deps)).toHaveProperty('requestId');
+            expect((await f.pool.query('SELECT count(*)::int AS n FROM radar_analysis_receipts WHERE request_id LIKE $1',[`${run.id}:%`])).rows[0].n).toBe(6);
+        }finally{const current=await getRadarOperationalLimits(f.pool,admin);await updateRadarOperationalLimits(f.pool,admin,{expectedVersion:current.version,limits:policy.limits,costPolicy:policy.costPolicy});if(routeId)await f.pool.query('DELETE FROM model_routing_rules WHERE id=$1',[routeId]);await f.close()}
+    },30000);
     it.each([1,6])('reserves G3 without starving G1 when the ceiling is %s',async(maximum)=>{
         const f=await captureFixture(),policy=await getRadarOperationalLimits(f.pool,admin);let routeId:string|undefined;
         try{

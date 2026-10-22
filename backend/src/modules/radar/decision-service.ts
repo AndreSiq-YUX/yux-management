@@ -28,6 +28,7 @@ export type RadarDecisionRoute = {
     fingerprint: string;
 };
 type DecisionCall = {
+    round?: number;
     source: 'openrouter_decision';
     status: string;
     requestId: string;
@@ -51,7 +52,23 @@ const failure = (code: string, statusCode = 409) => Object.assign(Error(code), {
 export function radarInitialObservationReserve(funnel: ReturnType<typeof resolveRadarSearchConfiguration>['funnel']): number {
     // Reserve one first decision for each effective downstream stage. Reserving
     // the entire company ceiling for a possible G3 loop starves G1 at any limit.
-    return Number(funnel.g3.mode === 'effective') + Number(funnel.g5.mode === 'enforce');
+    return Number(funnel.g3.mode === 'effective') + Number(funnel.g5.mode !== 'off');
+}
+export function radarDecisionStageCapacity(input: {
+    task: string; calls: Record<string, unknown>; maximum: number; round?: number;
+    funnel?: ReturnType<typeof resolveRadarSearchConfiguration>['funnel'];
+}) {
+    const used = Object.values(input.calls).filter(value => {
+        const call = value as {source?: string; round?: number};
+        return call.source === 'openrouter_decision' && (call.round ?? 0) === (input.round ?? 0);
+    }).length;
+    const reservedForFinal = Number(input.funnel?.enabled === true && input.funnel.g5.mode !== 'off' && input.task === 'radar_next_action'
+        && (input.maximum > 1 || input.funnel.g5.mode === 'enforce'));
+    const reserve = input.funnel?.enabled && input.task === 'radar_initial_triage' && input.funnel.g1.mode === 'shadow'
+        ? radarInitialObservationReserve(input.funnel) : reservedForFinal;
+    const reason = used >= input.maximum ? 'decision_limit_reached'
+        : used + reserve >= input.maximum ? reservedForFinal ? 'decision_final_capacity_reserved' : 'decision_observation_capacity_reserved' : undefined;
+    return {allowed: !reason, reason, reservedForFinal};
 }
 function canonical(value: unknown): string { if (Array.isArray(value))
     return `[${value.map(canonical).join(',')}]`; if (value && typeof value === 'object')
@@ -181,30 +198,20 @@ export async function decideRadarAction(pool: pg.Pool, user: AuthUser, value: De
         transactionOpen = true;
         await db.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`radar-decisions:${input.organizationId}:${input.candidateId}`]);
         const campaign=input.contextVersion==='radar-decision-context-v2'?(await db.query('SELECT search_configuration FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR SHARE',[input.campaignId,input.organizationId])).rows[0]:undefined;
-        const row = (await db.query(`SELECT calls,campaign_id,configuration_revision,candidate_id,organization_id,lease_id,status,lease_until>NOW() AS lease_active FROM public.radar_candidate_research_runs WHERE id=$1 FOR UPDATE`, [dependencies.runId])).rows[0];
+        const row = (await db.query(`SELECT calls,output,campaign_id,configuration_revision,candidate_id,organization_id,lease_id,status,lease_until>NOW() AS lease_active FROM public.radar_candidate_research_runs WHERE id=$1 FOR UPDATE`, [dependencies.runId])).rows[0];
         if (!row || row.campaign_id !== input.campaignId || row.organization_id !== input.organizationId || row.candidate_id !== input.candidateId || row.configuration_revision !== input.configurationRevision || row.lease_id !== dependencies.leaseId)
             throw failure('radar_decision_scope_changed');
         if(row.status!=='running'||row.lease_active!==true)throw failure('radar_research_lease_lost');
         call = row.calls?.[key];
         if (!call) {
             const funnel=campaign?resolveRadarSearchConfiguration(campaign.search_configuration).funnel:undefined;
-            if(funnel?.enabled&&input.task==='radar_initial_triage'&&funnel.g1.mode==='shadow'){
-                // Keep required downstream stages possible without silently
-                // suppressing every configured initial observation.
-                const reserve=radarInitialObservationReserve(funnel);
-                const used=Object.values(row.calls??{}).filter(entry=>(entry as {source?:string}).source==='openrouter_decision').length;
-                if(policy.limits.maxDecisionCallsPerCompany-used<=reserve)return{action:'continue',effectiveMode:'observe',reasonCode:'decision_observation_capacity_reserved',evidenceIds:[]};
-            }
+            const round = Number.isSafeInteger(row.output?.funnel?.decisionRound) ? row.output.funnel.decisionRound : 0;
+            const capacity = radarDecisionStageCapacity({task:input.task,calls:row.calls??{},funnel,maximum:policy.limits.maxDecisionCallsPerCompany,round});
+            if (!capacity.allowed) return {action:'continue',effectiveMode:'observe',reasonCode:capacity.reason!,evidenceIds:[]};
             if (price.amountBrl === null)
                 return { action: 'continue', effectiveMode: 'observe', reasonCode: 'decision_price_unconfigured', evidenceIds: [] };
-            if (Object.values(row.calls ?? {} as Record<string, {
-                source?: string;
-            }>).filter(entry => (entry as {
-                source?: string;
-            }).source === 'openrouter_decision').length >= policy.limits.maxDecisionCallsPerCompany)
-                return { action: 'continue', effectiveMode: 'observe', reasonCode: 'decision_limit_reached', evidenceIds: [] };
             dependencies.beforeEffect?.();
-            call = { status: 'reserved', source: 'openrouter_decision', requestId: `${dependencies.runId}:${input.task}:${contentHash}`, contextHash, route: { ...route, authorizedAttempts: Math.min(route.config.maxAttempts, policy.limits.maxFallbackAttemptsPerEffect + 1) }, context: input, costPolicy: policy.costPolicy, costEstimate: price };
+            call = { status: 'reserved', source: 'openrouter_decision', round, requestId: `${dependencies.runId}:${input.task}:${contentHash}`, contextHash, route: { ...route, authorizedAttempts: Math.min(route.config.maxAttempts, policy.limits.maxFallbackAttemptsPerEffect + 1) }, context: input, costPolicy: policy.costPolicy, costEstimate: price };
             await db.query(`UPDATE public.radar_candidate_research_runs SET calls=jsonb_set(calls,ARRAY[$2],$3::jsonb) WHERE id=$1`, [dependencies.runId, key, JSON.stringify(call)]);
         }
         await db.query('COMMIT');

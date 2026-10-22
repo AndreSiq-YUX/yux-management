@@ -18,6 +18,8 @@ export type RadarFunnelResearchState = {
     fit?: RadarFunnelDecision;
     step?: number;
     decisionCalls?: number;
+    decisionRound?: number;
+    decisionRecoveryRequestId?: string;
     executedActions?: string[];
     pendingAction?: Action;
     cheapSearches?: number;
