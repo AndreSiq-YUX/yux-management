@@ -11,3 +11,8 @@ it('never assigns the new attempt response or cost to a previous uncertain attem
  expect(result.effects.find((item:any)=>item.id==='old').actualBrl).toBeNull();
  expect(result.unknownActual).toBe(1);
 });
+it('includes an actually billed invalid reply without counting an unknown reservation as free',()=>{
+ const result=api.summarizeRadarFunnelCosts([{id:'run',calls:{semantic:{source:'radar_business_qualification',requestId:'invalid-paid',status:'received_invalid',effectReceiptId:'protected',billingOutcome:'known',actualUsd:'0.0007643',costPolicy:{usdToBrl:'6',marginPercent:'15',rateAsOf:'2026-10-21T11:03:00Z',rateSource:'manual'}},presence:{source:'radar_presence_resolution',requestId:'unknown',status:'reserved'}}}]);
+ expect(result.effects.find((item:any)=>item.id==='invalid-paid')).toMatchObject({actualUsd:'0.0007643',actualBrl:'0.00527367'});
+ expect(result.unknownActual).toBe(1);
+});

@@ -6,6 +6,7 @@ from typing import Any
 from .runtime_factory import build_routed_client
 from .providers import ProviderAuthorizationError
 from .radar_receipts import radar_usage
+from .radar_evidence_quotes import resolve_evidence_quote
 
 def qualify_radar_business(store, *, enabled: bool, context: dict, criteria: dict,
                           evidence: list[dict], llm_client=None, before_call=None) -> dict[str, Any]:
@@ -44,6 +45,9 @@ def qualify_radar_business(store, *, enabled: bool, context: dict, criteria: dic
         'Não atribua métricas do grupo a um estabelecimento sem suporte; use group ou unresolved. '
         'Não classifique tamanho nem calcule score: isso pertence aos critérios configuráveis da campanha. '
         f'Limite a {list_limit} itens por lista e resumo a {summary_limit} caracteres. Sem evidência suficiente, omita o campo ou retorne lista vazia.'
+        ' Listas de profile contêm objetos, nunca strings. Exemplo de afirmação: '
+        '{"value":"Descrição apoiada pela fonte","evidenceId":"ID fornecido","excerpt":"trecho contínuo do text","scope":"establishment"}. '
+        'Um número mínimo de funcionários do CLIENTE atendido não é quantidade de funcionários desta empresa; não extraia essa métrica como porte.'
     ) if profile_enabled else ''
     response = client.chat_completion(model='configured-by-admin', max_tokens=output_limit, temperature=0,
         reasoning={'effort':'none'}, response_format={'type':'json_object'},
@@ -53,9 +57,14 @@ def qualify_radar_business(store, *, enabled: bool, context: dict, criteria: dic
             'Retorne JSON: targetStatus (confirmed|review|not_target|insufficient), productFit (high|possible|low|unknown), '
             'claims [{reason,evidenceId,excerpt}], limitations [texto]. Cada conclusão deve citar um ID fornecido e um trecho literal. '
             'Ausência de informação não é prova negativa. Não infira intenção de compra de cardápio, portfólio ou compatibilidade. '
+            'Interprete os perfis e termos comerciais configurados pelo significado: não exija sua ocorrência literal. '
+            'Serviços equivalentes podem comprovar o objetivo; não acrescente exigência de fábrica/cozinha própria se os critérios não a exigirem. '
+            'not_target exige atividade incompatível positivamente demonstrada; somente faltar menção ao segmento resulta em review ou insufficient. '
             'Aderência à oferta não significa intenção de compra. Sem suporte suficiente, use review/unknown. '
             'Não afirme funcionamento atual, consentimento de contato ou telefone válido. Responda em português correto. '
-            f'Seja conciso para concluir o JSON dentro de {output_limit} tokens. Use no máximo {1 if output_limit<2000 else 3} conclusões e trechos literais de até 180 caracteres; não repita a mesma prova. ' + profile_prompt)),
+            f'Seja conciso para concluir o JSON dentro de {output_limit} tokens. Use uma conclusão decisiva em claims e um trecho literal contínuo de até 180 caracteres. '
+            'Copie do text da evidenceId citada, sem unir títulos/frases distantes, sem omitir palavras e sem completar frases. '
+            'Não acrescente conclusões acessórias ou especulativas. ' + profile_prompt)),
           dict(role='user', content=json.dumps(dict(criteria=criteria, evidence=bounded), ensure_ascii=False))])
     return validate_radar_qualification_response(response, criteria=criteria, evidence=bounded)
 
@@ -79,8 +88,10 @@ def validate_radar_qualification_response(response, *, criteria, evidence):
     for claim in payload.get('claims', [])[:20]:
         source = by_id.get(claim.get('evidenceId'))
         excerpt, reason = str(claim.get('excerpt') or '').strip(), str(claim.get('reason') or '').strip()
-        if not source or len(excerpt) < 8 or excerpt not in source or not reason:
+        original=resolve_evidence_quote(source,excerpt) if source and len(excerpt)>=8 else None
+        if original is None or not reason:
             raise ValueError('radar_qualification_unverifiable_claim')
+        excerpt=original
         reasons.append(reason[:1000]); ids.append(claim['evidenceId'])
         validated_claims.append(dict(reason=reason[:1000],evidenceId=claim['evidenceId'],excerpt=excerpt))
     if (status in {'confirmed','not_target'} or fit != 'unknown') and not reasons:
@@ -99,8 +110,9 @@ def validate_radar_qualification_response(response, *, criteria, evidence):
             if isinstance(claim, dict):
                 excerpt = str(claim.get('excerpt') or '').strip()
                 evidence_id = claim.get('evidenceId')
-                if isinstance(evidence_id, str) and len(excerpt) >= 8 and excerpt in by_id.get(evidence_id, ''):
-                    return claim
+                original=resolve_evidence_quote(by_id.get(evidence_id,''),excerpt) if isinstance(evidence_id,str) and len(excerpt)>=8 else None
+                if original is not None:
+                    return dict(claim,excerpt=original)
             rejections.append(dict(field=field, code='radar_profile_unverifiable'))
             return None
         if raw_profile.get('summary') is not None:

@@ -80,6 +80,14 @@ it('revalidates a completed raw profile receipt claim by claim without another A
 })
 const start=(pool:ResearchPool,organizationId='org',configurationRevision=2)=>startRadarCandidateResearch(pool as never,admin,{organizationId,candidateId:'candidate',configurationRevision})
 const pages=[{url:'https://alfa.example',observedAt:'2026-10-08',text:'Empresa Alfa CNPJ 12.345.678/0001-90',html:'<a href="tel:41999998888">Contato</a>'}]
+it('records a received invalid paid reply with its actual failure and charge on the first run',async()=>{
+ const pool=new ResearchPool();pool.researchConfiguration={sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:true,semanticQualificationEnabled:true}};
+ const run=await start(pool);pool.run!.output={readingComplete:true,readerVersion:4,discoveryLocked:true,pages,discovery:{association:'confirmed',websiteUrl:pages[0].url,hits:[],suggestions:[],limitations:[],queries:1}};
+ const runtime=vi.fn(async()=>{pool.receiptStatus='uncertain';pool.receiptEffect={effect_id:'protected',transport_outcome:'received',validation_outcome:'invalid',billing_outcome:'known',failure_code:'radar_qualification_unverifiable_claim',effect_usage:{costUsd:.0007643}};throw Error('agent_runtime_422:radar_qualification_unverifiable_claim')});
+ await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{runtime:runtime as never});
+ expect(pool.run!.calls.semantic).toMatchObject({status:'received_invalid',error:'radar_qualification_unverifiable_claim',effectReceiptId:'protected',actualUsd:'0.0007643',billingOutcome:'known'});
+ expect(runtime).toHaveBeenCalledTimes(1);
+});
 it('does not publish over a human correction made while research was running',async()=>{
  const pool=new ResearchPool(),run=await start(pool)
  pool.run!.output={readingComplete:true,readerVersion:4,discoveryLocked:true,pages,discovery:{association:'confirmed',websiteUrl:pages[0].url,hits:[],suggestions:[],limitations:[],queries:1}}

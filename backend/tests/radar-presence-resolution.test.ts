@@ -6,6 +6,10 @@ const resolved={candidateId:'page-0',scope:'group',reason:'Marca e empresa ident
 it('accepts only existing institutional pages and literal evidence, preserving group scope',()=>{
   expect(validateRadarPresenceResolution(resolved,identity,evidence)).toMatchObject({websiteUrl:'https://brand.example/',scope:'group'})
 })
+it('preserves the source spelling when a valid quote differs only in layout whitespace',()=>{
+ const text='Marca\u00a0Beta — Empresa Alfa. Soluções para empresas.';
+ expect(validateRadarPresenceResolution(resolved,identity,[{...evidence[0],text}]).claims[0].excerpt).toBe('Marca\u00a0Beta — Empresa Alfa.');
+})
 it.each([
   {...resolved,candidateId:'https://invented.example/'},
   {...resolved,claims:[{evidenceId:'page-0',excerpt:'Invented contact'}]},

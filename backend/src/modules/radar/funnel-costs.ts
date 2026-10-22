@@ -8,7 +8,8 @@ export function summarizeRadarFunnelCosts(rows:Array<{id:string;calls:unknown}>)
    const call=version===root?root:{source:root.source,context:root.context,...version},status=String(call.status??'unknown');if(status==='rejected_before_provider')continue;
    const source=String(call.source??key),estimate=object(call.costEstimate),result=object(call.result),usage=object(result.usage);
    const id=typeof call.requestId==='string'?call.requestId:typeof call.evidenceHash==='string'?`${row.id}:${key==='presence'?'presence:':''}${call.evidenceHash}`:`${row.id}:${key}`;
-   const actualUsd=status==='completed'?radarReportedCostAmount(call.actualUsd??usage.costUsd):null;
+   const actualUsd=status==='completed'?radarReportedCostAmount(call.actualUsd??usage.costUsd)
+    :call.billingOutcome==='known'&&typeof call.effectReceiptId==='string'?radarReportedCostAmount(call.actualUsd):null;
    const explicitActual=radarReportedCostAmount(call.actualBrl);
    const actualBrl=explicitActual??(actualUsd!==null?estimateRadarCostBrl({amount:actualUsd,currency:'USD',rateSnapshot:(call.costPolicy??estimate.rateSnapshot??null) as RadarCostPolicy|null}).amountBrl:null);
    const item={id,source:source==='openrouter_decision'?String(object(call.context).task??object(call.result).task??source):source,status,estimatedBrl:radarReportedCostAmount(call.reservedBrl??estimate.amountBrl),actualBrl,actualUsd};

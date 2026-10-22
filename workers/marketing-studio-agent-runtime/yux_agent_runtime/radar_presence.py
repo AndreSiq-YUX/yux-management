@@ -5,6 +5,7 @@ import re
 from .runtime_factory import build_routed_client
 from .providers import ProviderAuthorizationError
 from .radar_receipts import radar_usage
+from .radar_evidence_quotes import resolve_evidence_quote
 
 def resolve_radar_presence(store, *, enabled: bool, context: dict, identity: dict, evidence: list[dict], llm_client=None, before_call=None) -> dict:
     if not enabled:
@@ -35,7 +36,9 @@ def resolve_radar_presence(store, *, enabled: bool, context: dict, identity: dic
             'Retorne apenas JSON {candidateId:ID ou null,scope:establishment|group|unresolved,reason:português,claims:[{evidenceId:ID,excerpt:trecho literal mínimo 8 caracteres}]}. '
             'Escolha somente uma página institutional_candidate fornecida, nunca directory/social/third_party. Cite a própria página escolhida; explique o vínculo com a identidade procurada. '
             'Se não houver suporte suficiente, candidateId=null,scope=unresolved. Não inclua campos adicionais nem invente evidências. '
-            'Seja conciso: até três citações de no máximo 180 caracteres, motivo com até 240 caracteres e JSON integral.')),
+            'Seja conciso: uma citação de no máximo 180 caracteres da própria página escolhida, motivo com até 240 caracteres e JSON integral. '
+            'Copie um trecho contínuo exato do text dessa evidenceId. Não una títulos ou frases distantes, não corrija pontuação, não cite localidade ausente. '
+            'Se nenhum trecho dessa página comprovar o vínculo, candidateId=null e scope=unresolved.')),
         dict(role='user',content=json.dumps(dict(identity=identity,evidence=bounded),ensure_ascii=False))])
     return validate_radar_presence_response(response, evidence=bounded)
 
@@ -54,7 +57,10 @@ def validate_radar_presence_response(response, *, evidence):
         for claim in claims:
             if not isinstance(claim,dict) or set(claim)!={'evidenceId','excerpt'}: raise ValueError()
             source=by_id.get(claim['evidenceId'])
-            if not source or not isinstance(claim['excerpt'],str) or len(claim['excerpt'])<8 or claim['excerpt'] not in source['text']: raise ValueError()
+            if not source or not isinstance(claim['excerpt'],str) or len(claim['excerpt'])<8: raise ValueError()
+            original=resolve_evidence_quote(source['text'],claim['excerpt'])
+            if original is None: raise ValueError()
+            claim['excerpt']=original
         candidate=value.get('candidateId')
         if candidate is not None:
             page=by_id.get(candidate)
