@@ -7,6 +7,7 @@ import {requireRadarScope} from './access.js'
 import {isRadarEnabledOrganization} from './repository.js'
 import {isPublicRadarSiteIp} from './osm-site-check.js'
 import type {RadarSiteEvidence} from './site-evidence.js'
+import {radarTlsEvidencePages} from './tls-evidence.js'
 import {probeRadarExpiredCertificate,type RadarTlsExceptionGrant,type RadarTlsReadOptions} from './site-tls-exception.js'
 type Queryable=Pick<pg.Pool,'query'>
 export type RadarTlsScope={organizationId:string;candidateId:string;runId:string;configurationRevision:number}
@@ -30,7 +31,7 @@ async function activeAdmin(pool:Queryable,user:AuthUser) {
   if(!result.rows[0])throw failure('radar_tls_admin_required',403)
 }
 async function context(pool:Queryable,input:Authorize,lock=false) {
-  const row=(await pool.query(`SELECT run.output,run.status,run.configuration_revision,candidate.status AS candidate_status,
+  const row=(await pool.query(`SELECT run.output,run.calls,run.status,run.configuration_revision,candidate.status AS candidate_status,
     campaign.configuration_revision AS current_revision,campaign.status AS campaign_status,review.approved_at
     FROM public.radar_candidate_research_runs run
     JOIN public.radar_candidate_records candidate ON candidate.id=run.candidate_id AND candidate.organization_id=run.organization_id
@@ -43,7 +44,7 @@ async function context(pool:Queryable,input:Authorize,lock=false) {
   if(!row||row.configuration_revision!==input.configurationRevision||row.current_revision!==input.configurationRevision
     ||row.candidate_status!=='pending_review'||row.approved_at||!['partial','blocked','failed'].includes(row.status)
     ||['paused','archived','completed'].includes(row.campaign_status))throw failure('radar_tls_context_changed')
-  const pages:RadarSiteEvidence[]=Array.isArray(row.output?.pages)?row.output.pages:[]
+  const pages=radarTlsEvidencePages(row)
   const page=pages.find(p=>p.diagnostic?.kind==='tls_expired'&&p.certificate&&radarTlsDiagnosticId(input.runId,p)===input.diagnosticId)
   if(!page?.certificate)throw failure('radar_tls_diagnostic_changed')
   const url=new URL(page.url)

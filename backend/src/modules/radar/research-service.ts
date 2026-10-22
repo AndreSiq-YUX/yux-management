@@ -55,6 +55,7 @@ import {buildRadarFunnelDecisionMaterial} from './funnel-context.js'
 import {applyRadarFunnelRegistryGate,applyRadarFunnelGateDecision,applyRadarFunnelNextAction,markRadarFunnelInitialGate,radarScopedFunnelOverrides} from './funnel-gate-application.js'
 import {loadRadarEmailDomainPolicy} from './email-domain-policy.js'
 import {planRadarPresenceRefresh} from './presence-refresh.js'
+import {radarTlsEvidencePages} from './tls-evidence.js'
 import {loadRadarFunnelAgentReadiness} from './funnel-agent-readiness.js'
 
 export type RadarQualification = { targetStatus: 'confirmed'|'review'|'not_target'|'insufficient'; productFit:'high'|'possible'|'low'|'unknown';
@@ -598,7 +599,7 @@ type ResearchContext = pg.QueryResultRow & { id: string; organization_id: string
 type ResearchRun = pg.QueryResultRow & { id:string; organization_id:string; campaign_id:string; candidate_id:string; requested_by:string;
   operation?:'complete'|'resume'|'refresh'|'reanalyze';request_id?:string;
   configuration_revision:number; status:string; stage:string; output:Output; calls:Record<string, { status:string; source:string; result?:unknown; error?:string; evidenceHash?:string;evidenceVersion?:RadarEvidenceVersion;requestBindings?:RadarEvidenceBindings;effectReceiptId?:string;actualUsd?:string;billingOutcome?:string;refreshAuthorized?:boolean;previous?:unknown;retryProvenByReceipt?:boolean;requestId?:string;retryAuthorization?:RadarAnalysisRetryBinding;costEstimate?:RadarCostEstimate;costPolicy?:RadarCostPolicy;budgetRequestId?:string;
-    responseBody?:unknown;queryCount?:number;billableRequestCount?:number;usageDate?:string;query?:string;
+    responseBody?:unknown;queryCount?:number;billableRequestCount?:number;usageDate?:string;query?:string;recoveryRequestId?:string;
     rejections?:Array<{error:string;evidenceHash?:string;observedAt:string}> }>;
   created_at:string; updated_at:string; completed_at?:string; error_code?:string; lease_id?:string; lease_until?:string;historical_closed_at?:string|null }
 const error = (code: string, statusCode = 409) => Object.assign(new Error(code), { statusCode })
@@ -630,8 +631,8 @@ export async function getRadarCandidateResearch(pool:pg.Pool, user:AuthUser, org
   ])
   const latest = runs.rows[0]
   const tlsExceptions=latest?await listRadarTlsExceptions(pool,{organizationId,candidateId,runId:latest.id,configurationRevision:latest.configuration_revision}):[]
-  const tlsDiagnostics=latest?.output.pages?.filter(page=>page.diagnostic?.kind==='tls_expired'&&page.certificate)
-    .map(page=>({diagnosticId:radarTlsDiagnosticId(latest.id,page),...page.certificate!}))??[]
+  const tlsDiagnostics=latest?radarTlsEvidencePages(latest).filter(page=>page.diagnostic?.kind==='tls_expired'&&page.certificate)
+    .map(page=>({diagnosticId:radarTlsDiagnosticId(latest.id,page),...page.certificate!})):[]
   const expired=latest?.status==='running'&&latest.lease_until&&Date.parse(latest.lease_until)<Date.now()
   const available=cachedReadAvailability(availability,latest,context.configuration_revision,resolveRadarSearchConfiguration(context.search_configuration).research.freshnessDays)
   const identity={name:String(context.normalized_payload.tradeName||context.title),legalName:typeof context.normalized_payload.legalName==='string'?context.normalized_payload.legalName:undefined,cnpj:typeof context.normalized_payload.cnpj==='string'?context.normalized_payload.cnpj:undefined}
@@ -1012,6 +1013,16 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
     // A later missing identity must not strand a completed receipt as reserved.
     // This recovery only reads completed receipts; no provider or revalidation.
     for(const key of ['presence','semantic'] as const)if(run.calls[key]?.evidenceHash)await recoverAnalysis(key,run.calls[key].evidenceHash!,true)
+    // A separately authorized, pinned TLS exception gets one bounded homepage
+    // read even if older unrelated sources filled the normal discovery window.
+    // The existing reader still checks robots, public IPs and the active grant.
+    for(const grant of await listRadarTlsExceptions(pool,{organizationId:run.organization_id,candidateId:run.candidate_id,runId:run.id,configurationRevision:run.configuration_revision})){
+      if(grant.revokedAt||Date.parse(grant.expiresAt)<=Date.now()||run.output.pages?.some(page=>!page.limitation&&!!page.text&&new URL(page.url).hostname===grant.hostname))continue
+      const pages=await collect(`https://${grant.hostname}/`,{maxPagesPerCandidate:1,maxAttemptsPerCandidate:1},{tlsOptions:hostname=>getRadarTlsReadOptions(pool,{organizationId:run.organization_id,candidateId:run.candidate_id,runId:run.id,configurationRevision:run.configuration_revision},hostname),checkpoint:async pages=>{
+        run.output.pages=uniqueRadarPages([...(run.output.pages??[]),...pages]);run.output.readingComplete=false;await checkpoint('reading',run.output)
+      }})
+      run.output.pages=uniqueRadarPages([...(run.output.pages??[]),...pages])
+    }
     const dossier = await runRadarResearchPipeline(identity,configuration,{...run.output,
       ...(run.operation==='reanalyze'?{analysisOnly:true,discoveryLocked:true,readingComplete:true}:{}),
       discoveryHits:[...(run.output.discoveryHits??run.output.discovery?.hits??[]),...cachedHits,...cachedLocal],
@@ -1067,7 +1078,8 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         const baseRequestId=`${run.id}:presence:${evidenceHash}`
         const retry=previous&&previous.status!=='completed'&&!canRetryPreProviderRejection(previous)?await resolveRadarAnalysisRetry(pool,{organizationId:run.organization_id,campaignId:run.campaign_id,candidateId:run.candidate_id,runId:run.id,configurationRevision:run.configuration_revision,action:'radar_presence_resolution',previousRequestId:previous.requestId??`${run.id}:presence:${previous.evidenceHash}`,searchConfiguration:context.search_configuration}):previous&&canRetryPreProviderRejection(previous)?previous.retryAuthorization:undefined
         if(previous&&previous.status!=='completed'&&!canRetryPreProviderRejection(previous)&&!retry)throw error(previous.status.startsWith('received_')?previous.error??'radar_analysis_response_invalid':'radar_presence_previous_request_uncertain')
-        const automaticRefresh=planRadarPresenceRefresh({enabled:configuration.funnel.enabled,previous,evidenceHash,maximum:funnelPolicy?.limits.maxPresenceResolutionsPerCompany??2})
+        const recoveryRequestId=run.output.funnel?.recoverySearchRequestId===intentBudget?.requestId?intentBudget?.requestId:undefined
+        const automaticRefresh=planRadarPresenceRefresh({enabled:configuration.funnel.enabled,previous,evidenceHash,maximum:funnelPolicy?.limits.maxPresenceResolutionsPerCompany??2,recoveryRequestId})
         if(previous?.status==='completed'&&configuration.funnel.enabled&&automaticRefresh.count>=(funnelPolicy?.limits.maxPresenceResolutionsPerCompany??2))throw error('radar_presence_resolution_limit_reached')
         if(previous?.status==='completed'&&!previous.refreshAuthorized&&!automaticRefresh.allowed)throw error(!previous.evidenceVersion&&!version.legacy?'radar_analysis_legacy_material_missing':automaticRefresh.reason)
         const tenant=await pool.query(`SELECT organization.client_id, contract.id AS contract_id FROM public.organizations organization
@@ -1083,7 +1095,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         const requestEvidence=canonicalRadarAnalysisEvidence(evidence)
         const requestId=retry?`${baseRequestId}:retry:${retry.authorization_id}`:baseRequestId
         const costPolicy=frozenRadarCostPolicy(intentBudget,(await loadRadarOperationalLimits(pool)).costPolicy)
-        run.calls.presence={status:'reserved',source:'radar_presence_resolution',requestId,evidenceHash,evidenceVersion:persistedRadarEvidenceVersion(version),requestBindings:radarEvidenceBindings(requestEvidence),rejections:previous?.rejections,...(previous?{previous}:{}),...(retry?{retryAuthorization:retry}:{})}
+        run.calls.presence={status:'reserved',source:'radar_presence_resolution',requestId,evidenceHash,evidenceVersion:persistedRadarEvidenceVersion(version),requestBindings:radarEvidenceBindings(requestEvidence),rejections:previous?.rejections,...(recoveryRequestId?{recoveryRequestId}:{}),...(previous?{previous}:{}),...(retry?{retryAuthorization:retry}:{})}
         if(configuration.funnel.enabled&&previous?.status==='completed')run.calls.presence.previous=automaticRefresh.history
         run.calls.presence.costPolicy=costPolicy
         const reserved=await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2 RETURNING id',[run.id,lease,JSON.stringify(run.calls)])

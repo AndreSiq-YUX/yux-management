@@ -6,7 +6,7 @@ Correção publicada na main em `a2e9f762709f8d2f139752a67a5c827fa29f8fc3`, a pa
 
 ## Evidências de desenvolvimento
 
-- Backend completo: 1.471 testes aprovados, 126 skips de ambientes opcionais; build aprovado.
+- Backend completo: 1.473 testes aprovados, 126 skips de ambientes opcionais; build aprovado.
 - Runtime completo: 388 aprovados, 7 skips opcionais.
 - Integração com PostgreSQL isolado e provedores sintéticos: 37 aprovados, incluindo o lote com duas antigas conclusões, cinco lacunas, duas respostas pagas inválidas e uma restrição TLS.
 - Audiência HTTP: 27 aprovados; ferramentas, modelos, custos e diagnósticos continuam exclusivos do Admin YUX.
@@ -34,3 +34,7 @@ A conciliação identificou e ganhou uma regressão adicional: recuperar o recib
 Rodada real em `f4633a2`: Novita e L'Allegro passaram de possível a confirmado; Grupocine permanece descartado por revisão humana. Três consultas estreitas retornaram erro de interpretação, e o checkpoint antigo da Qualita permaneceu reservado atrás da etapa de identidade. Os erros foram rastreados sem refazer consultas.
 
 O adaptador passou a aceitar a seção `web` nula somente em uma resposta tipada de sucesso, conforme a [referência oficial Brave](https://api-dashboard.search.brave.com/api-reference/web/search/post), e a preservar respostas brutas de todas as buscas licenciadas. Falha de busca complementar esgotada permanece auditada, mas não mantém um lote encerrado preso em retomadas. Recibos concluídos são conciliados mesmo quando uma etapa anterior impede o avanço. A associação comprovada de um site só é reaproveitada com a mesma identidade, as mesmas fontes citadas e nova validação de propriedade/escopo; novas páginas irrelevantes não compram outra identificação por si só.
+
+O diagnóstico de certificado vencido é recuperado do histórico da leitura, se ainda não houve leitura válida daquele endereço. A exceção continua específica, expira em uma hora e reprova certificado alterado, domínio diferente, IP privado e autorização revogada. Uma autorização específica prioriza uma única leitura da homepage, sem dispensar robots ou ampliar permissões para outros sites. Não foi concedida autorização TLS para Galbiatti nesta etapa.
+
+O teto de identificação continua o configurado, mas é contado por orçamento de recuperação explicitamente autorizado e correspondente ao pedido atual. Compras antigas não são apagadas nem repetidas; entradas incertas continuam exigindo conciliação/autorização própria. Os testes reais de TLS, audiência e reconciliação passaram antes da publicação dessa correção.
