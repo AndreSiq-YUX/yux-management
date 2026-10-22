@@ -205,6 +205,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
   if(output.pages)output.pages=uniqueRadarPages(output.pages)
   const readingDeadline=Date.now()+110_000
   if (output.pages?.some(isRetryableRadarPage)) {
+    output.historicalEvidence={pages:uniqueRadarPages([...(output.historicalEvidence?.pages??[]),...output.pages.filter(isRetryableRadarPage)]).map(({html:_html,...page})=>page),contacts:output.historicalEvidence?.contacts??saved.contacts??[]}
     output.pages=output.pages.filter(page=>!isRetryableRadarPage(page));output.readingComplete=false
   }
   const limits: string[] = []

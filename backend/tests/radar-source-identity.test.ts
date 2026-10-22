@@ -6,6 +6,13 @@ import {resolveRadarSearchConfiguration} from '../src/modules/radar/search-confi
 import {classifyRadarSource,isRadarInstitutionalSource} from '../src/modules/radar/source-identity.js'
 const identity={name:'Empresa Brasileira de Refeicoes',legalName:'Embrare Empresa Brasileira de Refeicoes LTDA',cnpj:'01128426000198'}
 const directory={url:'https://empresas.serasaexperian.com.br/consulta-gratis/EMBRARE-01128426000198',title:identity.legalName,snippets:[identity.cnpj],observedAt:'2026-10-13'}
+it('recognizes an unfamiliar regional company directory by its structure, not a vendor-name allowlist',()=>{
+ const url='https://www.procuroacho.com/empresas/sp/ribeirao-preto/12.910.070/0001-66/qualita-alimentos';
+ expect(classifyRadarSource(url).kind).toBe('directory');expect(isRadarInstitutionalSource(url)).toBe(false);
+});
+it('treats the generic government portal as a public reference, not a prospect website',()=>{
+ expect(classifyRadarSource('https://www.gov.br/pt-br').role).toBe('government_reference');
+});
 it('keeps unassociated publisher contacts in the internal evidence audit rather than the funnel channel list',async()=>{
  const page={url:'https://publisher.example/',text:'Publisher publica notícias e guias. support@publisher.example',observedAt:'2026-10-22'};
  const result=await runRadarResearchPipeline(identity,resolveRadarSearchConfiguration({funnel:{enabled:true},sources:{enrichWithBrave:false},research:{webSearchEnabled:false}}),{readingComplete:true,discoveryLocked:true,pages:[page],discovery:{association:'review',hits:[],suggestions:[],queries:0,limitations:[]}}, {web:async()=>[],collect:async()=>[],checkpoint:async()=>{}});
