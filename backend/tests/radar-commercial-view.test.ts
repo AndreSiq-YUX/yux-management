@@ -3,6 +3,10 @@ import {buildRadarCrmLeadFacts} from '../src/modules/radar/crm-delivery.js'
 const api=await import('../src/modules/radar/commercial-view.js').catch(()=>({})) as Record<string,Function>
 const project=(surface:string,value:unknown)=>api.projectRadarCommercialResponse?.(surface,value)
 const internal={provider:'OpenRouter',model:'secret-model',sourceType:'brave_web_search',costUsd:2,futureInternalField:'private'}
+it('does not deliver unassociated publisher contacts as prospect channels when no company website is identified',()=>{
+ const result=project('research',{run:{status:'partial',output:{discovery:{},siteAssociation:'review',contacts:[{kind:'email',value:'support@publisher.example',sourceUrl:'https://publisher.example/',association:'review',scope:'unresolved'}]}}});
+ expect(result.facts.contacts).toEqual([]);
+});
 describe('Radar commercial data boundary',()=>{
  it('returns editable business targets and filters without nested gate, provider or budget metadata',()=>{
   const criteria={targets:[{key:'target',label:'Perfil comercial',definition:'Produção para empresas',priority:'primary',cnaes:['5620101'],...internal}],outOfScopeExamples:['Varejo'],registry:{mainActivityRule:'any',blockedMainCnaes:['20'],blockedNameTerms:[],...internal}};

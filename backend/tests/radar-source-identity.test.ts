@@ -6,6 +6,13 @@ import {resolveRadarSearchConfiguration} from '../src/modules/radar/search-confi
 import {classifyRadarSource,isRadarInstitutionalSource} from '../src/modules/radar/source-identity.js'
 const identity={name:'Empresa Brasileira de Refeicoes',legalName:'Embrare Empresa Brasileira de Refeicoes LTDA',cnpj:'01128426000198'}
 const directory={url:'https://empresas.serasaexperian.com.br/consulta-gratis/EMBRARE-01128426000198',title:identity.legalName,snippets:[identity.cnpj],observedAt:'2026-10-13'}
+it('keeps unassociated publisher contacts in the internal evidence audit rather than the funnel channel list',async()=>{
+ const page={url:'https://publisher.example/',text:'Publisher publica notícias e guias. support@publisher.example',observedAt:'2026-10-22'};
+ const result=await runRadarResearchPipeline(identity,resolveRadarSearchConfiguration({funnel:{enabled:true},sources:{enrichWithBrave:false},research:{webSearchEnabled:false}}),{readingComplete:true,discoveryLocked:true,pages:[page],discovery:{association:'review',hits:[],suggestions:[],queries:0,limitations:[]}}, {web:async()=>[],collect:async()=>[],checkpoint:async()=>{}});
+ expect(result.contacts).toEqual([]);
+ expect(result.unassociatedContacts).toContainEqual(expect.objectContaining({value:'support@publisher.example',association:'review'}));
+ expect(result.pages).toContainEqual(page);
+});
 it.each([
  ['https://listatudo.com.br/sao-paulo/empresa','Maior site de busca de empresas do Brasil'],
  ['https://www1.folha.uol.com.br/fsp/cotidian/empresa.shtml','DA REPORTAGEM LOCAL. Copyright Folha'],

@@ -21,3 +21,7 @@ it('prioritizes a supplier form over recruitment, privacy and generic contact ch
 it('does not invent whatsapp availability from a telephone',()=>{
   expect(consolidateRadarContacts([contact()],'general').map(item=>item.kind)).toEqual(['phone'])
 })
+it('removes historical social posts from the channel list while retaining a published profile',()=>{
+ const value=consolidateRadarContacts([contact({kind:'social',value:'https://instagram.com/p/ABC123/'}),contact({kind:'social',value:'https://instagram.com/alfa/'})],'general');
+ expect(value.map(item=>item.value)).toEqual(['https://instagram.com/alfa/']);
+});

@@ -73,6 +73,7 @@ function validatedQualificationProfile(result:RadarQualification,pages:RadarSite
  return result
 }
 export type RadarResearchDossier = { discovery: RadarPresenceDiscovery; pages: RadarSiteEvidence[]; contacts: RadarContactEvidence[];
+  unassociatedContacts?:RadarContactEvidence[];
   funnel?:RadarFunnelResearchState;
   deepResearchCompleted?:boolean;deepResearchStop?:string;
   decisionExcluded?:boolean;decisionReview?:boolean;
@@ -455,7 +456,9 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     &&!pages.some(page=>page.url===hit.url&&!page.limitation&&cnpjConflict(identity,page.text,presenceResolution?.scope==='group')))
   for (const hit of trustedSearchHits) contacts.push(...extractRadarContacts({ url:hit.url, text:`${hit.title} ${hit.snippets.join(' ')}`, observedAt:hit.observedAt }, 'confirmed')
     .map(contact=>({...contact,scope:presenceResolution?.scope??'establishment' as const})))
-  const uniqueContacts = consolidateRadarContacts(contacts,configuration.research.contactPurpose)
+  const allContacts=consolidateRadarContacts(contacts,configuration.research.contactPurpose)
+  const uniqueContacts=funnel?allContacts.filter(contact=>contact.association==='confirmed'&&contact.scope!=='unresolved'):allContacts
+  const unassociatedContacts=funnel?consolidateRadarContacts([...(saved.unassociatedContacts??[]),...allContacts.filter(contact=>!uniqueContacts.includes(contact))],configuration.research.contactPurpose):undefined
   if(!funnel&&configuration.research.completion.enabled&&!output.analysisOnly&&associatedOrigin&&presenceResolution?.scope!=='group'
     &&usefulRadarDeliveryContacts({contacts:uniqueContacts},configuration.research).length<configuration.research.completion.minimumUsefulContacts){
     const next=planRadarResearch({identity,policy:configuration.research,hits:[],pages:associatedPages,
@@ -563,7 +566,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     ...(configuration.funnel.enabled?{funnel:output.funnel}:{}),
     deepResearchCompleted:output.deepResearchCompleted,deepResearchStop:output.deepResearchStop,
     historicalEvidence:output.historicalEvidence,targetedQueries:output.targetedQueries,analysisEvidence:output.analysisEvidence,
-    discovery:{...discovery,websiteUrl:associatedOrigin??(discovery.websiteUrl&&isRadarInstitutionalSource(discovery.websiteUrl,{text:pages.find(page=>canonicalRadarReadUrl(page.url)===canonicalRadarReadUrl(discovery.websiteUrl!))?.text})?discovery.websiteUrl:undefined),association:associatedOrigin?'confirmed' as const:discovery.websiteUrl?'review' as const:discovery.association}, pages, contacts: uniqueContacts, registryPhone: identity.phone, siteAssociation:associated?'confirmed' as const:'review' as const, activity, qualification,
+    discovery:{...discovery,websiteUrl:associatedOrigin??(discovery.websiteUrl&&isRadarInstitutionalSource(discovery.websiteUrl,{text:pages.find(page=>canonicalRadarReadUrl(page.url)===canonicalRadarReadUrl(discovery.websiteUrl!))?.text})?discovery.websiteUrl:undefined),association:associatedOrigin?'confirmed' as const:discovery.websiteUrl?'review' as const:discovery.association}, pages, contacts: uniqueContacts,unassociatedContacts, registryPhone: identity.phone, siteAssociation:associated?'confirmed' as const:'review' as const, activity, qualification,
     qualificationEvidenceHash:qualification?evidenceHash:undefined,presenceResolution,presenceEvidenceHash:presenceResolution?presenceEvidenceHash:undefined,profile,sizeAssessment,documents,limitations: limits }
   const qualityDecision=configuration.funnel.enabled?undefined:await decide('radar_quality_gate',pages,[])
   const result={...dossier,decisionReview:qualityDecision?.action==='review',quality:evaluateRadarResearchQuality({dossier,policy:configuration.research,currentRevision:true})}

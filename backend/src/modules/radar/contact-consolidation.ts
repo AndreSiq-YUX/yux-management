@@ -1,5 +1,6 @@
 import type {RadarContactEvidence,RadarContactPurpose} from './contact-evidence.js'
 import {normalizeRadarPhone} from './contact-evidence.js'
+import {isRadarPublicProfile} from './social-profile.js'
 
 export function isUsefulRadarContact(contact:RadarContactEvidence,purpose:RadarContactPurpose):boolean {
   if(contact.association!=='confirmed'||contact.scope==='unresolved')return false
@@ -18,6 +19,7 @@ export function consolidateRadarContacts(contacts:RadarContactEvidence[],purpose
   const byKey=new Map<string,RadarContactEvidence>()
   const rank=(contact:RadarContactEvidence)=>Number(isUsefulRadarContact(contact,purpose))*100+Number(contact.purpose===purpose)*40+Number(contact.purpose==='general')*10
   for(const input of contacts){
+    if(input?.kind==='social'&&!isRadarPublicProfile(input.value))continue;
     if(!input||typeof input!=='object'||typeof input.value!=='string'||typeof input.sourceUrl!=='string'
       ||typeof input.observedAt!=='string'||!['phone','email','whatsapp','social','business_person','contact_form'].includes(input.kind)
       ||!['confirmed','review'].includes(input.association))continue

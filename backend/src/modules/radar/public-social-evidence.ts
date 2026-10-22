@@ -1,18 +1,8 @@
 import {extractRadarContacts} from './contact-evidence.js'
 import {inspectRadarBusinessSite} from './b2b-site-inspection.js'
-import {isRadarSocialUrl} from './site-discovery.js'
 import type {RadarSiteEvidence} from './site-evidence.js'
-
-export function isRadarPublicProfile(url:string) {
-  try {
-    const value=new URL(url)
-    return ['http:','https:'].includes(value.protocol)&&isRadarSocialUrl(url)&&!value.username&&!value.password
-      &&!/(?:^|\/)(?:sharer|share|login|accounts|help|privacy|watch|intent|plugins|send)(?:[/.]|$)/i.test(value.pathname)
-      &&value.pathname.length>1&&!value.searchParams.has('share')
-      &&(!/(^|\.)linkedin\.com$/.test(value.hostname)||value.pathname.startsWith('/company/'))
-      &&!/(^|\.)(wa\.me|whatsapp\.com)$/.test(value.hostname)
-  }catch{return false}
-}
+import {isRadarPublicProfile} from './social-profile.js'
+export {isRadarPublicProfile} from './social-profile.js'
 
 export async function collectRadarPublicSocialEvidence(input:{linkedPages:RadarSiteEvidence[];remainingPages:number;remainingAttempts:number;deadlineAt:number;existingPages?:RadarSiteEvidence[]},
   dependencies:{inspect?:typeof inspectRadarBusinessSite;signal?:AbortSignal;checkpoint?:(page:RadarSiteEvidence)=>Promise<void>}={}) {

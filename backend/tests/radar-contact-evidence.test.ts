@@ -1,5 +1,14 @@
 import { expect, it } from 'vitest'
 import { extractRadarContacts, normalizeRadarPhone } from '../src/modules/radar/contact-evidence.js'
+it('lists social profiles, not individual posts, videos or private administration URLs',()=>{
+ const urls=['https://instagram.com/alfa/','https://instagram.com/p/ABC123/','https://www.youtube.com/watch?v=123','https://www.youtube.com/@Alfa','https://www.linkedin.com/company/98046245/admin/feed/posts/','https://www.linkedin.com/company/alfa/'];
+ const contacts=extractRadarContacts({url:'https://alfa.example/',observedAt:'2026-10-22',text:'Empresa Alfa',html:urls.map(url=>`<a href="${url}">Rede</a>`).join('')});
+ expect(contacts.filter(contact=>contact.kind==='social').map(contact=>contact.value)).toEqual(['https://instagram.com/alfa/','https://www.youtube.com/@Alfa','https://www.linkedin.com/company/alfa/']);
+});
+it('recognizes Compras in a multipurpose contact form without turning it into a finance-only channel',()=>{
+ const contacts=extractRadarContacts({url:'https://alfa.example/contato/',observedAt:'2026-10-22',text:'Fale conosco. Comercial Compras Marketing RH Financeiro Outros',html:'<form><select name="assunto"><option>Comercial</option><option>Compras</option><option>Marketing</option><option>RH</option><option>Financeiro</option><option>Outros</option></select><textarea name="mensagem"></textarea></form>'});
+ expect(contacts).toContainEqual(expect.objectContaining({kind:'contact_form',purpose:'suppliers'}));
+});
 it('recognizes a supplier form whose purpose is published in select options rather than a footer',()=>{
   // Reduced public Contact Form 7 structure: option text is visible, scripts are not evidence.
   const contacts=extractRadarContacts({url:'https://alfa.example/fornecedor/',observedAt:'2026-10-14',

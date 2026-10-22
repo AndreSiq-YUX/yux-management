@@ -2,6 +2,8 @@ import {z} from 'zod'
 import type {AuthUser} from '../../auth/routes.js'
 import {projectRadarCompanyFacts} from './company-projection.js'
 import {radarCommercialStatusSchema} from './commercial-status.js'
+import {isRadarContactSource,type RadarContactEvidence} from './contact-evidence.js'
+import {isRadarPublicProfile} from './social-profile.js'
 
 export const canViewRadarInternals=(user:Pick<AuthUser,'role'>)=>user.role==='yux_admin'
 const object=(value:unknown):Record<string,unknown>=>value!==null&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{}
@@ -61,11 +63,18 @@ export function projectRadarCommercialFacts(payload:unknown):RadarCommercialFact
  const data=projectRadarCompanyFacts(object(payload)),presence=object(data.publicPresence),website=object(presence.website)
  const identities=[data.legalName,data.tradeName].filter((value):value is string=>typeof value==='string')
  const prior=object(data.previousResearch)
+ const selectedWebsite=website.url??data.siteFinalUrl??data.websiteUrl;
+ const rawContacts=data.publicContacts??presence.contacts;
+ const publicContacts=Array.isArray(rawContacts)?rawContacts.filter(value=>{
+  const item=object(value);
+  if(item.kind==='social'&&(typeof item.value!=='string'||!isRadarPublicProfile(item.value)))return false;
+  return item.association==='confirmed'||typeof selectedWebsite==='string'&&typeof item.sourceUrl==='string'&&isRadarContactSource(item as RadarContactEvidence,selectedWebsite);
+ }):undefined;
  return radarCommercialFactsSchemaForCompany(identities).parse({...data,websiteUrl:website.url??data.siteFinalUrl??data.websiteUrl,registryPhone:data.phoneRaw,
   outsideProfile:object(data.decisionExclusion).active===true||data.targetStatus==='not_target',outsideProfileRevision:object(data.decisionExclusion).active===true?object(data.decisionExclusion).revision:data.researchRevision,
   requiresScopedReview:['g0','g1','g5'].includes(String(object(data.decisionExclusion).gate)),reviewRequested:!!object(data.funnelReviewRequest).by&&!object(data.funnelReviewRequest).handledAt,
   siteObservedAt:website.observedAt??data.siteCheckedAt,refreshIncomplete:data.researchRefreshIncomplete,previousResearch:prior.belongsToCurrentIdentity===true?{websiteUrl:prior.websiteUrl,observedAt:prior.siteCheckedAt,contacts:prior.publicContacts,profile:prior.companyProfile}:undefined,
-  contacts:data.publicContacts??presence.contacts,profile:data.companyProfile,activity:data.activityAssessment??data.activity,quality:data.researchQuality,reasons:data.triageReasons})
+  contacts:publicContacts,profile:data.companyProfile,activity:data.activityAssessment??data.activity,quality:data.researchQuality,reasons:data.triageReasons})
 }
 const base={id:text,organizationId:text,campaignId:text,status:text,createdAt:text,updatedAt:text}
 const campaignSchema=z.object({...base,name:text,campaignType:text,targetSegment:text,targetCity:text,targetState:text,targetStates:texts,targetKeywords:texts,targetCnaes:texts,productFocus:texts,offerType:text,configurationRevision:number,commercialCriteriaRevision:number,

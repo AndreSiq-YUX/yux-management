@@ -3,6 +3,7 @@ import { radarHtmlLinks } from './site-evidence.js'
 import { isRadarSocialUrl } from './site-discovery.js'
 import sanitizeHtml from 'sanitize-html'
 import {isRadarInstitutionalSource} from './source-identity.js'
+import {isRadarPublicProfile} from './social-profile.js'
 export type RadarContactPurpose='general'|'suppliers'|'sales'|'finance'|'recruitment'|'privacy'|'unknown'
 export type RadarContactEvidence = { kind: 'phone' | 'email' | 'whatsapp' | 'social' | 'business_person' | 'contact_form'; value: string;
   sourceUrl: string; observedAt: string; association: 'confirmed' | 'review'; note?: string; preferred?:boolean;
@@ -65,7 +66,7 @@ export function extractRadarContacts(page: RadarSiteEvidence, association: 'conf
       if (url.hostname === 'wa.me' || url.hostname === 'api.whatsapp.com' && url.pathname === '/send') {
         const phone = normalizeRadarPhone(url.hostname === 'wa.me' ? url.pathname : url.searchParams.get('phone') ?? '')
         if (phone) add('whatsapp', phone, 'Link público observado; conta e consentimento não verificados.',link)
-      } else if (isRadarSocialUrl(url.toString()) && !/whatsapp/.test(url.hostname)) add('social', url.toString())
+      } else if (isRadarPublicProfile(url.toString())) add('social', url.toString())
     } catch { /* Ignore non-URL href values. */ }
   }
   // Parse only public structured business fields. Never execute scripts or import owner/person registries.
@@ -89,7 +90,8 @@ export function extractRadarContacts(page: RadarSiteEvidence, association: 'conf
     if(/type\s*=\s*["']?(?:password|search)|role\s*=\s*["']search|newsletter|news-letter|assinar|subscribe|curr[ií]culo|candidatur|vagas/i.test(form))continue
     if(!/<textarea\b|name\s*=\s*["'][^"']*(?:mensagem|message|produto|assunto)/i.test(form))continue
     const context=`${page.text.slice(0,1200)} ${text}`
-    const purpose=purposeFromContext(context)
+    const options=[...form.matchAll(/<option\b[^>]*>([\s\S]*?)<\/option>/gi)].map(match=>sanitizeHtml(match[1],{allowedTags:[],allowedAttributes:{}}).trim());
+    const purpose:RadarContactPurpose=options.some(option=>/^(?:compras|fornecedores?|suprimentos|quero ser fornecedor)$/i.test(option))?'suppliers':purposeFromContext(context)
     if(!['suppliers','sales','general','finance'].includes(purpose))continue
     contacts.push({kind:'contact_form',value:page.url,sourceUrl:page.url,observedAt:page.observedAt,association,
       purpose,purposeEvidence:text||page.text.slice(0,240),scope:association==='confirmed'?'establishment':'unresolved',
