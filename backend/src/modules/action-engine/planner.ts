@@ -5,7 +5,7 @@ import { validatePlanConformance, type ActionPackVersion } from './action-pack.j
 import type { CapabilityRegistry } from './capability-registry.js'
 import type { ActionPlanStep, ProposedMissionPlan } from './types.js'
 import { createCapabilityManifest, type CapabilityManifestEntry } from './capability-manifest.js'
-import { validateMissionPlanResponseWire } from './mission-wire-validator.js'
+import { validateMissionPlanRequestWire, validateMissionPlanResponseWire } from './mission-wire-validator.js'
 import type { ClarificationQuestionWire, SelectedPackWire } from './generated/mission-wire.js'
 import type { AutonomyEnvelope } from './types.js'
 import { collectPlanInputBindingSteps, resolvePlanInputBindings } from './plan-input-bindings.js'
@@ -111,15 +111,28 @@ export async function requestMissionPlan(
   fetchImpl: typeof fetch = fetch,
 ): Promise<unknown> {
   if (!env.YUX_AGENT_RUNTIME_URL || !env.YUX_AGENT_RUNTIME_TOKEN) throw new Error('agent_harness_unavailable')
+  // Internal catalog metadata is richer than the strict Python wire contract.
+  const packFields = ['key', 'semanticVersion', 'contentHash', 'protectedStepKeys', 'topologyTemplate']
+  const wire = validateMissionPlanRequestWire({
+    ...payload,
+    action_pack: pickWireFields(payload.action_pack, packFields),
+    ...(Array.isArray(payload.pack_catalog) ? { pack_catalog: payload.pack_catalog.map(pack => pickWireFields(pack, packFields)) } : {}),
+    ...(Array.isArray(payload.capabilities) ? { capabilities: payload.capabilities.map(capability => pickWireFields(capability, ['key', 'version', 'effect', 'definitionHash'])) } : {}),
+  })
   const response = await fetchImpl(new URL('/missions/plan', env.YUX_AGENT_RUNTIME_URL), {
     method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${env.YUX_AGENT_RUNTIME_TOKEN}` },
-    body: JSON.stringify(payload), signal: AbortSignal.timeout(60_000),
+    body: JSON.stringify(wire), signal: AbortSignal.timeout(60_000),
   })
   if (!response.ok) throw new Error(`agent_harness_plan_failed:${response.status}`)
   const body = await response.json() as { plan?: unknown; outcome?: string; kind?: string }
   if (body.outcome === 'planning_budget_exhausted') throw new Error('planning_budget_exhausted')
   if (!body.kind && !body.plan) throw new Error('agent_harness_plan_missing')
   return body
+}
+
+function pickWireFields(value: unknown, fields: string[]): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value
+  return Object.fromEntries(fields.filter(key => key in value).map(key => [key, Reflect.get(value, key)]))
 }
 
 export function compileSupervisorPlan(input: {

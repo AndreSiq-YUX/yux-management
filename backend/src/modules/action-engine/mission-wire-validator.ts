@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Ajv2020, type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.js'
-import type { MissionConversationTurnResponseWire, MissionPlanResponseWire } from './generated/mission-wire.js'
+import type { MissionConversationTurnResponseWire, MissionPlanRequestWire, MissionPlanResponseWire } from './generated/mission-wire.js'
 
 type MissionWireSchema = Record<string, unknown> & { $id: string }
 
@@ -11,6 +11,14 @@ const ajv = new Ajv2020({ allErrors: true, discriminator: true, strict: true })
 ajv.addSchema(schema)
 const responseValidator = requireResponseValidator()
 const conversationResponseValidator = requireConversationResponseValidator()
+const requestValidator = ajv.getSchema(`${schema.$id}#/$defs/MissionPlanRequestWire`)!
+
+export function validateMissionPlanRequestWire(value: unknown): MissionPlanRequestWire {
+  if (requestValidator(value)) return value as MissionPlanRequestWire
+  const error = new Error('mission_wire_request_invalid') as Error & { validationErrors?: ErrorObject[] | null }
+  error.validationErrors = requestValidator.errors
+  throw error
+}
 
 export function validateMissionPlanResponseWire(value: unknown): MissionPlanResponseWire {
   if (responseValidator(value)) return value as MissionPlanResponseWire
