@@ -86,6 +86,14 @@ describe('Mission conversation job handler', () => {
     expect(invokeTurn.mock.calls[0]?.[1]).toMatchObject({
       organization_id: organizationId, user_message: 'Quero uma campanha', audience: 'client_user',
     })
+    const request = invokeTurn.mock.calls[0]![1]
+    expect(request.operationalContext?.platformToolCatalog).toMatchObject({
+      knowledgeScope: 'shared_platform', tools: expect.arrayContaining([
+        expect.objectContaining({ key: 'radar', title: 'Radar Comercial', planningAvailable: false }),
+      ]),
+    })
+    expect(request.allowedCapabilityKeys?.some(key => key.startsWith('radar.'))).toBe(false)
+    expect(request.allowedActionPacks?.some(pack => pack.key === 'radar_prospecting')).toBe(false)
     expect(pool.version).toBe(3)
     expect(pool.status).toBe('awaiting_user')
     expect(pool.messages).toHaveLength(2)

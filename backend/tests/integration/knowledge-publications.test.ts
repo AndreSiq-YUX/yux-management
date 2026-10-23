@@ -4,7 +4,7 @@ import { createIntegrationRig } from "./support/rig.js";
 import { strategyCurationItemSchema, strategyItemHash } from '../../src/modules/strategy-engine/curation.js'
 
 it("publica versões imutáveis sem colidir títulos ou hashes entre clientes", async () => {
-  const rig = await createIntegrationRig();
+  const rig = await createIntegrationRig({ queueMode: 'stub' });
   const packId = randomUUID();
   const itemId = randomUUID();
   const documentId = randomUUID();

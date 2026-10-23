@@ -73,6 +73,8 @@ Reexecutar é seguro: o runner aplica somente migrations ainda não registradas.
 
 ## Verificações de saúde
 
+- Conhecimento estratégico: consultar a mesma publicação governada em duas organizações; livros e guias internos são comuns, enquanto dados `company` permanecem exclusivos da organização e contrato atuais. A configuração por conta habilita execução, não o conhecimento da ferramenta. Ver detalhes em [Radar / conhecimento comum](radar-action-engine-rollout.md#conhecimento-comum-e-contexto-privado).
+
 - Harness `/health` responde e o backend indica `planner.available=true`.
 - `/api/action-engine/operations/health?organizationId=<UUID>` mostra a flag e a allowlist como esperado.
 - `acceptedToFirstAgentMessageLatencyMs.p95` permanece abaixo de 20 segundos.

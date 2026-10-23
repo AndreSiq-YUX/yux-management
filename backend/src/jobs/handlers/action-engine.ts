@@ -37,6 +37,7 @@ import { deliverDecisionNotification, enqueuePendingDecisionNotifications, persi
 import { decideCampaignOptimization } from '../../modules/action-engine/capabilities/campaign-optimization.js'
 import { invokeMissionConversationTurn } from '../../lib/agent-runtime-client.js'
 import { buildMissionOperationalContext } from '../../modules/action-engine/context-builder.js'
+import { buildPlatformToolCatalog } from '../../modules/action-engine/platform-tool-catalog.js'
 import {
   completeAgentConversationTurn,
   getMissionConversationForMission,
@@ -92,6 +93,7 @@ export async function handleActionEngineProcessMissionConversation(
       query: userMessage.content,
       requestedModules: allowedModules.length ? allowedModules : ['crm', 'automations', 'campaigns', 'landing_pages',...(radarAvailable?['radar']:[])],
       capabilityManifest: manifest.entries,
+      platformToolCatalog: buildPlatformToolCatalog(registry, manifest.entries.map(item => item.key)),
       packKeys: stringArray(conversation.currentBrief.packKeys),
     })
     const tenant = await pool.query<{ client_id: string | null }>(

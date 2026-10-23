@@ -141,6 +141,7 @@ export function StrategyPacksPanel({
   const yuxWorkspace = organizations.find(organization => organization.isInternalGrowthWorkspace)
   const [selectedPackId, setSelectedPackId] = useState(packs[0]?.id || '')
   const selectedPack = packs.find(pack => pack.id === selectedPackId) || packs[0]
+  const sharedDoctrine = selectedPack?.scope === 'internal'
   const packItems = useMemo(() => items.filter(item => !selectedPack || item.packId === selectedPack.id), [items, selectedPack])
   const packJobs = useMemo(() => jobs.filter(job => !selectedPack || job.packId === selectedPack.id), [jobs, selectedPack])
   const packBindings = useMemo(() => bindings.filter(binding => !selectedPack || binding.packId === selectedPack.id), [bindings, selectedPack])
@@ -176,7 +177,7 @@ export function StrategyPacksPanel({
     retrievalTags: '',
   })
   const [bindingForm, setBindingForm] = useState({
-    organizationId: yuxWorkspace?.id || '',
+    organizationId: '',
     profileKey: '',
     moduleKey: '',
     channel: '',
@@ -202,6 +203,10 @@ export function StrategyPacksPanel({
   async function submitJob(event: FormEvent) {
     event.preventDefault()
     if (!selectedPack || !jobForm.file || uploading) return
+    if (sharedDoctrine && jobForm.sourceKind === 'client_material') {
+      setUploadError('Material de cliente pertence à base de conhecimento da própria conta. Selecione uma fonte estratégica para esta base comum.')
+      return
+    }
     if (jobForm.file.size > ingestionCapabilities.maxBytes) {
       setUploadError(`O arquivo excede o limite de ${ingestionCapabilities.maxMb} MB.`)
       return
@@ -262,7 +267,7 @@ export function StrategyPacksPanel({
     if (!selectedPack) return
     await onSaveBinding({
       packId: selectedPack.id,
-      organizationId: bindingForm.organizationId,
+      organizationId: sharedDoctrine ? '' : bindingForm.organizationId,
       profileKey: bindingForm.profileKey,
       moduleKey: bindingForm.moduleKey,
       channel: bindingForm.channel,
@@ -282,9 +287,9 @@ export function StrategyPacksPanel({
             <ShieldCheck className="mt-0.5 h-5 w-5 text-yux-700" />
             <div>
               <p className="text-xs font-medium uppercase text-yux-700">Ponte operacional</p>
-              <h2 className="mt-1 text-lg font-semibold text-gray-950">Admin governa. Crescimento YUX executa.</h2>
+              <h2 className="mt-1 text-lg font-semibold text-gray-950">Uma base estratégica para todas as contas</h2>
               <p className="mt-1 max-w-4xl text-sm text-gray-700">
-                Use esta area para alimentar, revisar, publicar e vincular a doutrina estrategica. O uso diario acontece no workspace interno da YUX, onde CRM, atendimento, marketing e relatorios recebem os packs ativos.
+                Livros, métodos e guias das ferramentas formam o conhecimento comum do Harness. Revise e publique aqui. Informações privadas de cada empresa devem ser inseridas na base de conhecimento da própria conta.
               </p>
             </div>
           </div>
@@ -393,7 +398,7 @@ export function StrategyPacksPanel({
                 <select className="h-10 w-full rounded-md border px-3 text-sm" value={jobForm.sourceKind} onChange={event => setJobForm({ ...jobForm, sourceKind: event.target.value })}>
                   <option value="private_book">Livro privado</option>
                   <option value="internal_playbook">Playbook interno</option>
-                  <option value="client_material">Material de cliente</option>
+                  {!sharedDoctrine && <option value="client_material">Material de cliente</option>}
                   <option value="meeting_notes">Notas de reuniao</option>
                 </select>
                 <Input
@@ -429,15 +434,15 @@ export function StrategyPacksPanel({
                 <h2 className="text-base font-semibold text-gray-900">Binding operacional</h2>
               </div>
               <div className="mt-3 space-y-3">
-                <select className="h-10 w-full rounded-md border px-3 text-sm" value={bindingForm.organizationId} onChange={event => setBindingForm({ ...bindingForm, organizationId: event.target.value })}>
+                {sharedDoctrine ? <p className="rounded-md border bg-yux-50 p-3 text-sm text-yux-900">Todas as contas — conhecimento estratégico comum. Os vínculos abaixo selecionam os consumidores, sem restringir a uma empresa.</p> : <select aria-label="Conta do conhecimento privado" className="h-10 w-full rounded-md border px-3 text-sm" value={bindingForm.organizationId} onChange={event => setBindingForm({ ...bindingForm, organizationId: event.target.value })}>
                   <option value="">Global</option>
                   {organizations.map(organization => <option key={organization.id} value={organization.id}>{organization.name}</option>)}
-                </select>
-                <select className="h-10 w-full rounded-md border px-3 text-sm" value={bindingForm.profileKey} onChange={event => setBindingForm({ ...bindingForm, profileKey: event.target.value })}>
+                </select>}
+                <select aria-label="Perfil consumidor" className="h-10 w-full rounded-md border px-3 text-sm" value={bindingForm.profileKey} onChange={event => setBindingForm({ ...bindingForm, profileKey: event.target.value })}>
                   <option value="">Todos os perfis</option>
                   {profiles.map(profile => <option key={profile.id} value={profile.profileKey}>{profile.name}</option>)}
                 </select>
-                <select className="h-10 w-full rounded-md border px-3 text-sm" value={bindingForm.moduleKey} onChange={event => setBindingForm({ ...bindingForm, moduleKey: event.target.value })}>
+                <select aria-label="Módulo consumidor" className="h-10 w-full rounded-md border px-3 text-sm" value={bindingForm.moduleKey} onChange={event => setBindingForm({ ...bindingForm, moduleKey: event.target.value })}>
                   <option value="">Todos os modulos</option>
                   {moduleOptions.map(module => <option key={module} value={module}>{module}</option>)}
                 </select>

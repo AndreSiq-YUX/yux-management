@@ -1,5 +1,6 @@
 import type { CapabilityManifestEntry } from './capability-manifest.js'
 import { collectMissionBaseline } from './baselines/index.js'
+import type { PlatformToolCatalog } from './platform-tool-catalog.js'
 import { hashCanonical, type Queryable } from './repository.js'
 
 export type BuiltMissionOperationalContext = {
@@ -20,6 +21,7 @@ export type BuiltMissionOperationalContext = {
   capabilityCatalogHash: string
   contextHash: string
   allowedModules: string[]
+  platformToolCatalog?: PlatformToolCatalog
   // Compatibility fields for the legacy form-first planner. Knowledge is now
   // selected only by the Harness and therefore remains intentionally empty.
   companyContext: Record<string, never>
@@ -36,6 +38,7 @@ export async function buildMissionOperationalContext(client: Queryable, input: {
   requestedModules: string[]
   capabilityManifest: CapabilityManifestEntry[]
   packKeys?: string[]
+  platformToolCatalog?: PlatformToolCatalog
 }): Promise<BuiltMissionOperationalContext> {
   const [entitlements, learningMemory, channels, advertising] = await Promise.all([
     input.contractId
@@ -104,6 +107,7 @@ export async function buildMissionOperationalContext(client: Queryable, input: {
     capabilityManifest,
     capabilityCatalogHash,
     allowedModules,
+    ...(input.platformToolCatalog ? { platformToolCatalog: input.platformToolCatalog } : {}),
   })
   return {
     query,
@@ -118,6 +122,7 @@ export async function buildMissionOperationalContext(client: Queryable, input: {
     strategyItems: [],
     knowledgeItems: [],
     sourceIds: [],
+    ...(input.platformToolCatalog ? { platformToolCatalog: input.platformToolCatalog } : {}),
   }
 }
 

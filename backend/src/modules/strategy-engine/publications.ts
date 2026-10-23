@@ -61,7 +61,25 @@ export async function publishStrategyPack(pool: pg.Pool, input: StrategyPublicat
     if (items.length !== approvedItemIds.length || items.some(item => item.status !== 'approved')) {
       throw publicationError('strategy_publication_items_not_approved', 409)
     }
-    for (const item of items) await validatePublishableItem(client, item)
+    const sharedDoctrine = pack.scope === 'internal'
+    for (const item of items) await validatePublishableItem(client, item, sharedDoctrine)
+    if (sharedDoctrine) {
+      pack.owner_organization_id = null
+      pack.metadata = { ...pack.metadata, knowledgePlane: 'shared_strategy' }
+      await client.query(
+        `UPDATE public.yux_strategy_packs SET owner_organization_id=NULL,metadata=$2::jsonb WHERE id=$1`,
+        [pack.id, JSON.stringify(pack.metadata)],
+      )
+      await client.query(
+        `UPDATE public.yux_strategy_pack_bindings SET organization_id=NULL,updated_at=NOW()
+         WHERE pack_id=$1 AND organization_id IS NOT NULL`, [pack.id],
+      )
+      await client.query(
+        `INSERT INTO public.yux_strategy_pack_bindings(pack_id,status,config)
+         SELECT $1,'active','{"knowledgePlane":"shared_strategy"}'::jsonb
+         WHERE NOT EXISTS (SELECT 1 FROM public.yux_strategy_pack_bindings WHERE pack_id=$1 AND status='active')`, [pack.id],
+      )
+    }
     const snapshot = {
       schemaVersion: 1,
       governance: { visibility: input.visibility, allowedAgentProfileKeys: allowed, blockedAgentProfileKeys: blocked },
@@ -124,7 +142,7 @@ export async function publishStrategyPack(pool: pg.Pool, input: StrategyPublicat
   } finally { client.release() }
 }
 
-async function validatePublishableItem(client: Pick<pg.PoolClient, 'query'>, item: ItemRow) {
+async function validatePublishableItem(client: Pick<pg.PoolClient, 'query'>, item: ItemRow, sharedDoctrine: boolean) {
   if (!item.source_document_id || !item.content_hash || item.source_origin === 'seed_example') {
     throw publicationError('strategy_publication_item_evidence_required', 409)
   }
@@ -132,9 +150,14 @@ async function validatePublishableItem(client: Pick<pg.PoolClient, 'query'>, ite
   if (!parsed.success || strategyItemHash(parsed.data) !== item.content_hash) {
     throw publicationError('strategy_publication_item_invalid', 409)
   }
-  const document = (await client.query<{ source_hash: string }>(
-    `SELECT source_hash FROM public.yux_strategy_source_documents WHERE id=$1`, [item.source_document_id],
+  const document = (await client.query<{ source_hash: string; source_scope: string; private_material: boolean }>(
+    `SELECT source_hash,source_scope,EXISTS(
+       SELECT 1 FROM public.yux_strategy_ingestion_jobs job WHERE job.document_id=document.id AND job.source_kind='client_material'
+     ) AS private_material FROM public.yux_strategy_source_documents document WHERE id=$1`, [item.source_document_id],
   )).rows[0]
+  if (sharedDoctrine && (document?.source_scope === 'client' || document?.private_material)) {
+    throw publicationError('strategy_shared_doctrine_private_source', 409)
+  }
   const sections: StrategyCurationSection[] = (await client.query<{ chunk_text: string; metadata: Record<string, unknown> }>(
     `SELECT chunk_text,metadata FROM public.yux_strategy_source_chunks WHERE document_id=$1 ORDER BY chunk_index,id`, [item.source_document_id],
   )).rows.map((chunk, index) => ({

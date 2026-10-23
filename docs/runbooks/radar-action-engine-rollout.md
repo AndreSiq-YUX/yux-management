@@ -2,6 +2,18 @@
 
 Audiência: Admin global YUX e implementação. Atualização de produção: 23/10/2026. As seções de aceite local abaixo conservam a evidência histórica; não substituem o resultado do piloto.
 
+## Conhecimento comum e contexto privado
+
+Os packs internos da YUX são doutrina compartilhada: livros, métodos e guias funcionais não pertencem a uma conta. A publicação canônica conserva `scope=internal`, owner nulo e bindings globais; os filtros por perfil, módulo e workflow selecionam consumidores, não empresas. A migration 0238 impede novos owners de conta e bindings ativos por conta nesses packs. Registros legados só são promovidos por nova publicação governada, sem editar releases imutáveis.
+
+O upload central recusa `client_material`; a publicação recusa fonte com `source_scope=client` ou proveniente de ingestão de material de cliente. O proprietário do arquivo original permanece como custódia/auditoria e não restringe a doutrina publicada. O namespace `company` continua validando organização, contrato, publicação e curadoria. Packs legados `scope=client` também conservam seus filtros privados.
+
+`private.retrieve_authorized_knowledge_v1` permite a doutrina interna para raciocínio do agente em sessões `client_user`. O runtime recupera as publicações aprovadas e o backend revalida release, hash, binding e consumidor; conteúdo interno usa `internal_reasoning` e apresentação genérica. Isso não publica o livro bruto nem o entrega a contatos externos.
+
+O intake recebe `operationalContext.platformToolCatalog` a partir do registro completo de capacidades. Radar conhecido com `planningAvailable=false` significa habilitação pendente, não desconhecimento. A autorização efetiva continua em `allowedActionPacks`, `allowedCapabilityKeys`, permissões, prontidão e aprovações. Conhecimento comum não habilita pesquisa, contato ou autonomia.
+
+O piloto abaixo descreve a publicação v1 restrita usada na prova original. A republicação global e sua conferência devem ser registradas separadamente; fontes de uma versão anterior exigem nova validação antes de executar um plano antigo.
+
 ## Piloto interno em produção — 23/10/2026
 
 Escopo autorizado: workspace interno YUX (`650e8400-e29b-41d4-a716-446655440001`), modo assistido, até US$ 1 de consumo no OpenRouter para curadoria, embeddings e prova de planejamento. Não autoriza pesquisa paga de empresas, contato, recorrência ou autonomia.
@@ -77,14 +89,14 @@ O pack inicia um lote novo. Lote pendente, continuação incerta, mudança de re
 2. No backend: npx tsx scripts/prepare-radar-action-knowledge.ts. Não chama modelos nem publica.
 3. Conferir hash, oito propostas e evidências; seguir [checklist de curadoria](../knowledge/radar-commercial-curation-checklist.md).
 4. Ingerir o documento real e conservar documentId/hash/evidências. Gerar embeddings somente com serviço/modelo autorizado. Não importar status approved nem fabricar publicationId.
-5. Publicar client_safe após revisão humana, com owner e organização explícitos. Registrar releaseId/itemIds/hash.
-6. Ativar bindings growth_strategist / marketing_studio / mission_intake_conversation e growth_strategist / radar / radar_commercial_mission.
+5. Publicar client_safe após revisão humana como doutrina interna compartilhada, sem owner de conta. Registrar releaseId/itemIds/hash.
+6. Ativar bindings globais growth_strategist / marketing_studio / mission_intake_conversation e growth_strategist / radar / radar_commercial_mission.
 7. Conferir recuperação no consumidor real. O planejamento usa consulta lexical auditada sem chamada paga e registra degradação. Sem fonte autorizada, bloqueia. A fonte é revalidada antes do efeito externo; revogação deve impedir nova execução.
 
 ## Piloto
 
 1. Escolher organização com Radar e Action Engine habilitados, ou workspace interno elegível. Confirmar ator/criador Admin global ativo.
-2. Habilitar o gate somente para o UUID escolhido. Conferir catálogo da organização e ausência do pack para operador, clientes e outras contas.
+2. Habilitar o gate de execução somente para o UUID escolhido. Conferir ausência de ações executáveis para operador, clientes e outras contas; o catálogo informativo e o conhecimento funcional permanecem comuns.
 3. No formulário, selecionar “Pesquisar empresas no Radar”; definir público, UF, oferta e quantidade. Na conversa, confirmar os mesmos dados antes do plano. Usar modo assistido.
 4. Revisar plano/artefato. Salvar campanha não dispara pesquisa. Campanha existente exige teto finito que não supere o envelope; o adaptador não eleva limites.
 5. Conferir preflight e aprovar o pedido concreto. Preservar organizationId/missionId/planId/actionRunId/requestId/operationId/campaignId e revisões. A aprovação vincula os parâmetros resolvidos.

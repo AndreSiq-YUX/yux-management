@@ -102,11 +102,14 @@ export async function createStrategyIngestion(pool: pg.Pool, input: {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    const pack = (await client.query<{ id: string; owner_organization_id: string | null }>(
-      `SELECT id,owner_organization_id FROM public.yux_strategy_packs WHERE id=$1 FOR SHARE`,
+    const pack = (await client.query<{ id: string; scope: string; owner_organization_id: string | null }>(
+      `SELECT id,scope,owner_organization_id FROM public.yux_strategy_packs WHERE id=$1 FOR SHARE`,
       [input.packId],
     )).rows[0]
     if (!pack) throw domainError(404, 'strategy_pack_not_found')
+    if (pack.scope === 'internal' && input.sourceKind?.trim() === 'client_material') {
+      throw domainError(409, 'strategy_shared_doctrine_private_source')
+    }
     let organizationId = pack.owner_organization_id ?? input.organizationIds[0]
     if (!organizationId) {
       organizationId = (await client.query<{ id: string }>(

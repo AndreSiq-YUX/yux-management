@@ -528,6 +528,21 @@ class MissionConversationWorkflowTest(unittest.TestCase):
         self.assertEqual(first.contextHash, second.contextHash)
         self.assertNotEqual(first.retrievalTraceId, second.retrievalTraceId)
 
+    def test_shared_tool_knowledge_does_not_authorize_disabled_actions(self):
+        captured = []
+        incoming = request()
+        incoming["operationalContext"]["platformToolCatalog"] = {
+            "knowledgeScope": "shared_platform",
+            "executionPolicy": "requires_account_readiness_and_approval",
+            "tools": [{"key": "radar", "title": "Radar Comercial", "description": "Prospecção assistida de empresas", "planningAvailable": False}],
+        }
+        self.make_workflow(captured).respond(incoming)
+        prompt = "\n".join(item["content"] for item in captured[0]["messages"])
+        self.assertIn("Radar Comercial", prompt)
+        self.assertIn("comum a todas as contas", prompt)
+        self.assertIn("Conhecer uma ferramenta não concede autorização", prompt)
+        self.assertIn('"planningAvailable": false', prompt)
+
     def test_trace_links_to_mission_conversation_without_using_support_conversation_fk(self):
         store = self.make_store()
         workflow = self.make_workflow([], store)

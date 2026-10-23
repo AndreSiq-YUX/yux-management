@@ -5,7 +5,7 @@ import { createIntegrationRig, type IntegrationRig } from './support/rig.js'
 const themes = ['temaazul', 'temaverde', 'temadourado', 'temavioleta', 'temacoral', 'tematurquesa', 'temarubi', 'temasafira', 'temaambar', 'temagrafite']
 
 it('filtra antes de ranquear dez mil trechos e preserva recall, escopo e latência', async () => {
-  const rig = await createIntegrationRig()
+  const rig = await createIntegrationRig({ queueMode: 'stub' })
   try {
     const corpus = await createLargePublishedCorpus(rig)
     const forbiddenIds = await createForbiddenCompanyRows(rig)

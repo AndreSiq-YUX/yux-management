@@ -58,14 +58,17 @@ describe('StrategyPacksPanel upload', () => {
     const onSaveBinding=vi.fn(async()=>undefined)
     await renderPanel(vi.fn(),[],undefined,undefined,[],capabilities,undefined,onSaveBinding)
     const form=[...container.querySelectorAll('form')].find(item=>item.textContent?.includes('Binding operacional'))!
-    const moduleSelect=form.querySelectorAll('select')[2]!
+    const moduleSelect=form.querySelector<HTMLSelectElement>('select[aria-label="Módulo consumidor"]')!
     await act(async()=>{
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value')?.set?.call(moduleSelect,'radar')
       moduleSelect.dispatchEvent(new Event('change',{bubbles:true}))
       setInputValue(form.querySelector<HTMLInputElement>('input[placeholder="Workflow opcional"]')!,'radar_commercial_mission')
     })
     await act(async()=>{form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}))})
-    expect(onSaveBinding).toHaveBeenCalledWith(expect.objectContaining({packId:pack.id,moduleKey:'radar',workflowKey:'radar_commercial_mission'}))
+    expect(onSaveBinding).toHaveBeenCalledWith(expect.objectContaining({packId:pack.id,organizationId:'',moduleKey:'radar',workflowKey:'radar_commercial_mission'}))
+    expect(form.querySelector('select[aria-label="Conta do conhecimento privado"]')).toBeNull()
+    expect(form.textContent).toContain('Todas as contas')
+    expect(container.querySelector('option[value="client_material"]')).toBeNull()
   })
 
   it('envia o File real selecionado e preserva os metadados da fonte', async () => {
@@ -352,7 +355,7 @@ describe('StrategyPacksPanel upload', () => {
             ingestionCapabilities={ingestionCapabilities}
             bindings={[]}
             profiles={[]}
-            organizations={[]}
+            organizations={[{ id: 'internal-workspace', name: 'YUX interna', isInternalGrowthWorkspace: true }]}
             onSavePack={vi.fn()}
             onSaveItem={vi.fn()}
             onReviewItem={onReviewItem}

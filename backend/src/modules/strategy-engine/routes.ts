@@ -273,7 +273,7 @@ export async function registerStrategyEngineRoutes(app: FastifyInstance) {
   });
 
   app.post("/packs/:packId/publications", async (request, reply) => {
-    requireInternalRole(request);
+    requireAdminRole(request);
     const user = await getAuthenticatedUser(request, reply);
     if (!user) return reply;
     const params = packParams.safeParse(request.params);
@@ -342,6 +342,8 @@ export async function registerStrategyEngineRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "invalid_strategy_engine_query" });
     }
     if (parsed.data.table === 'model_routing_rules' && parsed.data.operation !== 'select') requireAdminRole(request);
+    if (['yux_strategy_packs', 'yux_strategy_pack_items', 'yux_strategy_pack_bindings'].includes(parsed.data.table)
+      && parsed.data.operation !== 'select') requireAdminRole(request);
 
     return runWithDatabaseRequestContext(
       {

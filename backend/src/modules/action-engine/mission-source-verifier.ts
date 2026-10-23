@@ -227,7 +227,7 @@ export async function verifyMissionKnowledgeContext(client: Queryable, input: {
          AND (cardinality(release.allowed_agent_profile_keys)=0 OR $2=ANY(release.allowed_agent_profile_keys))
          AND NOT $2=ANY(release.blocked_agent_profile_keys)
          AND (cardinality(card.allowed_agent_profile_keys)=0 OR $2=ANY(card.allowed_agent_profile_keys))
-         AND ($7='internal_operator' OR release.visibility='client_safe')`,
+         AND ($7 IN ('internal_operator','client_user') OR release.visibility='client_safe')`,
       [input.organizationId, profileKey, moduleKey, input.workflowKey ?? null, input.channel ?? null, governedCardIds, input.audience],
     ) : Promise.resolve({ rows: [] as GovernedStrategyRow[] }),
     governedCustomerIds.length ? client.query<GovernedCustomerRow>(
@@ -271,7 +271,8 @@ export async function verifyMissionKnowledgeContext(client: Queryable, input: {
         if (!governed) return failed(source)
         return verifySource(source, {
           namespace: 'yux', version: governed.publication_id, content: governed.content,
-          visibility: governed.visibility, title: governed.title,
+          visibility: governed.visibility, title: input.audience === 'client_user' && governed.visibility === 'internal_only'
+            ? 'Metodologia YUX' : governed.title,
           displayMode: input.audience === 'client_user' && governed.visibility === 'internal_only' ? 'generic' : 'named',
           publicationId: governed.publication_id, itemId: governed.item_id,
           knowledgePolicyVersion: 1, useMode: governed.use_mode, bindingFingerprint: governed.binding_fingerprint,
