@@ -112,3 +112,6 @@ Decisões de execução e custos de reversão:
 13. Disponibilizar somente assisted; simulação/preparação precisam de topologias validadas futuras.
 14. Manter branch local sem merge/deploy; a integração de release permanece separada.
 15. Polling fixo de 15s no piloto assistido; custa consultas extras em pesquisas longas e deve ser revisto antes de ampliar a escala.
+16. Preservar a pasta ignorada de testes após a revisão automática bloquear sua remoção (“bloqueado por política”); serviços já encerrados e evidências copiadas. Dados temporários do PostgreSQL/logs continuam ocupando disco até limpeza posterior.
+
+Implementação e correções: c6d6ca7, b9b3de6 e 69ff54c. Evidências locais finais (logs, imagens e ledger): pasta radar-action-engine-assistido na área de visualizações desta conversa. A branch permanece local; os únicos documentos não rastreados são os dois arquivos de experimento de 21/10 que já existiam e foram preservados.
