@@ -112,6 +112,61 @@ afterAll(async () => {
 })
 
 describe('project delivery with PostgreSQL and service-role authorization', () => {
+  it('creates a project without a manager and preserves or clears the manager on edits', async () => {
+    const created = await request('yux_admin', 'POST', '/api/workspace/projects', {
+      name: 'Plataforma de Inteligência',
+      description: 'Plataforma de inteligência de dados para análise de vendas.',
+      clientId: fixtureIds.clientA,
+      managerId: '',
+      status: 'ACTIVE',
+      priority: 'HIGH',
+      type: 'WEBSITE',
+      startDate: '2026-10-01',
+      expectedEndDate: '2026-10-31',
+      budget: 0,
+      currency: 'BRL',
+      teamMembers: [],
+      tags: [],
+      notes: '',
+    })
+    expect(created.status).toBe(200)
+    const id = created.body.data.id
+    try {
+      expect(created.body.data).toMatchObject({
+        name: 'Plataforma de Inteligência',
+        clientId: fixtureIds.clientA,
+        budget: 0,
+      })
+      const saved = await adminPool.query(
+        'SELECT manager_id, budget FROM public.projects WHERE id = $1', [id]
+      )
+      expect(saved.rows[0].manager_id).toBeNull()
+      expect(Number(saved.rows[0].budget)).toBe(0)
+
+      const assigned = await request('yux_admin', 'PATCH', `/api/workspace/projects/${id}`, {
+        managerId: fixtureUsers.yux_admin.id,
+      })
+      expect(assigned.status).toBe(200)
+      expect(assigned.body.data.managerId).toBe(fixtureUsers.yux_admin.id)
+      const edited = await request('yux_admin', 'PATCH', `/api/workspace/projects/${id}`, {
+        description: 'Descrição atualizada sem alterar o responsável.',
+      })
+      expect(edited.status).toBe(200)
+      expect(edited.body.data.managerId).toBe(fixtureUsers.yux_admin.id)
+      const cleared = await request('yux_admin', 'PATCH', `/api/workspace/projects/${id}`, {
+        managerId: '',
+      })
+      expect(cleared.status).toBe(200)
+      expect(cleared.body.data.managerId).toBeUndefined()
+      const reloaded = await request('yux_admin', 'GET', `/api/workspace/projects/${id}`)
+      expect(reloaded.status).toBe(200)
+      expect(reloaded.body.data.description).toBe('Descrição atualizada sem alterar o responsável.')
+      expect(reloaded.body.data.managerId).toBeUndefined()
+    } finally {
+      await adminPool.query('DELETE FROM public.projects WHERE id = $1', [id])
+    }
+  })
+
   it('preserves artifact details, records events, rejects cross-tenant reads and synchronizes client decisions', async () => {
     const created = await request(
       'yux_admin',

@@ -317,7 +317,7 @@ function projectPayload(input: Record<string, unknown>, includeDefaults = false)
   if (input.budget !== undefined) row.budget = input.budget
   if (input.currency !== undefined) row.currency = input.currency
   if (input.clientId !== undefined) row.client_id = input.clientId
-  if (input.managerId !== undefined) row.manager_id = input.managerId
+  if (input.managerId !== undefined) row.manager_id = input.managerId === '' ? null : input.managerId
   if (input.teamMembers !== undefined) row.team_members = input.teamMembers
   if (input.tags !== undefined) row.tags = input.tags
   if (input.notes !== undefined) row.notes = input.notes
