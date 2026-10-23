@@ -229,6 +229,10 @@ function optimisticMessage(conversation: MissionConversation, content: string, c
 }
 
 function readError(cause: unknown) {
+  if (cause instanceof ApiClientError && [502, 503, 504].includes(cause.status)) {
+    return 'O serviço está temporariamente indisponível. Seu texto foi preservado; tente novamente em instantes.'
+  }
+  if (cause instanceof TypeError) return 'Não foi possível conectar ao serviço. Seu texto foi preservado; tente novamente em instantes.'
   if (cause instanceof ApiClientError && cause.message === 'mission_conversation_version_conflict') {
     return 'A conversa foi atualizada. Sua mensagem não foi enviada; revise e tente novamente.'
   }

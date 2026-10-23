@@ -37,6 +37,20 @@ const plan: MissionPlan = {
 afterEach(() => { document.body.innerHTML = ''; vi.restoreAllMocks() })
 
 describe('MissionDecisionSummary', () => {
+  it('explains the two Radar approvals without changing the signed decision payload', async () => {
+    const radar = { ...summary, changes: [
+      { entityType: 'campaign', operation: 'create', quantity: 1, label: 'radar › campaign › create' },
+      { entityType: 'capture', operation: 'start', quantity: 1, label: 'radar › capture › start' },
+    ] }
+    const before = JSON.stringify(radar)
+    const { root } = await render(<MissionDecisionSummary summary={radar} approvalSubjectHash={hash} canApprove busy={false} onApprove={vi.fn()} />)
+    expect(document.body.textContent).toContain('Criar ou selecionar campanha de prospecção')
+    expect(document.body.textContent).toContain('Solicitar pesquisa de empresas no Radar')
+    expect(document.body.textContent).toContain('aprovação específica antes de começar')
+    expect(JSON.stringify(radar)).toBe(before)
+    expect(findButton('Li os impactos e aprovo este plano')?.hasAttribute('disabled')).toBe(false)
+    act(() => root.unmount())
+  })
   it('leads owners through changes, contacts, economics, assumptions and every irreversible warning', async () => {
     const { root } = await render(<MissionDecisionSummary summary={summary} approvalSubjectHash={hash} canApprove busy={false} onApprove={vi.fn()} />)
     const text = document.body.textContent ?? ''

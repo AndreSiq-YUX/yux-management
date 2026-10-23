@@ -2,9 +2,9 @@ import type { ActionMission, ActionRunStatus, MissionActionRun, MissionMetric, M
 
 export const missionStatusMeta: Record<MissionStatus, { label: string; tone: 'neutral' | 'info' | 'warning' | 'success' | 'danger' }> = {
   draft: { label: 'Rascunho', tone: 'neutral' }, qualifying: { label: 'Qualificando', tone: 'info' }, planning: { label: 'Planejando', tone: 'info' },
-  pending_plan_approval: { label: 'Aguardando plano', tone: 'warning' }, ready: { label: 'Pronta', tone: 'info' }, active: { label: 'Em execução', tone: 'info' },
+  pending_plan_approval: { label: 'Plano aguardando aprovação', tone: 'warning' }, ready: { label: 'Pronta', tone: 'info' }, active: { label: 'Em execução', tone: 'info' },
   paused: { label: 'Pausada', tone: 'warning' }, blocked: { label: 'Bloqueada', tone: 'danger' }, evaluating: { label: 'Avaliando', tone: 'info' },
-  pending_replan_approval: { label: 'Aguardando replanejamento', tone: 'warning' }, succeeded: { label: 'Concluída', tone: 'success' },
+  pending_replan_approval: { label: 'Novo plano aguardando aprovação', tone: 'warning' }, succeeded: { label: 'Concluída', tone: 'success' },
   failed: { label: 'Falhou', tone: 'danger' }, expired: { label: 'Expirada', tone: 'neutral' }, cancelled: { label: 'Cancelada', tone: 'neutral' },
 }
 

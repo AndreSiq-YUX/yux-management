@@ -112,6 +112,18 @@ Rollback imediato se ocorrer qualquer um destes eventos:
 
 ## Recuperação para frente
 
+### Erro temporário 502/503/504 no envio
+
+O frontend aguarda `yux-backend-api` saudável no Compose. O healthcheck consulta `/api/health/ready`, que exige banco e Redis disponíveis. Isso reduz a janela de início sem backend pronto; não é uma promessa de deploy sem interrupção de conexões já abertas.
+
+Somente o POST idempotente de mensagens é repetido automaticamente: até quatro tentativas com esperas de 1/2/4 segundos, conservando `clientMessageId`, conteúdo e versão. 403, 409, 500 e `mission_conversations_disabled` não são repetidos. Depois de esgotar tentativas, o texto permanece no compositor com aviso em português e reenvio manual usando o mesmo identificador. Não aplicar retry genérico a aprovações ou outros efeitos.
+
+Na investigação de 23/10/2026, o print tinha 502 e a tentativa iniciada por “e agora” não estava gravada. A API retornou 200 para prontidão, continha a remoção do limite de seis mensagens e o catálogo compartilhado. Os commits de Projetos `0f258c3` e `7cba84f` conservavam essas correções e foram integrados por fast-forward. Os logs disponíveis eram do frontend substituto e não continham a falha antiga: a hipótese de interrupção durante deploy é compatível com a configuração encontrada, mas o instante e a origem exata daquele 502 não foram comprovados.
+
+A homologação `b91943fe-41a2-43a4-955f-0d95e352a2fd` é um registro de teste de planejamento no workspace interno, diferente da conversa de captação `0b969532-7daa-4030-a332-cdcff5cc7228`. Foi observada em `pending_plan_approval`, versão 14, uma aprovação de plano pendente e zero ações executadas. O texto correto do status é “Plano aguardando aprovação”. O marcador de aprovação em `radar.capture.start` indica um requisito posterior; não é um pedido atual de pesquisa. O teto R$ 1 é um parâmetro desse teste e não uma cobrança nem autorização de chamada paga. Não aprovar ou iniciar essa missão de homologação como parte da recuperação do chat.
+
+A interface apresenta os dois efeitos do Radar em linguagem comercial e explica a aprovação específica da pesquisa, sem modificar o payload assinado, o subject hash, a autorização ou o histórico. Os controles “Ativa” identificam capacidades habilitadas; não indicam que houve execução.
+
 - Conversa em `collecting_context` sem resposta: confirme o health do Harness, reative o worker e reenvie o job com o mesmo `conversationId` e `requestedVersion`.
 - Retry de mensagem usa o mesmo `clientMessageId`; nunca gere outro ID para uma tentativa incerta.
 - Conversa em `planning`: reenvie `action-engine.planMission` com o `missionId` e a versão atual. O job idempotente não cria outro plano equivalente.

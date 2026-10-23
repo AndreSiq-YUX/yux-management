@@ -1,4 +1,4 @@
-import { apiRequest } from '@/lib/apiClient'
+import { ApiClientError, apiRequest } from '@/lib/apiClient'
 import type {
   ActionMission, ActionPack, ClarificationAnswerInput, CreateMissionInput, CreateMissionIntentInput, DecisionReasonKey,
   MissionActionRun, MissionApproval, MissionContextPreview, MissionEconomics, MissionMetrics,
@@ -44,7 +44,7 @@ export const actionEngineService = {
     apiRequest<MissionConversation>(`${root}/mission-conversations/${conversationId}?${query({ organizationId })}`),
   appendMissionConversationMessage: (conversationId: string, input: {
     organizationId: string; expectedVersion: number; message: string; clientMessageId?: string;
-  }) => apiRequest<{ conversation: MissionConversation; jobId: string | null }>(`${root}/mission-conversations/${conversationId}/messages`, {
+  }) => sendIdempotentConversationMessage<{ conversation: MissionConversation; jobId: string | null }>(`${root}/mission-conversations/${conversationId}/messages`, {
     method: 'POST', body: { ...input, clientMessageId: input.clientMessageId ?? crypto.randomUUID() },
   }),
   confirmMissionConversationBrief: (conversationId: string, input: {
@@ -146,4 +146,20 @@ export const actionEngineService = {
     apiRequest<LearningExperiment>(`${root}/learning/experiments/${experimentId}/complete`,{method:'POST',body:{organizationId,...input}}),
   decideLearningExperiment: (organizationId:string,experimentId:string,decision:'approved'|'rejected') =>
     apiRequest(`${root}/learning/experiments/${experimentId}/decision`,{method:'POST',body:{organizationId,decision}}),
+}
+
+// Only this write is retried: the server deduplicates its stable clientMessageId
+// before checking the version, including when a gateway lost an accepted response.
+async function sendIdempotentConversationMessage<T>(path: string, options: Parameters<typeof apiRequest>[1]): Promise<T> {
+  const delays = [1000, 2000, 4000]
+  for (let attempt = 0; ; attempt += 1) {
+    try { return await apiRequest<T>(path, options) }
+    catch (error) {
+      const rolloutDisabled = error instanceof ApiClientError && error.body && typeof error.body === 'object'
+        && 'error' in error.body && error.body.error === 'mission_conversations_disabled'
+      const transient = error instanceof TypeError || (error instanceof ApiClientError && [502, 503, 504].includes(error.status) && !rolloutDisabled)
+      if (!transient || attempt >= delays.length) throw error
+      await new Promise(resolve => setTimeout(resolve, delays[attempt]))
+    }
+  }
 }

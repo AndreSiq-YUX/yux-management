@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 const compose = readFileSync(new URL('../../docker-compose.dokploy.yml', import.meta.url), 'utf8')
 
 function serviceBlock(serviceName: string, nextServiceName: string) {
-  const start = compose.indexOf(`  ${serviceName}:`)
+  const start = compose.search(new RegExp(`^  ${serviceName}:`, 'm'))
   const end = compose.indexOf(`\n  ${nextServiceName}:`, start)
   expect(start, `${serviceName} must exist`).toBeGreaterThanOrEqual(0)
   expect(end, `${nextServiceName} must follow ${serviceName}`).toBeGreaterThan(start)
@@ -12,6 +12,14 @@ function serviceBlock(serviceName: string, nextServiceName: string) {
 }
 
 describe('Dokploy deployment contract', () => {
+  it('keeps the frontend behind API database and Redis readiness during deployment', () => {
+    const frontend = serviceBlock('yux-frontend', 'yux-backend-migrate')
+    expect(frontend).toMatch(/yux-backend-api:\s+condition: service_healthy/)
+    const api = serviceBlock('yux-backend-api', 'yux-backend-worker')
+    expect(api).toContain('healthcheck:')
+    expect(api).toContain('http://127.0.0.1:4000/api/health/ready')
+    expect(api).toContain('AbortSignal.timeout(3000)')
+  })
   it('runs migrations and volume preparation as isolated one-shot services', () => {
     expect(compose).toContain('  yux-backend-migrate:')
     expect(compose).toContain('  yux-volume-permissions:')

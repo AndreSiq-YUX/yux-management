@@ -20,6 +20,23 @@ vi.stubGlobal('ResizeObserver', ResizeObserverMock)
 afterEach(() => { document.body.innerHTML = ''; vi.restoreAllMocks(); vi.useRealTimers() })
 
 describe('MissionConversationWorkspace', () => {
+  it('preserves the draft and idempotency key after transport retries are exhausted', async () => {
+    const data = conversation({ status: 'awaiting_user', withAgent: true })
+    vi.spyOn(actionEngineService, 'getMissionConversation').mockResolvedValue(data)
+    const append = vi.spyOn(actionEngineService, 'appendMissionConversationMessage')
+      .mockRejectedValueOnce(new ApiClientError({ status: 502, statusText: '' } as Response, 'Bad Gateway'))
+      .mockResolvedValueOnce({ conversation: { ...data, status: 'awaiting_user', version: 4 }, jobId: 'retry' })
+    const { root } = await renderWorkspace()
+    const textarea = document.body.querySelector('textarea') as HTMLTextAreaElement
+    await change(textarea, 'e agora, você já conhece o Radar Comercial?')
+    await clickByLabel('Enviar mensagem')
+    expect(document.body.querySelector('[role="alert"]')?.textContent).toContain('temporariamente indisponível')
+    expect(textarea.value).toBe('e agora, você já conhece o Radar Comercial?')
+    await click('Tentar novamente')
+    expect(append.mock.calls[1][1].clientMessageId).toBe(append.mock.calls[0][1].clientMessageId)
+    expect(textarea.value).toBe('')
+    act(() => root.unmount())
+  })
   it('shows the accepted request immediately and explains the Harness processing state', async () => {
     vi.spyOn(actionEngineService, 'getMissionConversation').mockResolvedValue(conversation({ status: 'collecting_context' }))
     const { root } = await renderWorkspace()

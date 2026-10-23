@@ -27,6 +27,7 @@ export function MissionDecisionSummary({ summary, approvalSubjectHash, canApprov
   onApprove: () => void
 }) {
   const subjectCurrent = summary.decisionSubjectHash === approvalSubjectHash
+  const radarResearch = summary.changes.some(change => change.label === 'radar › capture › start')
   const contactText = summary.contactImpact.existingContacts > 0
     ? `${summary.contactImpact.existingContacts} contato(s) existente(s)`
     : 'Nenhum contato existente nesta etapa'
@@ -45,11 +46,13 @@ export function MissionDecisionSummary({ summary, approvalSubjectHash, canApprov
             {summary.changes.map((change, index) => (
               <div key={`${change.entityType}:${change.operation}:${index}`} className="border border-yx-line bg-yx-surface-2 p-3">
                 <p className="text-2xl font-semibold text-yx-blue">{change.quantity}</p>
-                <p className="mt-1 text-sm font-medium text-yx-fg">{change.label}</p>
+                <p className="mt-1 text-sm font-medium text-yx-fg">{commercialChangeLabel(change.label)}</p>
               </div>
             ))}
           </div>
         </div>
+
+        {radarResearch ? <p className="rounded-lg border border-yx-line bg-yx-blue-soft p-3 text-sm text-yx-fg-2">Esta decisão aprova o plano. A pesquisa de empresas terá uma aprovação específica antes de começar. Salvar a campanha não inicia a pesquisa nem envia mensagens.</p> : null}
 
         <div className="grid gap-3 sm:grid-cols-3">
           <Fact icon={Users} label="Pessoas impactadas" value={contactText} detail={summary.contactImpact.futureEligibleContacts ? 'Novos contatos elegíveis poderão entrar depois.' : 'A população ficará restrita aos contatos atuais.'} />
@@ -80,6 +83,13 @@ export function MissionDecisionSummary({ summary, approvalSubjectHash, canApprov
       </div>
     </section>
   )
+}
+
+function commercialChangeLabel(label: string) {
+  return ({
+    'radar › campaign › create': 'Criar ou selecionar campanha de prospecção',
+    'radar › capture › start': 'Solicitar pesquisa de empresas no Radar',
+  } as Record<string, string>)[label] ?? label
 }
 
 function Fact({ icon: Icon, label, value, detail }: { icon: typeof Users; label: string; value: string; detail: string }) {
