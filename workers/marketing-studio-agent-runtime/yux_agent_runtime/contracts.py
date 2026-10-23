@@ -218,7 +218,9 @@ def validate_mission_plan(value: dict[str, Any], planning_input: dict[str, Any])
     for protected_key in protected:
         if protected_key not in keys:
             raise AgentContractError("mission_plan_protected_step_missing")
-    if "pack.collect_metrics_and_costs" not in keys or "pack.evaluate" not in keys:
+    # Radar has a commercial-result checkpoint; revenue packs also collect economics.
+    required_checkpoints = ("pack.evaluate",) if requested_pack.get("key") == "radar_prospecting" else ("pack.collect_metrics_and_costs", "pack.evaluate")
+    if any(checkpoint not in keys for checkpoint in required_checkpoints):
         raise AgentContractError("mission_plan_economics_checkpoint_missing")
 
     dependency_graph: dict[str, list[str]] = {}
