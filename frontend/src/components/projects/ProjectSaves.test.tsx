@@ -7,6 +7,7 @@ import type { Project } from '@/types/project'
 import { ProjectTaskManager } from './ProjectTaskManager'
 import { ProjectNotifications } from './ProjectNotifications'
 import { ProjectProgressCalculator } from './ProjectProgressCalculator'
+import { ProjectFormModal } from './ProjectFormModal'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 const project = { id: 'project-a', progress: 0 } as Project
@@ -99,5 +100,18 @@ describe('project form persistence', () => {
     await mount(<ProjectProgressCalculator project={project} />)
     expect(container.textContent).toContain('Calculadora de Progresso')
     expect(container.textContent).not.toContain('Calculando progresso...')
+  })
+
+  it('submits an existing planned project with cents and its original past start date', async () => {
+    const clientId = '20000000-0000-4000-8000-000000000001'
+    vi.spyOn(service, 'getClients').mockResolvedValue({ data: [{ id: clientId, companyName: 'Empresa A' }] })
+    const onClose = vi.fn()
+    await mount(<ProjectFormModal isOpen onClose={onClose} onSave={async () => {}} project={{
+      ...project, name: 'Projeto planejado', description: 'Descrição do projeto planejado', clientId,
+      status: 'PLANNING', priority: 'MEDIUM', type: 'WEBSITE', startDate: '2026-10-01', expectedEndDate: '2026-10-31', budget: 0.29, currency: 'BRL',
+    }} />)
+    await act(async () => { document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await flush(); await flush() })
+    expect(service.updateProject).toHaveBeenCalledWith('project-a', expect.objectContaining({ budget: 0.29, startDate: '2026-10-01', status: 'PLANNING' }))
+    expect(onClose).toHaveBeenCalled()
   })
 })

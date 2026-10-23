@@ -28,7 +28,7 @@ export const projectBaseSchema = z.object({
     .max(999999999, 'Orçamento muito alto')
     .refine((value) => {
       // Verifica se tem no máximo 2 casas decimais
-      return Number.isInteger(value * 100)
+      return Math.abs(value - Math.round(value * 100) / 100) < 1e-8
     }, 'Orçamento deve ter no máximo 2 casas decimais'),
   currency: z.string()
     .length(3, 'Código da moeda deve ter 3 caracteres')
@@ -59,20 +59,14 @@ export const projectBaseSchema = z.object({
 export const projectDateSchema = z.object({
   startDate: z.string()
     .min(1, 'Data de início é obrigatória')
-    .refine((date) => {
-      const parsedDate = new Date(date)
-      return !isNaN(parsedDate.getTime())
-    }, 'Data de início inválida'),
+    .date('Data de início inválida'),
   expectedEndDate: z.string()
     .min(1, 'Data prevista de término é obrigatória')
-    .refine((date) => {
-      const parsedDate = new Date(date)
-      return !isNaN(parsedDate.getTime())
-    }, 'Data prevista de término inválida'),
+    .date('Data prevista de término inválida'),
 })
 
 // Schema completo para formulário de projeto
-export const projectFormSchema = projectBaseSchema
+const buildProjectFormSchema = (isEditing = false) => projectBaseSchema
   .merge(projectDateSchema)
   .refine((data) => {
     const startDate = new Date(data.startDate)
@@ -83,13 +77,12 @@ export const projectFormSchema = projectBaseSchema
     path: ['expectedEndDate'],
   })
   .refine((data) => {
-    const startDate = new Date(data.startDate)
     const today = new Date()
-    today.setHours(0, 0, 0, 0)
+    const localToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
     
     // Permite datas passadas apenas para projetos em edição
     // Para novos projetos, a data deve ser hoje ou futura
-    return startDate >= today || data.status !== 'PLANNING'
+    return isEditing || data.startDate >= localToday || data.status !== 'PLANNING'
   }, {
     message: 'Data de início deve ser hoje ou futura para novos projetos',
     path: ['startDate'],
@@ -106,6 +99,9 @@ export const projectFormSchema = projectBaseSchema
     message: 'Duração do projeto não pode exceder 5 anos',
     path: ['expectedEndDate'],
   })
+
+export const projectFormSchema = buildProjectFormSchema()
+export const projectEditFormSchema = buildProjectFormSchema(true)
 
 // Schema para atualização de projeto (campos opcionais)
 export const projectUpdateSchema = projectBaseSchema
@@ -172,7 +168,7 @@ export const validateProjectBudget = (budget: number): boolean => {
 }
 
 export const validateProjectDates = (startDate: string, endDate: string): boolean => {
-  const result = projectDateSchema.safeParse({ startDate, endDate })
+  const result = projectDateSchema.safeParse({ startDate, expectedEndDate: endDate })
   if (!result.success) return false
   
   const start = new Date(startDate)

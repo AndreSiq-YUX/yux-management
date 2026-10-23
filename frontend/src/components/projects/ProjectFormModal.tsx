@@ -51,7 +51,7 @@ import {
 } from '@/types/project'
 import { Client } from '@/types/client'
 import { backendDataService } from '@/services/backendDataService'
-import { projectFormSchema } from '@/lib/validations/project'
+import { projectFormSchema, projectEditFormSchema } from '@/lib/validations/project'
 import toast from 'react-hot-toast'
 
 interface ProjectFormModalProps {
@@ -74,7 +74,7 @@ export function ProjectFormModal({
   const [newTag, setNewTag] = useState('')
 
   const form = useForm<ProjectFormData>({
-    resolver: zodResolver(projectFormSchema),
+    resolver: zodResolver(project ? projectEditFormSchema : projectFormSchema),
     defaultValues: {
       name: '',
       description: '',

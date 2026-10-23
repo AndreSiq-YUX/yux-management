@@ -13,6 +13,8 @@ The review also fixes lost alert preferences, zero values, date display in Brazi
 - Real browser-to-API-to-database checks passed in Chrome at 1440×1000 and 390×844. The browser exercised task create/edit/complete, phase create/edit, delivery creation and approval requests, timeline updates, progress application, alert persistence after reload and recovery from a simulated failed save. No uncaught browser errors occurred. Browser plugin unavailable; local Playwright used installed Chrome.
 - All test records were confined to an isolated local database. No external paid providers were called.
 
+The final form boundary check adds four passing regressions for planned projects starting today in Brazil, edits retaining their original past start date, ordinary cent values and strict calendar-date validation, plus a rendered-form submission regression. The UI now applies the creation-only start-date rule only when creating a project. Frontend regression coverage totals 1,213 passing tests across the full suite and the two added regression files.
+
 ## Database and rollback
 
 Migration `0239_project_notification_rules.sql` adds one JSONB column to projects for the existing in-app alert switches. These switches control alerts shown in the project interface; they do not activate outbound email or messaging.
