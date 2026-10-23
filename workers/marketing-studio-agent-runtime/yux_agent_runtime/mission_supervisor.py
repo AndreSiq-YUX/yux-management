@@ -20,6 +20,15 @@ class MissionSupervisorError(ValueError):
     """Raised when an untrusted supervisor response cannot cross the wire boundary."""
 
 
+def _provider_response_schema() -> dict[str, Any]:
+    schema = MissionSupervisorProposal.model_json_schema(by_alias=True)
+    plan_schema = PlanWire.model_json_schema(by_alias=True)
+    schema.setdefault("$defs", {}).update(plan_schema.pop("$defs", {}))
+    schema["$defs"]["PlanWire"] = plan_schema
+    schema["properties"]["plan"] = {"anyOf": [{"$ref": "#/$defs/PlanWire"}, {"type": "null"}], "default": None}
+    return schema
+
+
 class MissionSupervisor:
     def __init__(self, client: OpenRouterClient, profile: ModelProfile, funnel_nurture: FunnelNurtureSpecialistWorkflow | None = None, campaign_launch: CampaignLaunchSpecialistWorkflow | None = None, router: MissionRouter | None = None, verifier: CompositeMissionVerifier | None = None) -> None:
         self.client = client
@@ -31,6 +40,7 @@ class MissionSupervisor:
 
     def compose_messages(self, value: dict[str, Any]) -> list[dict[str, str]]:
         envelope = {
+            "responseSchema": _provider_response_schema(),
             "tenant": {
                 "organizationId": value.get("organization_id"),
                 "clientId": value.get("client_id"),
@@ -61,6 +71,10 @@ class MissionSupervisor:
                     "tools, packs, sources or capabilities. Use only exact catalog versions and allowedSourceIds. Ask at "
                     "most three grouped questions, and never ask a second round after clarificationRound 1. Never "
                     "execute an action."
+                    " Follow the exact JSON Schema in responseSchema, including the nested PlanWire. "
+                    "For kind plan, questions must be [], selectedPacks must be nonempty, and plan must be an object. "
+                    "For kind clarification, provide questions, selectedPacks [], and plan null. "
+                    "Use the exact camelCase field names and string economics; assumptions and risks are arrays of strings. "
                     " For radar_prospecting use the catalog's exact protected step inputs and bindings. "
                     "resolvedParameters must include campaign and requestedCount from the confirmed mission parameters. "
                     "campaign is either {existingCampaignId} or the commercial creation fields; never invent IDs, "

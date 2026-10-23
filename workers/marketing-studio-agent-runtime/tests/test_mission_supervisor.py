@@ -164,6 +164,22 @@ def test_returns_a_valid_catalog_bound_plan() -> None:
     assert result["usage"]["totalTokens"] == 150
 
 
+def test_planner_receives_the_complete_provider_output_contract() -> None:
+    messages = _supervisor(_plan_response()).compose_messages(_request())
+    envelope = json.loads(messages[1]["content"])
+    schema = envelope["responseSchema"]
+    assert schema["additionalProperties"] is False
+    assert {"kind", "interpretation"}.issubset(schema["required"])
+    assert schema["properties"]["plan"]["anyOf"][0]["$ref"] == "#/$defs/PlanWire"
+    plan = schema["$defs"]["PlanWire"]
+    assert {"schemaVersion", "missionId", "actionPack", "rationale", "estimatedEconomics", "steps"}.issubset(plan["required"])
+    assert plan["properties"]["assumptions"]["items"] == {"type": "string"}
+    assert schema["$defs"]["PlanStepWire"]["properties"]["input"]["type"] == "object"
+    assert schema["$defs"]["EstimatedEconomicsWire"]["properties"]["totalExecutionCost"]["type"] == "string"
+    assert "responseSchema" in messages[0]["content"]
+    assert envelope["allowedSourceIds"] == ["source-1"]
+
+
 @pytest.mark.parametrize(
     ("mutate", "error"),
     [
