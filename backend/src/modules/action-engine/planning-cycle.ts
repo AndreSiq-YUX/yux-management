@@ -140,7 +140,7 @@ export async function settlePlanningCall(client: Queryable, input: {
        calls, input_tokens, output_tokens, cost_brl, latency_ms, reservation_id, provider_model_id, metadata
      ) SELECT organization_id, cycle_id, specialist_profile, specialist_version, 'actual',
               $4,$5,$6,$7,$8,id,$9,$10
-       FROM public.action_planning_usage_entries WHERE id = $3 AND organization_id = $2`,
+       FROM public.action_planning_usage_entries WHERE id = $3 AND organization_id = $2 AND cycle_id = $1`,
     [input.cycleId, input.organizationId, input.reservationId, input.actual.calls, input.actual.inputTokens,
       input.actual.outputTokens, input.actual.costBrl, input.actual.latencyMs, input.providerModelId ?? null, input.metadata ?? {}],
   )
