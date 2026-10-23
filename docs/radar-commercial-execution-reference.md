@@ -127,7 +127,7 @@ As dez capabilities usam o adaptador `radar/action-engine-commands.ts`, os coman
 
 Duplicação, critérios, retomada e pesquisa de empresas existentes têm adaptadores e contratos registrados; o pack assistido desta release mantém a topologia de um lote novo. Não oferecer rotinas recorrentes nem mudar para autonomous. Campanha sem teto ou com teto superior ao envelope bloqueia novos efeitos; capacidade e exceções continuam sob as regras canônicas do Radar.
 
-Publicação funcional: pacote de oito propostas em `docs/knowledge/publication/radar-commercial.review.json`, aguardando revisão. O planejamento recupera publicações autorizadas em growth_strategist/radar/radar_commercial_mission, revalidando fontes antes do efeito externo; sem publicação válida, bloqueia. A busca local sem chamada de embedding é lexical e registra modo degradado.
+Publicação funcional: o guia v1.1 foi ingerido, revisado e publicado em produção para o workspace interno YUX, com oito cards aprovados e vínculos para a conversa de entrada e o planejamento Radar. IDs, hashes e alcance da homologação constam no [runbook de liberação](runbooks/radar-action-engine-rollout.md). O arquivo `docs/knowledge/publication/radar-commercial.review.json` conserva o pacote preparatório original, com status de proposta; não representa o estado atual da publicação. O planejamento recupera publicações autorizadas em growth_strategist/radar/radar_commercial_mission, revalidando fontes antes do efeito externo; sem publicação válida, bloqueia. A recuperação lexical sem chamada de embedding registra modo degradado.
 
 Critérios preservados para validação e evolução:
 
