@@ -28,6 +28,7 @@ const moduleOptions = [
   'whatsapp_ai',
   'omnichannel',
   'marketing_studio',
+  'radar',
   'campaigns',
   'landing_pages',
   'automations',

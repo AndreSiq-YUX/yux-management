@@ -54,6 +54,20 @@ describe('StrategyPacksPanel upload', () => {
     container.remove()
   })
 
+  it('vincula o conhecimento ao módulo Radar e ao workflow de missão específicos',async()=>{
+    const onSaveBinding=vi.fn(async()=>undefined)
+    await renderPanel(vi.fn(),[],undefined,undefined,[],capabilities,undefined,onSaveBinding)
+    const form=[...container.querySelectorAll('form')].find(item=>item.textContent?.includes('Binding operacional'))!
+    const moduleSelect=form.querySelectorAll('select')[2]!
+    await act(async()=>{
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value')?.set?.call(moduleSelect,'radar')
+      moduleSelect.dispatchEvent(new Event('change',{bubbles:true}))
+      setInputValue(form.querySelector<HTMLInputElement>('input[placeholder="Workflow opcional"]')!,'radar_commercial_mission')
+    })
+    await act(async()=>{form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}))})
+    expect(onSaveBinding).toHaveBeenCalledWith(expect.objectContaining({packId:pack.id,moduleKey:'radar',workflowKey:'radar_commercial_mission'}))
+  })
+
   it('envia o File real selecionado e preserva os metadados da fonte', async () => {
     const onCreateJob = vi.fn(async () => undefined)
     await renderPanel(onCreateJob)
@@ -326,6 +340,7 @@ describe('StrategyPacksPanel upload', () => {
     jobs: StrategyIngestionJob[] = [],
     ingestionCapabilities: StrategyIngestionCapabilities = capabilities,
     onRetryJob = vi.fn(async () => undefined),
+    onSaveBinding = vi.fn(async () => undefined),
   ) {
     await act(async () => {
       root.render(
@@ -345,7 +360,7 @@ describe('StrategyPacksPanel upload', () => {
             onCreateJob={onCreateJob}
             onRefreshJobs={vi.fn(async () => undefined)}
             onRetryJob={onRetryJob}
-            onSaveBinding={vi.fn()}
+            onSaveBinding={onSaveBinding}
           />
         </MemoryRouter>,
       )
