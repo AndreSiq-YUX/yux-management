@@ -44,9 +44,9 @@ Arquivos: `frontend/src/components/strategy-engine/StrategyPacksPanel.tsx` e tes
 Arquivos: runbooks, manifesto de migrations e evidências fora do checkout.
 
 - [x] Inventariar The Black Book e guia do Radar, fontes e vínculos; conservar materiais privados.
-- [ ] Publicar código/migration e normalizar os packs comuns por comandos canônicos, reaproveitando somente os itens previamente aprovados e seus embeddings.
-- [ ] Verificar os mesmos IDs de publicação e conteúdo nas contas interna YUX, YUX Captação e outra conta elegível; contexto de empresa continua diferente e isolado.
-- [ ] Conferir ingestão futura, publicação/revogação, código executado, API e workers; registrar o que foi efetivamente comprovado.
+- [x] Publicar código/migration e normalizar os packs comuns por comandos canônicos, reaproveitando somente os itens previamente aprovados e seus embeddings.
+- [x] Verificar os mesmos IDs de publicação e conteúdo nas contas interna YUX, YUX Captação e outra conta elegível; contexto de empresa continua diferente e isolado.
+- [x] Conferir ingestão futura, publicação/revogação, código executado, API e workers; registrar o que foi efetivamente comprovado.
 
 ## Foco da revisão
 
@@ -55,4 +55,3 @@ Arquivos: runbooks, manifesto de migrations e evidências fora do checkout.
 3. Visibilidade de raciocínio não pode permitir reprodução de conteúdo privado na interface.
 4. Revogação precisa invalidar a fonte usada por uma missão antiga.
 5. Catálogo informativo não pode inserir ações desabilitadas em `allowedActionPacks` ou executar pesquisa.
-

@@ -14,6 +14,27 @@ O intake recebe `operationalContext.platformToolCatalog` a partir do registro co
 
 O piloto abaixo descreve a publicação v1 restrita usada na prova original. A republicação global e sua conferência devem ser registradas separadamente; fontes de uma versão anterior exigem nova validação antes de executar um plano antigo.
 
+## Publicação global verificada — 23/10/2026
+
+Correção de código `a6fed5faafdfe1b9118558eae2121409e0032a12`, publicada em main e implantada pelo Dokploy. Migration `0238_shared_strategy_knowledge` aplicada às 18:20:52 UTC; SHA-256 canônico `46d0410f3c42a8d631684cdb798e6baa6389fd4df8b80029049a32164b0f94ee`. API `0d85bb6d069d`, Harness `c9af25053a82` e frontend `11ea7856cf40` observados na conferência.
+
+`publishStrategyPack` republicou exclusivamente os itens já aprovados, preservando visibilidade, perfis, evidências, embeddings e releases anteriores. Não houve nova curadoria nem chamada paga.
+
+| Base comum | Itens aprovados | Publicação atual v2 | Hash da publicação |
+| --- | --- | --- | --- |
+| The Black Book | 113 | `3e2b62bd-532c-47f8-9919-0584ebf7727c` | `5a2ccfbd9a42edee475364dd0d031febb332d77822548eeb4cfa367960fdb5a3` |
+| Guia funcional do Radar | 8 | `4907c8b3-61bb-4eef-8958-acb5ac782724` | `c8cf28235d03d268c9d730ff0ac8afb51b0f8b80b5cf270478e0979fe9f22fb7` |
+
+Ambos possuem owner nulo, `metadata.knowledgePlane=shared_strategy` e zero bindings ativos restritos a contas. A conferência canônica com identidade `client_member` recuperou as mesmas publicações nas organizações `650e8400-e29b-41d4-a716-446655440001`, `249d6c3d-d92d-447d-9f67-5f4db99ee04c` e `650e8400-e29b-41d4-a716-446655440101`. O worker revalidou os hashes e bindings dos resultados: oito cards do Radar em cada consumidor e 12 resultados do livro para a consulta lexical diagnóstico; os hashes dos conjuntos de itens foram idênticos entre contas.
+
+No container real do Harness, `PostgresAgentRuntimeStore` + `RuntimeStrategyKnowledgeStore` + `StrategyRetrievalService`, usando o perfil e orçamento de contexto existentes, produziram o mesmo contexto na conta interna e na YUX Captação: oito cards do Radar, 4.548 caracteres, SHA-256 `b4935d7ab02c64c0d9bad13b31699357620648f4d91c7780b4aa10af431ad7e1`; sete cards do livro, 8.736 caracteres, SHA-256 `29a2c4edbd206f294e676c11233d6e8dae9a6bf6fa6c5bd636054ba9cd86e6aa`. O runtime implantado contém as instruções de conhecimento comum e separação de autorização. Esta contraprova usa recuperação lexical e auditoria reais; não é uma nova resposta paga do modelo nem um novo plano executado.
+
+API pronta = 200; heartbeats external/ingestion/interactive/maintenance com 23–26 segundos. Zero documentos com `source_scope=client` entre os itens das publicações internas atuais. O catálogo funcional comum contém 14 grupos de ferramentas e inclui Radar quando a execução está desabilitada. A allowlist de execução do Radar permanece somente na organização interna; esta correção não amplia efeitos, contatos ou autonomia.
+
+Validação local final: 1.509 testes backend passaram, 126 ignorados em condições existentes; 1.204 frontend passaram; 399 Python passaram, sete ignorados; seis testes em cinco arquivos de integração passaram em PostgreSQL novo `yux_test_shared_strategy_20261023_1516`. Cobertura inclui papéis HTTP, runtime/worker com permissões reais, contexto privado A/B, rejeição de material empresarial na base global e revogação. Builds, tipos, manifesto e interação no Chrome passaram. O lint por baseline continua apontando `no-extra-semi` no arquivo preexistente `RadarCampaignConfigurationForm.test.tsx`, sem diff nesta correção; não foi tratado como falha da mudança nem mascarado por atualização do baseline.
+
+Evidências: pasta de visualizações `shared-strategy`, arquivos `publicacao-producao.txt`, `recuperacao-producao-{1,2,3}.txt`, `harness-producao.txt`, `saude-producao.txt`, `base-global-producao.png` e `backend-tests.log`. A tela implantada mostra a base comum e os dois packs publicados em v2. A publicação antiga da missão de prova abaixo permanece histórica; executar seu plano exige recuperar/revalidar o contexto atual. O manifesto global de remediação continua blocked pelos gates anteriores.
+
 ## Piloto interno em produção — 23/10/2026
 
 Escopo autorizado: workspace interno YUX (`650e8400-e29b-41d4-a716-446655440001`), modo assistido, até US$ 1 de consumo no OpenRouter para curadoria, embeddings e prova de planejamento. Não autoriza pesquisa paga de empresas, contato, recorrência ou autonomia.
