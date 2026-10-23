@@ -14,10 +14,11 @@ export const radarCommercialCriteriaSchema = z.object({ organizationId: z.uuid()
     contactPurpose: z.enum(['general', 'suppliers', 'sales', 'finance', 'recruitment']), minPassRatio: z.number().min(0).max(1), closePendingLots: z.boolean().default(false),
 }).strict();
 const failure = (code: string) => Object.assign(Error(code), { statusCode: 409 });
-export async function saveRadarCommercialCriteria(pool: pg.Pool, user: AuthUser, campaignId: string, value: unknown, options:{client?:pg.PoolClient}={}) {
+export async function saveRadarCommercialCriteria(pool: pg.Pool, user: AuthUser, campaignId: string, value: unknown, options:{client?:Pick<pg.PoolClient,'query'>}={}) {
     const input = radarCommercialCriteriaSchema.parse(value);
     await requireRadarScope(pool, user, { organizationId: input.organizationId, campaignId }, true);
-    const db = options.client ?? await pool.connect();
+    const ownedClient=options.client?null:await pool.connect();
+    const db = options.client ?? ownedClient!;
     try {
         if(!options.client)await db.query('BEGIN');
         const row = (await db.query('SELECT * FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE', [campaignId, input.organizationId])).rows[0];
@@ -43,5 +44,5 @@ export async function saveRadarCommercialCriteria(pool: pg.Pool, user: AuthUser,
         await db.query(`UPDATE public.radar_b2b_reviews SET approved_at=NULL,approved_by=NULL,target_status='review',product_fit='unknown',reasons=ARRAY['Critérios alterados; aguarda reavaliação pelas regras atuais.'],updated_at=NOW() WHERE organization_id=$1 AND campaign_id=$2`, [input.organizationId, campaignId]);
         await db.query(`UPDATE public.radar_campaign_gate_calibrations SET status='superseded',updated_at=NOW() WHERE organization_id=$1 AND campaign_id=$2 AND status='approved'`, [input.organizationId, campaignId]);
         if(!options.client)await db.query('COMMIT'); return { campaign: mapCampaign(updated as never), criteriaChanged: true };
-    } catch (cause) { if(!options.client)await db.query('ROLLBACK'); throw cause; } finally { if(!options.client)db.release(); }
+    } catch (cause) { if(!options.client)await db.query('ROLLBACK'); throw cause; } finally { ownedClient?.release(); }
 }

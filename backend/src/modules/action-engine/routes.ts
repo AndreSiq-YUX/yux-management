@@ -10,6 +10,7 @@ import { FUNNEL_NURTURE_PACK_V1 } from './packs/funnel-nurture-v1.js'
 import { CAMPAIGN_LAUNCH_PACK_V1 } from './packs/campaign-launch-v1.js'
 import { RADAR_PROSPECTING_PACK_V1 } from './packs/radar-prospecting-v1.js'
 import { ensureRadarProspectingPackVersion, radarMissionAvailable } from './radar-pack-registration.js'
+import { projectRadarApproval } from './radar-approval.js'
 import { evaluateMissionReadiness, resolveReadinessCorrectionTargets, summarizeAutonomyHealth } from './readiness.js'
 import {
   answerMissionClarification, approvePlanRevision, createMission, decideActionApproval, getMission, getPlan, listMissionApprovals, listMissionPlans, listMissions,
@@ -548,7 +549,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     try {
       const conversation=await getMissionConversation(app.pg,params.data.conversationId,body.data.organizationId)
       if(conversation?.currentBrief.packKeys&&Array.isArray(conversation.currentBrief.packKeys)&&conversation.currentBrief.packKeys.includes('radar_prospecting')){
-        if(!await radarMissionAvailable(app.pg,app.config,body.data.organizationId,ctx.userId)||conversation.createdBy!==ctx.userId||conversation.currentBrief.mode==='autonomous')return reply.code(403).send({error:'radar_mission_unavailable'})
+        if(!await radarMissionAvailable(app.pg,app.config,body.data.organizationId,ctx.userId)||conversation.createdBy!==ctx.userId||conversation.currentBrief.mode!=='assisted')return reply.code(403).send({error:'radar_mission_unavailable'})
         await ensureRadarProspectingPackVersion(app.pg,ctx.userId)
       }
       const result = await confirmMissionConversationBrief(app.pg as never, {
@@ -631,7 +632,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       const packKeys = recipe ? recipePacks.map((item) => item.key) : selectIntentPacks(parsed.data.quickStart, parsed.data.objective)
       if (packKeys.length === 0) return reply.code(409).send({ error: 'mission_pack_selection_invalid' })
       const radar=packKeys.includes(RADAR_PROSPECTING_PACK_V1.key)
-      if(radar&&(!await radarMissionAvailable(app.pg,app.config,parsed.data.organizationId,ctx.userId)||parsed.data.mode==='autonomous'||packKeys.length!==1||!parsed.data.allowedModules.includes('radar')))return reply.code(403).send({error:'radar_mission_unavailable'})
+      if(radar&&(!await radarMissionAvailable(app.pg,app.config,parsed.data.organizationId,ctx.userId)||parsed.data.mode!=='assisted'||packKeys.length!==1||!parsed.data.allowedModules.includes('radar')))return reply.code(403).send({error:'radar_mission_unavailable'})
       if (recipe) {
         const allowedModules = Array.isArray(recipe.defaultGoal.allowedModules)
           ? recipe.defaultGoal.allowedModules.filter((item): item is string => typeof item === 'string')
@@ -1109,7 +1110,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     const query = organizationQuery.safeParse(request.query)
     if (!params.success || !query.success) return reply.code(400).send({ error: 'invalid_approval_query' })
     requireAccess(ctx, 'action_engine.read', { organizationId: query.data.organizationId })
-    return listMissionApprovals(app.pg, params.data.missionId, query.data.organizationId)
+    return (await listMissionApprovals(app.pg, params.data.missionId, query.data.organizationId)).map(approval=>projectRadarApproval(approval,ctx.role==='yux_admin'))
   })
 
   app.post('/approvals/:approvalId/decide', async (request, reply) => {

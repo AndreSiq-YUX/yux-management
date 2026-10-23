@@ -10,12 +10,13 @@ it('does not infer revenue, qualified leads or success from an empty research',(
 })
 it('projects Radar artifacts with a nested commercial allowlist',()=>{
  const campaignId='00000000-0000-4000-8000-000000000001'
- const artifacts=buildMissionArtifactProjections({plan:{parameters:{campaign:{name:'CNPJá Comércio',targetSegment:'Indústria',provider:'secret'}}},actions:[
- {stepKey:'pack.campaign',status:'succeeded',output:{output:{campaignId,status:'saved',provider:'secret'}}},
+ const artifacts=buildMissionArtifactProjections({plan:{parameters:{requestedCount:25,campaign:{name:'CNPJá Comércio',targetSegment:'Indústria',targetStates:['PR'],provider:'secret'}}},actions:[
+ {stepKey:'pack.campaign',status:'succeeded',output:{output:{campaignId,status:'saved',configurationRevision:2,criteriaRevision:3,provider:'secret'}}},
  {stepKey:'pack.await',status:'succeeded',output:{output:{status:'partial',campaignHref:'javascript:bad',counts:{found:4,approved:0,cost:100},raw:{token:'secret'}}}},
  ],approvals:[],sources:[]})
  expect(artifacts[0].data.name).toBe('CNPJá Comércio')
  expect(artifacts[0].data).not.toHaveProperty('provider')
+ expect(artifacts[0].data).toMatchObject({requestedCount:25,targetStates:['PR'],configurationRevision:2,criteriaRevision:3})
  expect(JSON.stringify(artifacts)).not.toMatch(/secret|javascript|token|cost/)
  expect(artifacts[1].data.counts).toEqual({found:4,approved:0})
 })

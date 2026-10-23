@@ -8,6 +8,12 @@ import type { ActionMission, MissionOperationalControls } from '@/types/actionEn
 afterEach(() => { document.body.innerHTML = ''; vi.restoreAllMocks() })
 
 describe('AutonomyControlCenter', () => {
+  it('does not offer an autonomy grant for the assisted Radar release',async()=>{
+    const root=createRoot(document.body.appendChild(document.createElement('div')))
+    await act(async()=>root.render(<AutonomyControlCenter mission={{...mission,packSelection:{packs:[{key:'radar_prospecting',version:'1.0.0'}]}}} controls={{...controls,autonomy:{...controls.autonomy,grants:[]}}} canWrite onPause={vi.fn()} onRequestGrant={vi.fn()} onApproveGrant={vi.fn()} onRevokeGrant={vi.fn()} onCapabilityControl={vi.fn()}/>))
+    expect(document.body.textContent).not.toContain('Solicitar autonomia')
+    act(()=>root.unmount())
+  })
   it('shows envelope, remaining limits, exact hash and degraded provider warning', async () => {
     const onApproveGrant = vi.fn()
     const root = await render(controls, { onApproveGrant })

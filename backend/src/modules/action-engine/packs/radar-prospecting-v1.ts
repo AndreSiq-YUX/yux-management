@@ -25,7 +25,7 @@ const definition:Omit<ActionPackVersion,'contentHash'>={
  topologyTemplate:{steps},protectedStepKeys:steps.map(s=>s.stepKey),extensionPoints:[],
  allowedCapabilities:[...new Set([...steps.map(s=>s.capabilityKey),'radar.campaign.duplicate','radar.campaign.criteria.update','radar.capture.resume','radar.research.request'])].map(key=>({key,versions:[1],required:steps.some(s=>s.capabilityKey===key)})),
  artifactContract:{consumes:[],produces:[{key:'radar.campaign',schemaVersion:1},{key:'radar.prospecting_result',schemaVersion:1}]},
- metricSpec:{primary:['companies_found','research_completed'],unknownPolicy:'block_when_research_pending',guardrails:['research_blocked','human_review_required']},
+ metricSpec:{primary:[{key:'companies_found',unit:'count'},{key:'research_completed',unit:'count'}],operational:['companies_requested','operations_pending','operations_blocked','operations_partial'],unknownPolicy:'block_when_research_pending',guardrails:['research_blocked','human_review_required']},
  economicsSpec:{currency:'BRL',revenueAttribution:'not_applicable',trackFromFirstRun:true},
  policyDefaults:{mode:'assisted',researchApprovalRequired:true,autonomousEnabled:false,contactsAllowed:false},
 }

@@ -29,6 +29,9 @@ export function createJobProcessor(dependencies: JobProcessorDependencies) {
     const data = parseRegisteredJobData(jobName, job.data)
     const organizationId = organizationIdFromJob(data)
     const internalSystemJob = job.name.startsWith('events.')
+      // Database orchestration identity; business actors are still reloaded
+      // from each mission and never inferred from this service context.
+      || job.name.startsWith('action-engine.')
       || job.name.startsWith('crm.sequence.')
       || job.name === 'email.send'
       || job.name === 'omnichannel.dispatchOutbound'

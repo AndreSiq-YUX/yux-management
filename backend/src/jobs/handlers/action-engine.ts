@@ -1,4 +1,5 @@
 import type { AppEnv } from '../../config/env.js'
+import { runWithDatabaseRequestContext } from '../../db/request-context.js'
 import { RADAR_PROSPECTING_PACK_V1 } from '../../modules/action-engine/packs/radar-prospecting-v1.js'
 import { radarMissionAvailable, ensureRadarProspectingPackVersion } from '../../modules/action-engine/radar-pack-registration.js'
 import { retrieveRadarMissionKnowledge,RADAR_MISSION_KNOWLEDGE_SCOPE } from '../../modules/action-engine/radar-knowledge-context.js'
@@ -98,7 +99,6 @@ export async function handleActionEngineProcessMissionConversation(
     )
     const bounded = boundTranscript(conversation.messages)
     const packs = [REVENUE_RECOVERY_PACK_V0, FUNNEL_NURTURE_PACK_V1, CAMPAIGN_LAUNCH_PACK_V1, CAMPAIGN_OPTIMIZATION_PACK_V1,...(radarAvailable?[RADAR_PROSPECTING_PACK_V1]:[])]
-    if(radarAvailable)await ensureRadarProspectingPackVersion(pool,conversation.createdBy)
     const request: MissionConversationTurnRequestWire = {
       schemaVersion: 1,
       organization_id: organizationId,
@@ -180,7 +180,16 @@ function safeConversationError(error: unknown): string {
 
 export async function handleActionEngineSchedule(pool: Pool, queue: AppJobQueue, data: Record<string, unknown>) {
   const missionId = typeof data.missionId === 'string' ? data.missionId : undefined
-  return scheduleReadyActions(pool as never, queue, missionId)
+  const missions = await pool.query<{id:string;organization_id:string}>(
+    "SELECT id,organization_id FROM public.action_missions WHERE status='active' AND ($1::uuid IS NULL OR id=$1)", [missionId ?? null],
+  )
+  const result={ready:0,waitingApproval:0}
+  for(const mission of missions.rows){
+    const scheduled=await runWithDatabaseRequestContext({role:'yux_operator',organizationIds:[mission.organization_id],serviceRole:'worker'},
+      ()=>scheduleReadyActions(pool as never,queue,mission.id))
+    result.ready+=scheduled.ready;result.waitingApproval+=scheduled.waitingApproval
+  }
+  return result
 }
 
 export async function handleActionEngineDecisionNotification(pool: Pool, queue: AppJobQueue, data: Record<string, unknown>, enabled = true, graphVersion?: string) {
@@ -344,6 +353,7 @@ export async function handleActionEngineCollectMetrics(pool: Pool, queue: AppJob
   )
   let snapshots = 0
   for (const mission of missions.rows) {
+    await runWithDatabaseRequestContext({role:'yux_operator',organizationIds:[mission.organization_id],serviceRole:'worker'},async()=>{
     const snapshot = await collectPackMissionMetrics(pool, mission.id, mission.organization_id)
     for (const [key, metric] of Object.entries(snapshot.metrics)) {
       const evidence = snapshot.evidence[key]
@@ -358,12 +368,13 @@ export async function handleActionEngineCollectMetrics(pool: Pool, queue: AppJob
           metric.unit, metric.kind === 'known' ? null : metric.reason,
           evidence?.sourceType ?? 'mission_observer', evidence?.sourceRecordId ?? null, snapshot.measuredAt,
           attribution?.status ?? 'not_applicable', attribution?.policyVersion ?? null,
-          attribution?.policyHash ?? null, attribution?.eventIds ?? []],
+          attribution?.policyHash ?? null, JSON.stringify(attribution?.eventIds ?? [])],
       )
       snapshots += 1
     }
     await queue.add('action-engine.evaluateMission', {
       missionId: mission.id, organizationId: mission.organization_id, checkpointKey: `scheduled-${snapshot.measuredAt.slice(0, 16)}`,
+    })
     })
   }
   return { missions: missions.rows.length, snapshots }
@@ -554,7 +565,7 @@ export async function handleActionEnginePlanMission(
   const packs = await loadMissionActionPacks(pool, mission.packVersionId, mission.packSelection)
   const pack = packs[0]!
   const radar=packs.some(item=>item.key===RADAR_PROSPECTING_PACK_V1.key)
-  if(radar&&(!await radarMissionAvailable(pool,env,organizationId,mission.createdBy)||mission.mode==='autonomous'||packs.length!==1))throw new Error('radar_mission_unavailable')
+  if(radar&&(!await radarMissionAvailable(pool,env,organizationId,mission.createdBy)||mission.mode!=='assisted'||packs.length!==1))throw new Error('radar_mission_unavailable')
   const serializablePacks = packs.map((item) => {
     const { parameters: _runtimeSchema, ...serializable } = item as ActionPackVersion & { parameters?: unknown }
     return serializable

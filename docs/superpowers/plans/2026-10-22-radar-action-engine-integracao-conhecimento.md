@@ -10,7 +10,22 @@
 
 **Spec:** docs/knowledge/radar-commercial-action-engine.md e docs/radar-commercial-execution-reference.md, versão 1.0 de 22/10/2026; AGENTS.md deste worktree. As decisões de integração abaixo completam o contrato de implementação.
 
-**Base analisada:** worktree radar-brave-state-fixes, HEAD 831bc1e, em 22/10/2026. O checkout principal da conversa está em outro commit e tem alterações de projetos em andamento. Este plano se refere ao worktree dos dois documentos. Não comprova configuração ou deploy em produção. Nenhum conhecimento foi publicado e nenhuma capability foi implementada nesta entrega.
+**Base analisada na elaboração do plano:** worktree radar-brave-state-fixes, HEAD 831bc1e, em 22/10/2026. O checkout principal da conversa está em outro commit e tem alterações de projetos em andamento. Este plano se refere ao worktree dos dois documentos. Não comprova configuração ou deploy em produção.
+
+**Execução autorizada posterior:** implementação assistida na branch codex/radar-action-engine-assisted, com preparação do guia para revisão. Código local e testes executados; conhecimento real ainda não publicado. Os checkboxes abaixo preservam os gates do plano completo, incluindo homologação/publicação, e não significam que todo o plano foi liberado. Estado por etapa:
+
+| Etapa | Estado da entrega assistida |
+| --- | --- |
+| 1 | Guia v1.1, oito propostas com evidências/hash e checklist preparados; ingestão e publicação reais pendentes. |
+| 2–4 | Contratos, identidade, projeções, dez capacidades, idempotência e aprovação concreta implementados. Somente assisted; sem compensador fictício. |
+| 5 | Espera persistida e recuperação implementadas; reinício, falha de confirmação e crash após aceite testados com PostgreSQL e fila injetada. Redis distribuído pendente. Polling fixo de 15s nesta versão, sem backoff adaptativo. |
+| 6 | Retrieval governado e revalidação integrados às entradas de planejamento; publicação/binding/revogação testados com fixture e worker real. Qualidade com Harness/LLM real pendente. |
+| 7 | Pack próprio e roteamento implementados; criação ou seleção explícita de campanha, um lote novo, sem DAG alternativo de retomada. Claim de criação é por missão e mantido até o término, junto ao claim de campanha. |
+| 8 | Briefing, artefatos, aprovação e métricas comerciais implementados; adaptadores secundários registrados, jornadas completas pós-criação ficam para extensão versionada. |
+| 9 | Adiada: autonomia e recorrência não habilitadas nesta entrega. |
+| 10 | Testes locais, revisão independente e roteiro de rollout executados/preparados. Publicação, deploy, Redis real e canário pago pendentes; gate permanece desligado. |
+
+Evidências, comandos, limitações e correções da revisão: [runbook da liberação assistida](../../runbooks/radar-action-engine-rollout.md).
 
 ## Global Constraints
 

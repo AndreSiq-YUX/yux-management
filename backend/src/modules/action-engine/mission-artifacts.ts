@@ -39,7 +39,8 @@ export function buildMissionArtifactProjections(input: {
     const counts=record(outcome.counts)
     const safeCounts=Object.fromEntries(['requested','found','complete','withGaps','outsideProfile','waiting','approved'].filter(key=>typeof counts[key]==='number').map(key=>[key,counts[key]]))
     const campaignId=typeof saved.campaignId==='string'&&/^[a-f0-9-]{36}$/i.test(saved.campaignId)?saved.campaignId:undefined
-    const artifacts=[{key:'radar.campaign',kind:'radar_campaign' as const,title:'Campanha do Radar',data:{...safeCampaign,requestedCount:parameters.requestedCount,state:campaignId?'saved':'proposed'}},
+    const revisions=Object.fromEntries(['configurationRevision','criteriaRevision'].filter(key=>typeof saved[key]==='number').map(key=>[key,saved[key]]))
+    const artifacts=[{key:'radar.campaign',kind:'radar_campaign' as const,title:'Campanha do Radar',data:{...safeCampaign,...revisions,requestedCount:parameters.requestedCount,state:campaignId?'saved':'proposed'}},
       {key:'radar.prospecting_result',kind:'radar_result' as const,title:'Pesquisa de empresas',data:{state:['completed','partial','blocked','pending'].includes(String(outcome.status))?outcome.status:'not_started',counts:safeCounts}}]
     return artifacts.map(artifact=>({...artifact,status:campaignId?'draft' as const:'proposed' as const,contentHash:missionArtifactHash(artifact.data),
       ...(campaignId?{entityId:campaignId}:{}),staleApproval:false,proposedVersion:{status:'proposed',contentHash:missionArtifactHash(artifact.data)},citations:[],complianceWarnings:['Pesquisa não autoriza contato nem entrega automática ao CRM.']}))

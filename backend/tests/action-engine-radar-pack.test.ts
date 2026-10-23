@@ -7,6 +7,7 @@ import { createActionEngineCapabilityRegistry } from '../src/modules/action-engi
 it('keeps research protected, approved, and separate from saving a campaign', () => {
  const pack=RADAR_PROSPECTING_PACK_V1
  expect(pack.policyDefaults.mode).toBe('assisted')
+ expect(pack.metricSpec.primary).toContainEqual({key:'companies_found',unit:'count'})
  const plan=createRadarProspectingPlan({campaign:{existingCampaignId:'00000000-0000-4000-8000-000000000001'},requestedCount:10})
  expect(plan.steps.map(s=>s.capabilityKey)).toEqual(['radar.campaign.inspect','radar.campaign.create','radar.capture.preflight','radar.capture.start','radar.operation.await','radar.results.inspect','system.evaluation.checkpoint'])
  expect(plan.steps.find(s=>s.capabilityKey==='radar.capture.start')?.approvalRequired).toBe(true)

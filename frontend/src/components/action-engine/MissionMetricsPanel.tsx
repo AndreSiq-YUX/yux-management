@@ -46,6 +46,7 @@ function metricText(metric?: MissionMetric) { return metric?.kind === 'known' ? 
 function humanize(value: string) { return value.replace(/_/g, ' ').replace(/^./, (letter: string) => letter.toUpperCase()) }
 
 const metricLabel: Record<string, string> = {
+  companies_found:'Empresas encontradas',research_completed:'Pesquisas concluídas',companies_requested:'Empresas solicitadas',operations_pending:'Pesquisas em andamento',operations_blocked:'Pesquisas aguardando ação',operations_partial:'Pesquisas parciais',
   signed_revenue: 'Receita recuperada', contacted_opportunities: 'Oportunidades contatadas', positive_responses: 'Respostas positivas', meetings_booked: 'Reuniões', human_hours: 'Horas humanas',
   leads: 'Leads', qualified_leads: 'Leads qualificados', attributed_revenue_brl: 'Receita atribuída', impressions: 'Impressões', clicks: 'Cliques', ctr: 'CTR', landing_conversion_rate: 'Conversão da landing page', spend_brl: 'Investimento em mídia', total_execution_cost_brl: 'Custo total', cpl_brl: 'Custo por lead', mroi: 'MROI',
 }

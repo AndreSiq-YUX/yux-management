@@ -15,7 +15,7 @@ export async function resolveRadarMissionActor(pool:Pick<pg.Pool,'query'>,contex
   )).rows[0]
   if(!row||row.organization_id!==context.organizationId)throw radarMissionError('radar_mission_scope_forbidden',403)
   if(row.role!=='yux_admin'||!row.is_active||row.created_by!==context.actorUserId)throw radarMissionError('radar_mission_actor_forbidden',403)
-  if(!['assisted','prepare','shadow'].includes(row.mode))throw radarMissionError('radar_mission_mode_unsupported',403)
+  if(row.mode!=='assisted')throw radarMissionError('radar_mission_mode_unsupported',403)
   if(['cancelled','succeeded','failed','expired','paused'].includes(row.status))throw radarMissionError('radar_mission_not_active')
   if(!await isRadarEnabledOrganization(pool,context.organizationId))throw radarMissionError('radar_mission_not_entitled',403)
   return {id:row.id,email:row.email??'',name:row.name??'',role:row.role}

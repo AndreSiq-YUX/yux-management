@@ -355,8 +355,10 @@ export interface MissionMetricDefinition {
   attributionPolicyHash?: string
 }
 
+type MissionPrimaryMetricDefinition=Omit<MissionMetricDefinition,'group'>&{group?:MissionMetricDefinition['group']}
+
 export interface MissionMetricSpec {
-  primary?: MissionMetricDefinition | MissionMetricDefinition[]
+  primary?: MissionPrimaryMetricDefinition | MissionPrimaryMetricDefinition[]
   leading?: string[]
   operational?: string[]
   economics?: string[]

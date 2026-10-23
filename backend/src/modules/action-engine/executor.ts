@@ -114,17 +114,27 @@ export async function scheduleReadyActions(pool: Connectable, queue: AppJobQueue
     for (const candidate of candidates.rows) {
       if (candidate.approval_required) {
         let radarRequest:Record<string,unknown>|undefined
+        let radarPreview:Record<string,unknown>|undefined
         if(candidate.capability_key.startsWith('radar.')){
           const parameters=(await client.query<{parameters:Record<string,unknown>}>('SELECT parameters FROM public.action_plans WHERE id=$1 AND organization_id=$2',[candidate.plan_id,candidate.organization_id])).rows[0]?.parameters??{}
           const outputs=(await client.query<{step_key:string;output:Record<string,unknown>}>(`SELECT step.step_key,run.output FROM public.action_runs run JOIN public.action_plan_steps step ON step.id=run.plan_step_id WHERE run.plan_id=$1 AND run.organization_id=$2 AND run.status='succeeded'`,[candidate.plan_id,candidate.organization_id])).rows
           radarRequest=resolvePlanInputBindings(candidate.input,{resolvedParameters:parameters,outputsByStep:Object.fromEntries(outputs.map(row=>[row.step_key,row.output]))}) as Record<string,unknown>
+          const campaignId=radarRequest.campaignId
+          if(typeof campaignId==='string'){
+            const campaign=(await client.query<{name:string;target_states:string[];commercial_criteria_revision:number;maximum_budget:string}>(
+              `SELECT campaign.name,campaign.target_states,campaign.commercial_criteria_revision,mission.autonomy_envelope->>'maxTotalCostBrl' AS maximum_budget
+               FROM public.radar_campaigns campaign JOIN public.action_missions mission ON mission.id=$3 AND mission.organization_id=campaign.organization_id
+               WHERE campaign.id=$1 AND campaign.organization_id=$2`,[campaignId,candidate.organization_id,candidate.mission_id])).rows[0]
+            if(campaign)radarPreview={kind:'radar_research',campaignId,campaignName:campaign.name,targetStates:campaign.target_states,
+              requestedCount:radarRequest.requestedCount,configurationRevision:radarRequest.configurationRevision,criteriaRevision:campaign.commercial_criteria_revision,maximumBudgetBrl:campaign.maximum_budget}
+          }
           await client.query('UPDATE public.action_runs SET input=$2::jsonb WHERE id=$1',[candidate.id,JSON.stringify(radarRequest)])
         }
         await client.query(`UPDATE public.action_runs SET status = 'waiting_approval', updated_at = NOW() WHERE id = $1`, [candidate.id])
         await recordApproval(client, {
           organizationId: candidate.organization_id, missionId: candidate.mission_id, runId: candidate.id,
           approvalType: 'action', subjectHash: radarRequest?hashSubject(stableSerialize({idempotencyKey:candidate.idempotency_key,input:radarRequest})):hashSubject(candidate.idempotency_key),
-          requestedPayload: { actionRunId: candidate.id,...(radarRequest?{commercialRequest:radarRequest}:{}) },
+          requestedPayload: { actionRunId: candidate.id,...(radarRequest?{commercialRequest:radarRequest}:{}),...(radarPreview?{commercialPreview:radarPreview}:{}) },
         })
         waitingApproval += 1
       } else {
@@ -232,6 +242,9 @@ export async function executeActionRun(
   }
 
   let mutationLease: string | undefined
+  // Radar's durable command/request/outbox protocol owns acceptance recovery.
+  // A generic provider ledger cannot reconstruct its typed operation ref.
+  const radarDurable=['radar.capture.start','radar.capture.resume','radar.research.request'].includes(capability.key)
   let fencingToken: string | undefined
   let executionActorId: string | undefined
   let issuedExternalEffect: ExternalEffect | null = null
@@ -426,7 +439,7 @@ export async function executeActionRun(
         token: lease.token, secret: input.mutationLeaseSecret, expected: lease.claims,
         organizationId: input.organizationId,
       })
-      const reservedEffect = capability.effect === 'external' || capability.effect === 'destructive'
+      const reservedEffect = !radarDurable && (capability.effect === 'external' || capability.effect === 'destructive')
         ? await reserveExternalEffectInTransaction(client, {
           organizationId: input.organizationId,
           intentId: input.actionRunId,
@@ -463,7 +476,7 @@ export async function executeActionRun(
   }
 
   let externalEffect: ExternalEffect | null = null
-  if ((capability.effect === 'external' || capability.effect === 'destructive') && !dryRun) {
+  if ((capability.effect === 'external' || capability.effect === 'destructive') && !dryRun && !radarDurable) {
     externalEffect = issuedExternalEffect
     if (!externalEffect) {
       await markBlocked(pool, input.actionRunId, input.organizationId, claimed.attemptId, 'external_effect_reservation_missing')

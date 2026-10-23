@@ -34,6 +34,7 @@ export function MissionApprovalsPanel({ approvals, canWrite, busyApprovalId, onD
       const reviewing = review?.approvalId === approval.id
       return <article key={approval.id} className="p-4">
         <div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2 text-sm font-semibold text-yx-fg"><Clock3 className="h-4 w-4 text-yx-warn" /> {approvalTypeLabel[approval.approvalType] ?? approval.approvalType}</div>{typeof approval.requestedPayload?.decisionSummary === 'object' && approval.requestedPayload.decisionSummary ? <p className="mt-1 text-xs text-yx-fg-3">{String(Reflect.get(approval.requestedPayload.decisionSummary, 'headline') ?? 'Plano revisável')}</p> : null}</div><MissionStatusBadge label={approvalStatusLabel[approval.status] ?? approval.status} tone={approval.status === 'approved' ? 'success' : approval.status === 'pending' ? 'warning' : approval.status === 'rejected' ? 'danger' : 'neutral'} /></div>
+        <RadarApprovalPreview value={approval.requestedPayload?.commercialPreview} />
         {canWrite && approval.status === 'pending' ? <div className="mt-3 space-y-3">{!reviewing ? <div className="flex flex-wrap gap-2">
           {!isPlan ? <button disabled={busyApprovalId === approval.id} onClick={() => onDecision(approval, 'approved')} className="inline-flex h-8 items-center gap-1 bg-yx-ok px-3 text-xs font-semibold text-white"><Check className="h-3 w-3" /> Aprovar</button> : null}
           <button disabled={busyApprovalId === approval.id} onClick={() => begin(approval.id, 'changes_requested')} className="inline-flex h-8 items-center gap-1 border border-yx-warn-line px-3 text-xs font-semibold text-yx-warn"><MessageSquare className="h-3 w-3" /> Solicitar mudanças</button>
@@ -47,4 +48,16 @@ export function MissionApprovalsPanel({ approvals, canWrite, busyApprovalId, onD
       </article>
     })}</div>}
   </section>
+}
+
+function RadarApprovalPreview({value}:{value:unknown}){
+  if(!value||typeof value!=='object')return null
+  const preview=value as Record<string,unknown>
+  const regions=Array.isArray(preview.targetStates)?preview.targetStates.filter(v=>typeof v==='string').join(', '):''
+  return <div className="mt-3 space-y-1 border border-yx-line bg-yx-surface-2 p-3 text-sm">
+    <p className="font-semibold">{typeof preview.campaignName==='string'?preview.campaignName:'Pesquisa no Radar'}</p>
+    <p>{typeof preview.requestedCount==='number'?`${preview.requestedCount} empresas`:null}{regions?` · ${regions}`:null}</p>
+    <p className="text-xs text-yx-fg-3">Configuração {String(preview.configurationRevision??'—')} · Critérios {String(preview.criteriaRevision??'—')}</p>
+    {typeof preview.maximumBudgetBrl==='string'?<p className="text-xs">Limite autorizado: {Number(preview.maximumBudgetBrl).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</p>:null}
+  </div>
 }

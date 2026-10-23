@@ -13,6 +13,7 @@ it('requires explicit approval for paid research and never enables autonomous re
  const meta=createActionEngineCapabilityRegistry().listMetadata().find(x=>x.key==='radar.capture.start')
  expect(meta).toMatchObject({approval:'always',effect:'external',idempotency:'required',requiredModules:['radar']})
  expect(meta?.supportsModes).not.toContain('autonomous')
+ expect(meta?.supportsModes).toEqual(['assisted'])
 })
 it('fails closed when a worker has no trusted mission command bridge',async()=>{
  const registry=createActionEngineCapabilityRegistry()

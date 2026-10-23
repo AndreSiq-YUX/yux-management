@@ -6,6 +6,8 @@ import { resolveRadarMissionActor,radarMissionError } from '../radar/action-engi
 import { recordDomainEvent } from '../events/repository.js'
 import type { AppJobQueue } from '../../server.js'
 import { renewMissionResourceClaims } from './resource-claims.js'
+import { runWithDatabaseRequestContext } from '../../db/request-context.js'
+import { recoverRadarMissionCommandResult } from '../radar/action-engine-store.js'
 
 const object=(v:unknown):Record<string,unknown>=>v&&typeof v==='object'?v as Record<string,unknown>:{}
 const number=(v:unknown)=>typeof v==='number'&&Number.isFinite(v)&&v>=0?v:0
@@ -47,19 +49,45 @@ export async function inspectRadarMissionOperation(pool:pg.Pool,context:RadarMis
 
 /** Database polling only; never invokes research providers or starts a lot. */
 export async function reconcileRadarMissionOperations(pool:pg.Pool,queue:AppJobQueue,options:{limit?:number;now?:Date}={}) {
+  const limit=Math.max(1,Math.min(100,options.limit??25))
+  // Global maintenance reads only Engine run metadata. Radar reads and writes
+  // always use a fresh connection carrying exactly one organization.
+  const organizations=(await pool.query<{organization_id:string}>(
+    `SELECT run.organization_id,MIN(run.available_at) AS oldest FROM public.action_runs run
+     JOIN public.action_missions mission ON mission.id=run.mission_id
+     JOIN public.action_plan_steps step ON step.id=run.plan_step_id
+     WHERE mission.status='active' AND (
+       run.status='running' AND run.claimed_by='radar_operation_wait' AND run.available_at<=$2
+       OR run.status='succeeded' AND run.claimed_by='radar_needs_schedule'
+       OR run.status='running' AND step.capability_key LIKE 'radar.%' AND step.capability_key<>'radar.operation.await' AND run.claimed_at<$2-INTERVAL '2 minutes')
+     GROUP BY run.organization_id ORDER BY oldest LIMIT $1`,[limit,options.now??new Date()],
+  )).rows
+  let checked=0,resolved=0
+  for(const organization of organizations){
+    if(checked>=limit)break
+    const result=await runWithDatabaseRequestContext({role:'yux_operator',organizationIds:[organization.organization_id],serviceRole:'worker'},
+      ()=>reconcileTenantRadarOperations(pool,queue,{...options,limit:limit-checked,organizationId:organization.organization_id}))
+    checked+=result.checked;resolved+=result.resolved
+  }
+  return{checked,resolved}
+}
+
+async function reconcileTenantRadarOperations(pool:pg.Pool,queue:AppJobQueue,options:{limit:number;now?:Date;organizationId:string}) {
   const client=await pool.connect()
   const toSchedule:Array<{id:string;mission_id:string;organization_id:string}>=[]
   let checked=0,resolved=0
   try {
     await client.query('BEGIN')
     const rows=(await client.query(
-      `SELECT run.*,mission.created_by,mission.deadline_at FROM public.action_runs run
+      `SELECT run.*,mission.created_by,mission.deadline_at,step.capability_key FROM public.action_runs run
        JOIN public.action_missions mission ON mission.id=run.mission_id AND mission.organization_id=run.organization_id
-       WHERE mission.status='active' AND (
+       JOIN public.action_plan_steps step ON step.id=run.plan_step_id
+       WHERE mission.status='active' AND mission.organization_id=$3 AND (
          run.status='running' AND run.claimed_by='radar_operation_wait' AND run.available_at<=$2
-         OR run.status='succeeded' AND run.claimed_by='radar_needs_schedule')
+         OR run.status='succeeded' AND run.claimed_by='radar_needs_schedule'
+         OR run.status='running' AND step.capability_key LIKE 'radar.%' AND step.capability_key<>'radar.operation.await' AND run.claimed_at<$2-INTERVAL '2 minutes')
        ORDER BY run.available_at FOR UPDATE OF run SKIP LOCKED LIMIT $1`,
-      [Math.max(1,Math.min(100,options.limit??25)),options.now??new Date()],
+      [options.limit,options.now??new Date(),options.organizationId],
     )).rows
     for(const row of rows) {
       checked++
@@ -68,11 +96,17 @@ export async function reconcileRadarMissionOperations(pool:pg.Pool,queue:AppJobQ
       try {
         if(row.deadline_at&&new Date(row.deadline_at)<=(options.now??new Date()))throw radarMissionError('radar_mission_deadline')
         await renewMissionResourceClaims(client,row.mission_id,row.organization_id,900)
-        const ref=object(object(row.output).output).ref
-        output=await inspectRadarMissionOperation(pool,{
+        const context={
           organizationId:row.organization_id,missionId:row.mission_id,actionRunId:row.id,
           actorUserId:row.created_by,idempotencyKey:row.idempotency_key,
-        },ref)
+        }
+        if(row.capability_key==='radar.operation.await'){
+          const ref=object(object(row.output).output).ref
+          output=await inspectRadarMissionOperation(pool,context,ref)
+        } else {
+          await resolveRadarMissionActor(pool,context)
+          output=await recoverRadarMissionCommandResult(client,context)??{status:'blocked',message:'A ação interrompida precisa ser revisada.'}
+        }
       } catch {output={status:'blocked',message:'A pesquisa aguarda uma ação do responsável.'}}
       if(output.status==='pending') {
         await client.query("UPDATE public.action_runs SET available_at=$2,updated_at=NOW() WHERE id=$1",[row.id,output.nextCheckAt])
@@ -82,11 +116,12 @@ export async function reconcileRadarMissionOperations(pool:pg.Pool,queue:AppJobQ
       await client.query(
         `UPDATE public.action_runs SET status=$2,output=$3::jsonb,completed_at=CASE WHEN $2='succeeded' THEN NOW() ELSE NULL END,
           claimed_by=$4,last_error=CASE WHEN $2='blocked' THEN 'radar_operation_needs_action' ELSE NULL END,updated_at=NOW() WHERE id=$1`,
-        [row.id,blocked?'blocked':'succeeded',JSON.stringify({output,effectProduced:false}),blocked?'radar_blocked':'radar_needs_schedule'],
+        [row.id,blocked?'blocked':'succeeded',JSON.stringify({output,effectProduced:!blocked&&row.capability_key!=='radar.operation.await'}),blocked?'radar_blocked':'radar_needs_schedule'],
       )
+      if(!blocked)await client.query("UPDATE public.action_run_attempts SET status='succeeded',output_snapshot=$2::jsonb,completed_at=NOW() WHERE run_id=$1 AND status='running'",[row.id,JSON.stringify({output,effectProduced:row.capability_key!=='radar.operation.await'})])
       await recordDomainEvent(client,{
         eventType:blocked?'action.waiting':'action.succeeded',organizationId:row.organization_id,aggregateType:'action_run',aggregateId:row.id,
-        actor:{type:'system'},payload:{missionId:row.mission_id,capabilityKey:'radar.operation.await',status:output.status},
+        actor:{type:'system'},payload:{missionId:row.mission_id,capabilityKey:row.capability_key,status:output.status},
       })
       resolved++
       if(!blocked)toSchedule.push(row)

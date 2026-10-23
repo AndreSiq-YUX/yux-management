@@ -22,6 +22,7 @@ export function AutonomyControlCenter({ mission, controls, canWrite, busy, onPau
   const pendingGrant = controls.autonomy.grants.find(item => item.status === 'pending')
   const latestGrant = activeGrant ?? pendingGrant ?? controls.autonomy.grants[0]
   const canManage = canWrite && controls.canManagePolicy
+  const assistedRadar=mission.packSelection.packs?.some(pack=>pack.key==='radar_prospecting')??false
   const remaining = controls.autonomy.remaining
 
   return <section className="space-y-5 border border-yx-line bg-yx-surface-2 p-5" aria-label="Centro de controle de autonomia">
@@ -29,7 +30,7 @@ export function AutonomyControlCenter({ mission, controls, canWrite, busy, onPau
       <div><p className="text-xs font-bold uppercase tracking-[0.12em] text-yx-blue">Operação segura</p><h2 className="mt-1 text-xl font-semibold text-yx-fg">Centro de controle de autonomia</h2><p className="mt-1 text-sm text-yx-fg-2">Limites, autorização, saúde e interrupção da missão em um único lugar.</p></div>
       <div className="flex flex-wrap gap-2">
         {canWrite && mission.status === 'active' ? <button disabled={busy === 'pause'} onClick={onPause} className="inline-flex h-9 items-center gap-2 border border-yx-crit-line bg-yx-surface px-3 text-xs font-semibold text-yx-crit disabled:opacity-50"><PauseCircle className="h-4 w-4" />Pausar missão</button> : null}
-        {canManage && !activeGrant && !pendingGrant ? <button disabled={busy === 'grant:request'} onClick={onRequestGrant} className="inline-flex h-9 items-center gap-2 bg-yx-blue px-3 text-xs font-semibold text-white disabled:opacity-50"><ShieldCheck className="h-4 w-4" />Solicitar autonomia</button> : null}
+        {canManage && !assistedRadar && !activeGrant && !pendingGrant ? <button disabled={busy === 'grant:request'} onClick={onRequestGrant} className="inline-flex h-9 items-center gap-2 bg-yx-blue px-3 text-xs font-semibold text-white disabled:opacity-50"><ShieldCheck className="h-4 w-4" />Solicitar autonomia</button> : null}
       </div>
     </div>
 
@@ -54,7 +55,7 @@ export function AutonomyControlCenter({ mission, controls, canWrite, busy, onPau
           <EnvelopeItem label="Capacidades" value={`${mission.autonomyEnvelope.allowedCapabilityKeys.length} permitidas`} />
         </dl>
         {latestGrant ? <div className="mt-4 border-t border-yx-line pt-3"><p className="text-[10px] font-bold uppercase tracking-wide text-yx-fg-3">Hash exato da autorização</p><p className="mt-1 break-all font-mono text-xs text-yx-fg-2">{latestGrant.envelopeHash}</p></div> : null}
-        {canManage && pendingGrant ? <button disabled={busy === `grant:${pendingGrant.id}:approve`} onClick={() => onApproveGrant(pendingGrant)} className="mt-4 inline-flex h-9 items-center gap-2 bg-yx-ok px-3 text-xs font-semibold text-white disabled:opacity-50"><ShieldCheck className="h-4 w-4" />Aprovar este hash</button> : null}
+        {canManage && !assistedRadar && pendingGrant ? <button disabled={busy === `grant:${pendingGrant.id}:approve`} onClick={() => onApproveGrant(pendingGrant)} className="mt-4 inline-flex h-9 items-center gap-2 bg-yx-ok px-3 text-xs font-semibold text-white disabled:opacity-50"><ShieldCheck className="h-4 w-4" />Aprovar este hash</button> : null}
         {canManage && activeGrant ? <button disabled={busy === `grant:${activeGrant.id}:revoke`} onClick={() => { setRevokeGrant(activeGrant); setReason('') }} className="mt-4 inline-flex h-9 items-center gap-2 border border-yx-crit-line px-3 text-xs font-semibold text-yx-crit disabled:opacity-50"><ShieldOff className="h-4 w-4" />Revogar autonomia</button> : null}
         {!canManage ? <p className="mt-4 text-xs text-yx-fg-3">Visualização somente leitura. Alterações de política exigem permissão administrativa.</p> : null}
       </article>

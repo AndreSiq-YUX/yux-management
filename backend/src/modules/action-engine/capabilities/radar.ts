@@ -41,7 +41,7 @@ export const radarCapabilities:CapabilityDefinition[]=(Object.keys(labels) as Ra
  outputSchema:z.union([preview,saved,accepted,preflight,inspected,pending,radarOperationOutcomeSchema]),
  requiredModules:['radar'],requiredConnections:[],
  requiredPermissions:reads.has(key)?['action_engine.read','radar.read']:['action_engine.write','radar:manage'],
- supportsModes:['shadow','prepare','assisted'],
+ supportsModes:['assisted'],
  readiness:async context=>({ready:context.allowedModules.includes('radar'),blockers:context.allowedModules.includes('radar')?[]:[{code:'radar_not_entitled',message:'Radar não está disponível para esta missão.'}]}),
  recovery:reads.has(key)?noEffectRecovery():{kind:'irreversible',incidentType:'radar_effect_requires_review'},
  async execute(context,input) {

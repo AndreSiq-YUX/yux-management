@@ -18,6 +18,7 @@ export async function retrieveRadarMissionKnowledge(pool:Queryable,input:{organi
    publicationId:source.publicationId,itemId:source.itemId,knowledgePolicyVersion:1,useMode:source.useMode,bindingFingerprint:source.bindingFingerprint,
  }))
  const verified=await verifyMissionKnowledgeContext(pool,{...input,...RADAR_MISSION_KNOWLEDGE_SCOPE,sourceRefs})
+ verified.sourceIds=[...new Set([...verified.sources.map(source=>source.id),...verified.sourceIds])].sort()
  if(!verified.sources.length)throw new Error('radar_mission_published_knowledge_required')
  return{verified,queryId:retrieval.result.queryId,contextHash:retrieval.result.contextHash,retrievalMode:retrieval.result.retrievalMode}
 }

@@ -7,6 +7,17 @@ import type { MissionApproval } from '@/types/actionEngine'
 afterEach(() => { document.body.innerHTML = ''; vi.restoreAllMocks() })
 
 describe('MissionApprovalsPanel', () => {
+  it('shows the concrete commercial Radar request beside its approval',async()=>{
+    const root=createRoot(document.body.appendChild(document.createElement('div')))
+    await act(async()=>root.render(<MissionApprovalsPanel approvals={[{...approval,approvalType:'action',requestedPayload:{commercialPreview:{campaignName:'Indústrias do Paraná',requestedCount:25,targetStates:['PR'],configurationRevision:2,criteriaRevision:3,maximumBudgetBrl:'50'}}}]} canWrite onDecision={()=>{}}/>))
+    expect(document.body.textContent).toContain('Indústrias do Paraná')
+    expect(document.body.textContent).toContain('25 empresas')
+    expect(document.body.textContent).toContain('PR')
+    expect(document.body.textContent).toContain('Configuração 2')
+    expect(document.body.textContent).toContain('Critérios 3')
+    expect(document.body.textContent).toContain('50')
+    act(()=>root.unmount())
+  })
   it('collects a structured reason before returning a plan for changes', async () => {
     const onDecision = vi.fn()
     const root = createRoot(document.body.appendChild(document.createElement('div')))

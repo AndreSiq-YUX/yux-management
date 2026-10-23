@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { expect,it,vi } from 'vitest'
 import pg from 'pg'
+import { createContextAwarePool } from '../../src/db/client.js'
+import { runWithDatabaseRequestContext } from '../../src/db/request-context.js'
+import { createJobProcessor } from '../../src/jobs/processor.js'
+import type { AppEnv } from '../../src/config/env.js'
 import { createIntegrationRig,getIntegrationDatabaseUrl } from './support/rig.js'
 import { fixtureUsers } from './support/fixtures.js'
 import { createActionEngineCapabilityRegistry } from '../../src/modules/action-engine/capabilities/index.js'
@@ -9,7 +13,7 @@ import { RADAR_PROSPECTING_PACK_V1 } from '../../src/modules/action-engine/packs
 import { ensureRadarProspectingPackVersion } from '../../src/modules/action-engine/radar-pack-registration.js'
 import { compileMissionPlan } from '../../src/modules/action-engine/planner.js'
 import { insertPlanRevision,recordApproval,approvePlanRevision,decideActionApproval,getMission } from '../../src/modules/action-engine/repository.js'
-import { executeActionRun,startMission,scheduleReadyActions } from '../../src/modules/action-engine/executor.js'
+import { startMission } from '../../src/modules/action-engine/executor.js'
 import { reconcileRadarMissionOperations } from '../../src/modules/action-engine/radar-operation-waits.js'
 import { advanceRadarCaptureDiscovery } from '../../src/modules/radar/capture-discovery.js'
 import { radarProspectingMetricCollector } from '../../src/modules/action-engine/metrics/radar-prospecting.js'
@@ -31,11 +35,14 @@ vi.mock('../../src/modules/radar/capture-operation.js',async original=>{
 it('executes a reviewed plan through canonical Radar commands and waits for persisted completion',async()=>{
  const rig=await createIntegrationRig({queueMode:'stub',radarActionEngine:true})
  const pool=new pg.Pool({connectionString:getIntegrationDatabaseUrl()})
+ const workerPool=createContextAwarePool(new pg.Pool({connectionString:rig.serviceDatabaseUrl('yux_worker')}),'worker')
  const actor=fixtureUsers.yux_admin,org=rig.ids.organizationA
  const registry=createActionEngineCapabilityRegistry(),pack=RADAR_PROSPECTING_PACK_V1
  const queued:Array<{name:string;data:Record<string,unknown>}>=[]
  const queue={async add(name:string,data:Record<string,unknown>){queued.push({name,data});return{id:randomUUID()}}}
  const config={RADAR_ACTION_ENGINE_ENABLED:true,RADAR_ACTION_ENGINE_TENANT_ALLOWLIST:org}
+ const processJob=createJobProcessor({pool:workerPool,maintenanceQueue:queue as never,env:{...config,ACTION_ENGINE_MUTATION_LEASE_SECRET:'radar-integration-signing-secret-32-characters'} as AppEnv})
+ const dispatch=(name:string,data:Record<string,unknown>)=>processJob({id:randomUUID(),name,data} as never)
  try{
   await rig.sql("INSERT INTO public.contract_modules(contract_id,module_key,enabled) VALUES($1,'radar',TRUE),($1,'action_engine',TRUE) ON CONFLICT(contract_id,module_key) DO UPDATE SET enabled=TRUE",[rig.ids.contractA])
   const parameters={campaign:{name:'Indústrias do Paraná '+randomUUID(),targetSegment:'Indústrias',targetStates:['PR'],offerType:'Consultoria'},requestedCount:2}
@@ -53,10 +60,11 @@ it('executes a reviewed plan through canonical Radar commands and waits for pers
   await startMission(pool,{organizationId:org,missionId,expectedVersion:ready.version,actorId:actor.id})
   expect((await rig.sql("SELECT resource_key FROM public.action_resource_claims WHERE mission_id=$1 AND active=TRUE",[missionId])).rows).toEqual([{resource_key:'radar.creation'}])
   const execute=async(stepKey:string)=>{
-   await scheduleReadyActions(pool,queue as never,missionId)
+   await dispatch('action-engine.scheduleReadyActions',{missionId})
    const run=(await rig.sql("SELECT run.* FROM public.action_runs run JOIN public.action_plan_steps step ON step.id=run.plan_step_id WHERE run.mission_id=$1 AND step.step_key=$2",[missionId,stepKey])).rows[0]
-   const result=await executeActionRun(pool,registry,{actionRunId:run.id,organizationId:org,workerId:'radar-test',mutationLeaseSecret:'radar-integration-signing-secret-32-characters',commands:createActionEngineCommands(pool,missionId,config)})
-   return{run,result,row:(await rig.sql('SELECT * FROM public.action_runs WHERE id=$1',[run.id])).rows[0]}
+   await dispatch('action-engine.executeAction',{actionRunId:run.id,organizationId:org,missionId})
+   const row=(await rig.sql('SELECT * FROM public.action_runs WHERE id=$1',[run.id])).rows[0]
+   return{run,result:{status:row.status},row}
   }
   expect((await execute('pack.inspect')).result.status).toBe('succeeded')
   const saved=await execute('pack.campaign')
@@ -73,14 +81,26 @@ it('executes a reviewed plan through canonical Radar commands and waits for pers
   const preflight=await execute('pack.preflight')
   expect(preflight.result.status,JSON.stringify(preflight.row)).toBe('succeeded')
   expect(preflight.row.output.output.allowed).toBe(true)
-  expect(await scheduleReadyActions(pool,queue as never,missionId)).toMatchObject({waitingApproval:1})
+  await dispatch('action-engine.scheduleReadyActions',{missionId})
   expect((await rig.sql('SELECT count(*)::int n FROM public.radar_capture_operations WHERE campaign_id=$1',[campaignId])).rows[0].n).toBe(0)
   const captureApproval=(await rig.sql("SELECT * FROM public.action_approvals WHERE mission_id=$1 AND approval_type='action' AND status='pending'",[missionId])).rows[0]
   expect(captureApproval.requested_payload.commercialRequest).toMatchObject({campaignId,requestedCount:2})
+  expect(captureApproval.requested_payload.commercialPreview).toMatchObject({campaignName:parameters.campaign.name,requestedCount:2,targetStates:['PR'],configurationRevision:1,criteriaRevision:1,maximumBudgetBrl:'50'})
   await decideActionApproval(pool,{approvalId:captureApproval.id,organizationId:org,subjectHash:captureApproval.subject_hash,decision:'approved',reason:'Pesquisa sintética autorizada',decidedBy:actor.id})
   const captured=await execute('pack.capture')
   expect(captured.result.status,JSON.stringify(captured.row)).toBe('succeeded')
   const ref=captured.row.output.output.ref
+  // Replay after acceptance must restore the typed result without a second lot.
+  await rig.sql("UPDATE public.action_runs SET status='queued',output='{}'::jsonb WHERE id=$1",[captured.run.id])
+  const replay=await execute('pack.capture')
+  expect(replay.row.output.output.ref).toEqual(ref)
+  expect((await rig.sql('SELECT count(*)::int n FROM public.action_external_effects WHERE run_id=$1',[captured.run.id])).rows[0].n).toBe(0)
+  // Crash after canonical acceptance but before Engine ledger/link/output commit.
+  await rig.sql('UPDATE public.action_radar_commands SET result=NULL WHERE action_run_id=$1',[captured.run.id])
+  await rig.sql('DELETE FROM public.action_radar_operation_links WHERE action_run_id=$1',[captured.run.id])
+  await rig.sql("UPDATE public.action_runs SET status='running',output='{}'::jsonb,claimed_at=NOW()-INTERVAL '3 minutes',claimed_by='lost-worker' WHERE id=$1",[captured.run.id])
+  expect(await runWithDatabaseRequestContext({role:'yux_operator',organizationIds:[],serviceRole:'worker'},()=>reconcileRadarMissionOperations(workerPool,queue as never))).toMatchObject({resolved:1})
+  expect((await rig.sql('SELECT output FROM public.action_runs WHERE id=$1',[captured.run.id])).rows[0].output.output.ref).toEqual(ref)
   expect((await execute('pack.await')).result.status).toBe('running')
   await rig.restartApi()
   config.RADAR_ACTION_ENGINE_ENABLED=false
@@ -89,7 +109,7 @@ it('executes a reviewed plan through canonical Radar commands and waits for pers
   await rig.sql("UPDATE public.radar_capture_items SET status='completed' WHERE operation_id=$1",[ref.operationId])
   await rig.sql("UPDATE public.radar_capture_operations SET status='completed' WHERE id=$1",[ref.operationId])
   await rig.sql("UPDATE public.action_runs SET available_at=NOW()-INTERVAL '1 second' WHERE mission_id=$1 AND claimed_by='radar_operation_wait'",[missionId])
-  expect(await reconcileRadarMissionOperations(pool,queue as never)).toMatchObject({resolved:1})
+  expect(await runWithDatabaseRequestContext({role:'yux_operator',organizationIds:[],serviceRole:'worker'},()=>reconcileRadarMissionOperations(workerPool,queue as never))).toMatchObject({resolved:1})
   config.RADAR_ACTION_ENGINE_ENABLED=true
   expect((await execute('pack.results')).result.status).toBe('succeeded')
   const mission=await getMission(pool,missionId,org)
@@ -97,7 +117,16 @@ it('executes a reviewed plan through canonical Radar commands and waits for pers
   expect(snapshot.metrics.companies_found).toMatchObject({value:'2'})
   expect(snapshot.metrics.attributed_revenue_brl.kind).toBe('not_applicable')
   expect(radarProspectingMetricCollector.evaluate({mission:mission!,snapshot,economics:{} as never,now:new Date().toISOString()}).conclusion).toBe('succeed')
+  expect((await execute('pack.evaluate')).result.status).toBe('succeeded')
+  await dispatch('action-engine.collectMetrics',{missionId})
+  expect((await rig.sql("SELECT numeric_value::int value FROM public.action_mission_metrics WHERE mission_id=$1 AND metric_key='companies_found' ORDER BY measured_at DESC LIMIT 1",[missionId])).rows[0].value).toBe(2)
+  await dispatch('action-engine.evaluateMission',{missionId,organizationId:org,checkpointKey:'radar-acceptance'})
+  expect((await getMission(pool,missionId,org))?.status).toBe('succeeded')
+  expect((await rig.sql('SELECT * FROM public.action_resource_claims WHERE mission_id=$1 AND active=TRUE',[missionId])).rows).toEqual([])
   expect((await rig.sql('SELECT count(*)::int n FROM public.radar_capture_requests WHERE campaign_id=$1',[campaignId])).rows[0].n).toBe(1)
+  expect(await runWithDatabaseRequestContext({role:'yux_operator',organizationIds:[rig.ids.organizationB],serviceRole:'worker'},()=>workerPool.query('SELECT * FROM public.action_radar_commands WHERE mission_id=$1',[missionId])).then(r=>r.rows)).toEqual([])
+  expect(await runWithDatabaseRequestContext({role:'yux_operator',organizationIds:[],serviceRole:'worker'},()=>workerPool.query('SELECT * FROM public.radar_capture_requests WHERE campaign_id=$1',[campaignId])).then(r=>r.rows)).toEqual([])
+  await expect(runWithDatabaseRequestContext({role:'yux_operator',organizationIds:[org],serviceRole:'worker'},()=>workerPool.query('UPDATE public.radar_operational_limits SET version=version+1 WHERE singleton=TRUE'))).rejects.toThrow(/permiss|permission/i)
   expect(await rig.providerCalls()).toHaveLength(0)
- }finally{await pool.end();await rig.close()}
+ }finally{await workerPool.end();await pool.end();await rig.close()}
 })
