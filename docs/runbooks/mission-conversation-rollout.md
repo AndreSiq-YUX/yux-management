@@ -124,6 +124,8 @@ A homologação `b91943fe-41a2-43a4-955f-0d95e352a2fd` é um registro de teste d
 
 A interface apresenta os dois efeitos do Radar em linguagem comercial e explica a aprovação específica da pesquisa, sem modificar o payload assinado, o subject hash, a autorização ou o histórico. Os controles “Ativa” identificam capacidades habilitadas; não indicam que houve execução.
 
+O detalhe da missão não consulta em aba oculta nem durante um comando do usuário. Enquanto aguarda aprovação de plano, consulta a cada 15 segundos; durante processamento, mantém cinco segundos. O próximo ciclo só é agendado depois de concluir o anterior. Uma falha de atualização preserva os dados exibidos e apresenta aviso em português, removido após recuperação; a promessa não fica sem tratamento. Isso reduz 429 gerado por abas simultâneas sem alterar o rate limit global nem as regras de autorização.
+
 - Conversa em `collecting_context` sem resposta: confirme o health do Harness, reative o worker e reenvie o job com o mesmo `conversationId` e `requestedVersion`.
 - Retry de mensagem usa o mesmo `clientMessageId`; nunca gere outro ID para uma tentativa incerta.
 - Conversa em `planning`: reenvie `action-engine.planMission` com o `missionId` e a versão atual. O job idempotente não cria outro plano equivalente.

@@ -6,6 +6,7 @@ import { MissionSimulationShareDialog } from './MissionSimulationShareDialog'
 import { HumanTaskResolutionDialog } from './HumanTaskResolutionDialog'
 import { actionEngineService } from '@/services/actionEngineService'
 import { ApiClientError } from '@/lib/apiClient'
+import { useMissionDetailRefresh } from '@/lib/action-engine/useMissionDetailRefresh'
 import type { ActionMission, MissionActionRun, MissionActivityItem, MissionApproval, MissionArtifact, MissionContextPreview, MissionEconomics, MissionMetrics, MissionOperationalControls, MissionPlan } from '@/types/actionEngine'
 
 export function MissionDetailWorkspace({ missionId, organizationId, backHref, canWrite, showTechnicalProof = false }: { missionId: string; organizationId: string; backHref: string; canWrite: boolean; showTechnicalProof?: boolean }) {
@@ -43,11 +44,7 @@ export function MissionDetailWorkspace({ missionId, organizationId, backHref, ca
   }, [missionId, organizationId])
 
   useEffect(() => { let active = true; setLoading(true); load().catch(cause => { if (active) setError(cause instanceof Error ? cause.message : 'Não foi possível abrir a missão.') }).finally(() => { if (active) setLoading(false) }); return () => { active = false } }, [load])
-  useEffect(() => {
-    if (!missionStatus || !['qualifying', 'planning', 'active', 'evaluating', 'pending_plan_approval', 'pending_replan_approval'].includes(missionStatus)) return
-    const timer = window.setInterval(() => { void load() }, 5000)
-    return () => window.clearInterval(timer)
-  }, [missionStatus, load])
+  const refreshError = useMissionDetailRefresh(load, missionStatus, Boolean(busy))
 
   async function run(key: string, work: () => Promise<unknown>, refresh = true) { setBusy(key); setError(null); try { await work(); if (refresh) await load() } catch (cause) { if (cause instanceof ApiClientError && cause.status === 409) { await load(); setError('A missão mudou. A versão mais recente foi carregada para uma nova revisão.') } else setError(cause instanceof Error ? cause.message : 'A operação não pôde ser concluída.') } finally { setBusy(undefined) } }
   if (loading) return <div className="grid min-h-72 place-items-center"><Loader2 className="h-6 w-6 animate-spin text-yx-blue" /></div>
@@ -63,6 +60,7 @@ export function MissionDetailWorkspace({ missionId, organizationId, backHref, ca
   const conversationHref = conversationId ? `${backHref}/conversas/${conversationId}` : undefined
   return <>
     {error && <div className="mb-4 border border-yx-crit-line bg-yx-crit-soft p-3 text-sm text-yx-crit">{error}</div>}
+    {refreshError && <div role="status" className="mb-4 border border-yx-line bg-yx-surface p-3 text-sm text-yx-ink-muted">{refreshError}</div>}
     {clarification?.questions.length ? <div className="mb-6"><MissionClarificationPanel key={`${mission.version}:${clarification.contextSnapshotId ?? ''}`} questions={clarification.questions} context={context} canWrite={canWrite} busy={busy === 'clarification'} onSubmit={answers => void run('clarification', () => actionEngineService.answerMissionClarification(mission.id, { organizationId, expectedVersion: mission.version, answers }))} /></div> : null}
     <MissionDetail mission={mission} plan={plan} actions={actions} approvals={approvals} artifacts={artifacts} activity={activity} conversationHref={conversationHref} dailyQueueHref={dailyQueueHref(backHref)} artifactHref={artifact => artifactDestination(backHref, artifact)} metrics={metrics} economics={economics} operationalControls={operationalControls} backHref={backHref} canWrite={canWrite} showTechnicalProof={showTechnicalProof} busy={busy} onCommand={command} onApprovePlan={approval => plan && void run('approve-plan', () => actionEngineService.approvePlan(mission, plan, approval))} onShareSimulation={() => setShareOpen(true)} onApprovalDecision={(approval, decision, reasonKey, comment) => void run(`approval:${approval.id}`, () => actionEngineService.decideApproval(organizationId, approval, decision, reasonKey, comment))} onRetryAction={action => void run(`action:${action.id}`, () => actionEngineService.retryAction(organizationId, action.id))} onResolveHuman={setHumanTask} onRefreshArtifacts={() => void run('artifacts', () => load(), false)} onRequestAutonomyGrant={() => void run('grant:request', () => actionEngineService.requestAutonomyGrant(mission))} onApproveAutonomyGrant={grant => void run(`grant:${grant.id}:approve`, () => actionEngineService.approveAutonomyGrant(mission, grant))} onRevokeAutonomyGrant={(grant, reason) => void run(`grant:${grant.id}:revoke`, () => actionEngineService.revokeAutonomyGrant(mission, grant, reason))} onCapabilityControl={(capability, disabled, reason) => void run(`capability:${capability.capabilityKey}@${capability.capabilityVersion}`, () => actionEngineService.setCapabilityControl(mission.id, { organizationId, capabilityKey: capability.capabilityKey, capabilityVersion: capability.capabilityVersion, disabled, reason }))} />
     {plan ? <MissionSimulationShareDialog open={shareOpen} mission={mission} plan={plan} onOpenChange={setShareOpen} /> : null}
