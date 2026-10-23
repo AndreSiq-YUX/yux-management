@@ -26,7 +26,7 @@ describe('Radar campaign configuration panel', () => {
           Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(field,value)
           field.dispatchEvent(new Event('input',{bubbles:true}))
         }
-        ;[...host.querySelectorAll('label')].find(item=>item.textContent==='SC')!.querySelector('input')!.click()
+        [...host.querySelectorAll('label')].find(item=>item.textContent==='SC')!.querySelector('input')!.click()
       })
       await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
       expect(submit).toHaveBeenCalledWith(expect.objectContaining({organizationId:'another-org',targetSegment:'Manutenção',targetStates:['SC'],searchConfiguration:expect.objectContaining({

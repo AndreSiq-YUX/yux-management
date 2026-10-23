@@ -50,6 +50,7 @@ export interface Project {
   tasks?: ProjectTask[]
   tags?: string[]
   notes?: string
+  notificationRules?: Record<string, boolean>
 }
 
 export interface ProjectPhase {

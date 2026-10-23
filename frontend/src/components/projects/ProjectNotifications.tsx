@@ -108,6 +108,8 @@ const DEFAULT_NOTIFICATION_RULES: NotificationRule[] = [
 
 export function ProjectNotifications({ project }: ProjectNotificationsProps) {
   const [loading, setLoading] = useState(false)
+  const [savingRules, setSavingRules] = useState(false)
+  const [rulesLoaded, setRulesLoaded] = useState(false)
   const [rules, setRules] = useState<NotificationRule[]>(DEFAULT_NOTIFICATION_RULES)
   const [notifications, setNotifications] = useState<ActiveNotification[]>([])
   const [tasks, setTasks] = useState<ProjectTask[]>([])
@@ -125,15 +127,20 @@ export function ProjectNotifications({ project }: ProjectNotificationsProps) {
   const loadProjectData = async () => {
     setLoading(true)
     try {
-      // Carregar tarefas
-      const tasksResponse = await backendDataService.getProjectTasks(project.id)
+      setRulesLoaded(false)
+      const [tasksResponse, phasesResponse, projectResponse] = await Promise.all([
+        backendDataService.getProjectTasks(project.id),
+        backendDataService.getProjectPhases(project.id),
+        backendDataService.getProjectById(project.id),
+      ])
       setTasks(tasksResponse.tasks || [])
-
-      // Carregar fases
-      const phasesResponse = await backendDataService.getProjectPhases(project.id)
       setPhases(phasesResponse.phases || [])
+      const savedRules = projectResponse.project?.notificationRules || {}
+      setRules(DEFAULT_NOTIFICATION_RULES.map(rule => ({ ...rule, enabled: savedRules[rule.id] ?? rule.enabled })))
+      setRulesLoaded(true)
     } catch (error) {
       console.error('Erro ao carregar dados do projeto:', error)
+      toast.error('Não foi possível carregar as preferências de alertas')
     } finally {
       setLoading(false)
     }
@@ -256,10 +263,19 @@ export function ProjectNotifications({ project }: ProjectNotificationsProps) {
     setNotifications(newNotifications)
   }
 
-  const toggleRule = (ruleId: string) => {
-    setRules(prev => prev.map(rule => 
-      rule.id === ruleId ? { ...rule, enabled: !rule.enabled } : rule
-    ))
+  const toggleRule = async (ruleId: string) => {
+    if (savingRules || !rulesLoaded) return
+    const next = rules.map(rule => rule.id === ruleId ? { ...rule, enabled: !rule.enabled } : rule)
+    setSavingRules(true)
+    try {
+      await backendDataService.updateProject(project.id, {
+        notificationRules: Object.fromEntries(next.map(rule => [rule.id, rule.enabled])),
+      })
+      setRules(next)
+      toast.success('Preferências de alertas salvas')
+    } catch {
+      toast.error('Não foi possível salvar as preferências de alertas')
+    } finally { setSavingRules(false) }
   }
 
   const dismissNotification = (notificationId: string) => {
@@ -368,6 +384,8 @@ export function ProjectNotifications({ project }: ProjectNotificationsProps) {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <p className="text-xs text-muted-foreground">Preferências salvas no projeto. Os alertas são exibidos nesta aba.</p>
+          {!loading && !rulesLoaded && <Button variant="outline" onClick={loadProjectData}>Tentar carregar preferências novamente</Button>}
           {rules.map((rule, index) => (
             <div key={rule.id}>
               <div className="flex items-center justify-between">
@@ -387,6 +405,7 @@ export function ProjectNotifications({ project }: ProjectNotificationsProps) {
                 <Switch
                   id={rule.id}
                   checked={rule.enabled}
+                  disabled={!rulesLoaded || savingRules}
                   onCheckedChange={() => toggleRule(rule.id)}
                 />
               </div>

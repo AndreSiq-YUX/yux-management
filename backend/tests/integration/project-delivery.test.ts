@@ -34,7 +34,7 @@ const cookies = new Map<string, string>()
 
 async function request(
   role: keyof typeof fixtureUsers,
-  method: 'GET' | 'POST' | 'PATCH',
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   url: string,
   payload?: Record<string, unknown>
 ) {
@@ -112,6 +112,101 @@ afterAll(async () => {
 })
 
 describe('project delivery with PostgreSQL and service-role authorization', () => {
+  it('saves tasks with empty optional fields, validates assignees and preserves edits and visibility', async () => {
+    const url = `/api/workspace/projects/${projectA}/tasks`
+    const invalid = await request('yux_admin', 'POST', url, {
+      title: 'Análise', status: 'pending', priority: 'medium', assignedTo: 'André',
+    })
+    expect(invalid.status).toBe(400)
+    const created = await request('yux_admin', 'POST', url, {
+      title: 'Análise', description: 'Descrição inicial', status: 'pending', priority: 'high',
+      assignedTo: '', phaseId: '', dueDate: '', estimatedHours: 0,
+    })
+    expect(created.status).toBe(200)
+    const id = created.body.data.id
+    expect(created.body.data).toMatchObject({ title: 'Análise', estimatedHours: 0 })
+    const assigned = await request('yux_admin', 'PATCH', `${url}/${id}`, {
+      assignedTo: fixtureUsers.yux_operator.id, dueDate: '2026-11-12', estimatedHours: 8,
+    })
+    expect(assigned.status).toBe(200)
+    const completed = await request('yux_admin', 'PATCH', `${url}/${id}`, { status: 'completed' })
+    expect(completed.status).toBe(200)
+    expect(completed.body.data).toMatchObject({ assignedTo: fixtureUsers.yux_operator.id, dueDate: '2026-11-12', estimatedHours: 8 })
+    expect(completed.body.data.completedAt).toBeTruthy()
+    expect((await request('yux_admin', 'PATCH', `${url}/${id}`, { isClientVisible: true })).status).toBe(200)
+    expect((await request('client_admin_A', 'GET', detailsUrl)).body.tasks.some((t: { id: string }) => t.id === id)).toBe(true)
+    expect((await request('yux_admin', 'PATCH', `${url}/${id}`, { isClientVisible: false })).status).toBe(200)
+    expect((await request('client_admin_A', 'GET', detailsUrl)).body.tasks.some((t: { id: string }) => t.id === id)).toBe(false)
+    const cleared = await request('yux_admin', 'PATCH', `${url}/${id}`, {
+      assignedTo: '', phaseId: '', dueDate: '', estimatedHours: null, status: 'pending',
+    })
+    expect(cleared.status).toBe(200)
+    expect(cleared.body.data).toMatchObject({ description: 'Descrição inicial', status: 'pending' })
+    for (const field of ['assignedTo', 'phaseId', 'dueDate', 'estimatedHours', 'completedAt']) expect(cleared.body.data[field]).toBeUndefined()
+    expect((await request('yux_admin', 'PATCH', `/api/workspace/projects/${projectB}/tasks/${id}`, { title: 'Outra conta' })).status).toBe(404)
+    expect((await request('yux_admin', 'PATCH', `${url}/${id}`, { dueDate: '2026-02-30' })).status).toBe(400)
+    expect((await request('yux_admin', 'PATCH', `${url}/${id}`, { assignedTo: '77000000-0000-4000-8000-000000000001' })).status).toBe(400)
+    expect((await request('client_admin_A', 'POST', url, { title: 'Proibido' })).status).toBe(403)
+    expect((await request('yux_admin', 'DELETE', `${url}/${id}`)).status).toBe(200)
+    expect((await request('yux_admin', 'GET', url)).body.tasks).toHaveLength(0)
+  })
+
+  it('persists phase budgets, zeroes and cleared dates, and rejects phases from another project', async () => {
+    const url = `/api/workspace/projects/${projectA}/phases`
+    const created = await request('yux_admin', 'POST', url, {
+      name: 'Descoberta', description: 'Escopo', startDate: '2026-10-01', endDate: '2026-10-31', budget: 500, orderIndex: 0,
+    })
+    expect(created.status).toBe(200)
+    const id = created.body.data.id
+    const updated = await request('yux_admin', 'PATCH', `${url}/${id}`, { budget: 1250.5, status: 'in_progress' })
+    expect(updated.status).toBe(200)
+    expect(updated.body.data).toMatchObject({ name: 'Descoberta', budget: 1250.5, startDate: '2026-10-01', endDate: '2026-10-31' })
+    const cleared = await request('yux_admin', 'PATCH', `${url}/${id}`, { budget: 0, startDate: '', endDate: '' })
+    expect(cleared.status).toBe(200)
+    expect(cleared.body.data.budget).toBe(0)
+    expect(cleared.body.data.startDate).toBeUndefined()
+    const tasksUrl = `/api/workspace/projects/${projectA}/tasks`
+    const task = await request('yux_admin', 'POST', tasksUrl, { title: 'Tarefa por fase', phaseId: id })
+    expect(task.status).toBe(200)
+    expect((await request('yux_admin', 'POST', `/api/workspace/projects/${projectB}/tasks`, { title: 'Fase inválida', phaseId: id })).status).toBe(400)
+    expect((await request('yux_admin', 'PATCH', `${url}/${id}`, { startDate: '2026-11-10', endDate: '2026-11-01' })).status).toBe(400)
+    expect((await request('yux_admin', 'PATCH', `/api/workspace/projects/${projectB}/phases/${id}`, { budget: 10 })).status).toBe(404)
+    expect((await request('yux_admin', 'DELETE', `${url}/${id}`)).status).toBe(200)
+    expect((await request('yux_admin', 'GET', tasksUrl)).body.tasks[0].phaseId).toBeUndefined()
+    expect((await request('yux_admin', 'DELETE', `${tasksUrl}/${task.body.data.id}`)).status).toBe(200)
+  })
+
+  it('reloads saved progress, status, notes, alert preferences and project lifecycle changes', async () => {
+    const url = `/api/workspace/projects/${projectB}`
+    const updated = await request('yux_admin', 'PATCH', url, {
+      progress: 70, status: 'REVIEW', notes: 'Validar com cliente', notificationRules: { 'deadline-7d': false, 'budget-80': true },
+    })
+    expect(updated.status).toBe(200)
+    expect((await request('yux_admin', 'GET', url)).body.data).toMatchObject({
+      progress: 70, status: 'REVIEW', notes: 'Validar com cliente', notificationRules: { 'deadline-7d': false, 'budget-80': true },
+    })
+    expect((await request('yux_admin', 'PATCH', url, { progress: 101 })).status).toBe(400)
+    expect((await request('yux_admin', 'PATCH', url, { expectedEndDate: '2026-01-01' })).status).toBe(400)
+    expect((await request('yux_admin', 'POST', `${url}/archive`)).body.data).toMatchObject({ status: 'ARCHIVED', isArchived: true, isActive: false })
+    const copy = await request('yux_admin', 'POST', `${url}/duplicate`, { name: 'Cópia verificada', startDate: '2026-12-01' })
+    expect(copy.status).toBe(200)
+    expect(copy.body.data).toMatchObject({ name: 'Cópia verificada', progress: 0, status: 'PLANNING', startDate: '2026-12-01', isArchived: false, isActive: true })
+    expect((await request('yux_admin', 'POST', `${url}/unarchive`)).body.data).toMatchObject({ status: 'ACTIVE', isArchived: false, isActive: true })
+    expect((await request('yux_admin', 'DELETE', `/api/workspace/projects/${copy.body.data.id}`)).status).toBe(200)
+    expect((await request('yux_admin', 'GET', `/api/workspace/projects/${copy.body.data.id}`)).status).toBe(404)
+  })
+
+  it('persists manual timeline updates with the selected client visibility', async () => {
+    const url = `/api/workspace/projects/${projectB}/timeline`
+    for (const visible of [false, true]) {
+      const saved = await request('yux_admin', 'POST', url, { title: `Atualização ${visible}`, body: 'Detalhes do andamento', isClientVisible: visible })
+      expect(saved.status).toBe(200)
+      expect((await request('yux_admin', 'GET', url)).body.entries.some((e: { id: string }) => e.id === saved.body.data.id)).toBe(true)
+      const portal = await request('client_admin_B', 'GET', `/api/project-delivery/portal/projects/${projectB}?organizationId=${fixtureIds.organizationB}`)
+      expect(portal.body.timeline.some((e: { id: string }) => e.id === saved.body.data.id)).toBe(visible)
+    }
+  })
+
   it('creates a project without a manager and preserves or clears the manager on edits', async () => {
     const created = await request('yux_admin', 'POST', '/api/workspace/projects', {
       name: 'Plataforma de Inteligência',

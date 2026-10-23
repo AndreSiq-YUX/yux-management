@@ -156,10 +156,10 @@ export class BackendDataService {
     description?: string
     status: string
     priority: string
-    assignedTo?: string
-    dueDate?: string
-    estimatedHours?: number
-    phaseId?: string
+    assignedTo?: string | null
+    dueDate?: string | null
+    estimatedHours?: number | null
+    phaseId?: string | null
   }) {
     return apiRequest<any>(`/workspace/projects/${projectId}/tasks`, {
       method: 'POST',
@@ -172,11 +172,11 @@ export class BackendDataService {
     description?: string
     status?: string
     priority?: string
-    assignedTo?: string
-    dueDate?: string
-    estimatedHours?: number
-    actualHours?: number
-    phaseId?: string
+    assignedTo?: string | null
+    dueDate?: string | null
+    estimatedHours?: number | null
+    actualHours?: number | null
+    phaseId?: string | null
     isClientVisible?: boolean
   }) {
     return apiRequest<any>(`/workspace/projects/${projectId}/tasks/${taskId}`, {
@@ -201,9 +201,9 @@ export class BackendDataService {
     name: string
     description?: string
     status?: string
-    startDate: string
-    endDate: string
-    budget?: number
+    startDate?: string | null
+    endDate?: string | null
+    budget?: number | null
     orderIndex: number
   }) {
     return apiRequest<any>(`/workspace/projects/${projectId}/phases`, {
@@ -216,8 +216,9 @@ export class BackendDataService {
     name?: string
     description?: string
     status?: string
-    startDate?: string
-    endDate?: string
+    startDate?: string | null
+    endDate?: string | null
+    budget?: number | null
     progress?: number
   }) {
     return apiRequest<any>(`/workspace/projects/${projectId}/phases/${phaseId}`, {

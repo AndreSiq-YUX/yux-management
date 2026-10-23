@@ -37,8 +37,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
-import { format } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
+import { formatDeliveryDate, isDeliveryOverdue } from '@/lib/projects/deliveryPresentation'
 import toast from 'react-hot-toast'
 import { ProjectProgressCalculator } from './ProjectProgressCalculator'
 import { ProjectNotifications } from './ProjectNotifications'
@@ -75,11 +74,11 @@ export function ProjectDetailsModal({
     }
   }, [isOpen, project])
 
-  const fetchProjectDetails = async () => {
+  const fetchProjectDetails = async (showLoading = true) => {
     if (!project) return
 
     try {
-      setLoading(true)
+      if (showLoading) setLoading(true)
 
       // Carregar tarefas do projeto
       const tasksResponse = await backendDataService.getProjectTasks(project.id)
@@ -135,14 +134,13 @@ export function ProjectDetailsModal({
   }
 
   const isOverdue = (endDate: string, status: string) => {
-    if (status === 'completed' || status === 'cancelled') return false
-    return new Date(endDate) < new Date()
+    return isDeliveryOverdue(endDate, status)
   }
 
 
 
   const formatDate = (date: string) => {
-    return format(new Date(date), 'dd/MM/yyyy', { locale: ptBR })
+    return formatDeliveryDate(date)
   }
 
   const formatCurrency = (value: number, currency: string = 'BRL') => {
@@ -168,11 +166,11 @@ export function ProjectDetailsModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[calc(100%_-_2rem)] max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <DialogTitle className="text-xl font-semibold">
+          <div className="flex items-center justify-between gap-3 pr-4">
+            <div className="min-w-0">
+              <DialogTitle className="break-words text-xl font-semibold">
                 {project.name}
               </DialogTitle>
               <div className="flex items-center space-x-2 mt-2">
@@ -238,14 +236,14 @@ export function ProjectDetailsModal({
             <Loader2 className="h-8 w-8 animate-spin" />
           </div>
         ) : (
-            <Tabs defaultValue="overview" className="w-full">
-              <TabsList className="grid w-full grid-cols-6">
-                <TabsTrigger value="overview">Visão Geral</TabsTrigger>
-                <TabsTrigger value="tasks">Tarefas & Fases</TabsTrigger>
-                <TabsTrigger value="delivery">Entregas</TabsTrigger>
-                <TabsTrigger value="progress">Progresso</TabsTrigger>
-                <TabsTrigger value="client">Cliente</TabsTrigger>
-                <TabsTrigger value="notifications">Notificações</TabsTrigger>
+            <Tabs defaultValue="overview" className="w-full min-w-0">
+              <TabsList className="flex w-full justify-start overflow-x-auto">
+                <TabsTrigger className="shrink-0" value="overview">Visão Geral</TabsTrigger>
+                <TabsTrigger className="shrink-0" value="tasks">Tarefas & Fases</TabsTrigger>
+                <TabsTrigger className="shrink-0" value="delivery">Entregas</TabsTrigger>
+                <TabsTrigger className="shrink-0" value="progress">Progresso</TabsTrigger>
+                <TabsTrigger className="shrink-0" value="client">Cliente</TabsTrigger>
+                <TabsTrigger className="shrink-0" value="notifications">Notificações</TabsTrigger>
               </TabsList>
 
               <TabsContent value="overview" className="space-y-6">
@@ -298,7 +296,7 @@ export function ProjectDetailsModal({
                         <div>
                           <p className="text-sm font-medium">Orçamento</p>
                           <p className="text-sm text-muted-foreground">
-                            {project.budget ? formatCurrency(project.budget) : 'Não definido'}
+                            {project.budget !== undefined ? formatCurrency(project.budget) : 'Não definido'}
                           </p>
                         </div>
                       </div>
@@ -361,7 +359,7 @@ export function ProjectDetailsModal({
                   project={project} 
                   onUpdate={() => {
                     // Recarregar dados do projeto se necessário
-                    fetchProjectDetails()
+                    fetchProjectDetails(false)
                   }}
                 />
               </TabsContent>

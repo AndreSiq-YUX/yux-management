@@ -11,6 +11,7 @@ import { createClientAccessEmailToken } from './clientAccessEmails.js'
 import { syncClientPortalIdentity } from './clientIdentity.js'
 import { decisionSchema, deliverableSchema, deliverablePatchSchema, deliverablePatch, deliveryApprovalSchema } from '../project-delivery/validation.js'
 import { recordDeliveryEvent } from '../project-delivery/events.js'
+import { projectSchema, projectPatchSchema, taskSchema, taskPatchSchema, phaseSchema, phasePatchSchema, taskPayload, phasePayload, validDateRange } from './project-validation.js'
 
 type SqlState = {
   values: unknown[]
@@ -281,6 +282,7 @@ export function projectRow(row: any) {
     tasks: Array.isArray(row.project_tasks) ? row.project_tasks.map((task: any) => projectTaskRow(task, row.id)) : undefined,
     tags: row.tags || [],
     notes: row.notes || undefined,
+    notificationRules: row.notification_rules || {},
   }
 }
 
@@ -309,6 +311,10 @@ function projectPayload(input: Record<string, unknown>, includeDefaults = false)
   if (input.name !== undefined) row.name = input.name
   if (input.description !== undefined) row.description = input.description
   if (input.status !== undefined) row.status = input.status
+  if (input.status !== undefined) {
+    row.is_archived = input.status === 'ARCHIVED'
+    row.is_active = input.status !== 'ARCHIVED'
+  }
   if (input.priority !== undefined) row.priority = input.priority
   if (input.type !== undefined) row.type = input.type
   if (input.startDate !== undefined) row.start_date = input.startDate
@@ -322,6 +328,7 @@ function projectPayload(input: Record<string, unknown>, includeDefaults = false)
   if (input.tags !== undefined) row.tags = input.tags
   if (input.notes !== undefined) row.notes = input.notes
   if (input.progress !== undefined) row.progress = input.progress
+  if (input.notificationRules !== undefined) row.notification_rules = JSON.stringify(input.notificationRules)
   if (includeDefaults) {
     row.team_members ??= []
     row.tags ??= []
@@ -329,6 +336,18 @@ function projectPayload(input: Record<string, unknown>, includeDefaults = false)
   }
   row.updated_at = new Date().toISOString()
   return row
+}
+
+async function validProjectReferences(pool: Queryable, input: { clientId?: string; managerId?: string | null; teamMembers?: string[] }) {
+  if (input.clientId && !(await pool.query('SELECT id FROM public.clients WHERE id = $1', [input.clientId])).rows[0]) return false
+  const users = [...new Set([input.managerId, ...(input.teamMembers || [])].filter((id): id is string => Boolean(id)))]
+  if (!users.length) return true
+  return (await pool.query('SELECT id FROM public.users WHERE id = ANY($1::uuid[])', [users])).rows.length === users.length
+}
+
+async function validTaskReferences(pool: Queryable, projectId: string, input: { phaseId?: string | null; assignedTo?: string | null }) {
+  if (input.phaseId && !(await pool.query('SELECT id FROM public.project_phases WHERE id = $1 AND project_id = $2', [input.phaseId, projectId])).rows[0]) return false
+  return !input.assignedTo || Boolean((await pool.query('SELECT id FROM public.users WHERE id = $1', [input.assignedTo])).rows[0])
 }
 
 async function insertReturning(pool: Queryable, table: string, payload: Record<string, unknown>) {
@@ -860,8 +879,12 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
     return { success: true, data: projects, projects, total, page, limit, totalPages: Math.ceil(total / limit) }
   })
 
-  app.post('/projects', async (request) => {
-    const row = await insertReturning(app.pg, 'projects', projectPayload(request.body as Record<string, unknown>, true))
+  app.post('/projects', async (request, reply) => {
+    const parsed = projectSchema.safeParse(request.body)
+    if (!parsed.success || !validDateRange(parsed.data.startDate, parsed.data.expectedEndDate) || !validDateRange(parsed.data.startDate, parsed.data.actualEndDate)) return reply.code(400).send({ error: 'invalid_project' })
+    const input = parsed.data
+    if (!await validProjectReferences(app.pg, input)) return reply.code(400).send({ error: 'invalid_project_reference' })
+    const row = await insertReturning(app.pg, 'projects', projectPayload(input, true))
     const project = projectRow(await loadProject(app.pg, row.id))
     return { success: true, data: project, project }
   })
@@ -915,7 +938,15 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
   app.patch('/projects/:id', async (request, reply) => {
     const params = idParamSchema.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_project_id' })
-    const row = await updateReturning(app.pg, 'projects', params.data.id, projectPayload(request.body as Record<string, unknown>))
+    const parsed = projectPatchSchema.safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_project' })
+    const existing = await loadProject(app.pg, params.data.id)
+    if (!existing) return reply.code(404).send({ error: 'project_not_found' })
+    const input = parsed.data
+    const start = input.startDate ?? calendarDate(existing.start_date)
+    if (!validDateRange(start, input.expectedEndDate ?? calendarDate(existing.expected_end_date)) || !validDateRange(start, input.actualEndDate === undefined ? calendarDate(existing.actual_end_date) : input.actualEndDate)) return reply.code(400).send({ error: 'invalid_project_dates' })
+    if (!await validProjectReferences(app.pg, input)) return reply.code(400).send({ error: 'invalid_project_reference' })
+    const row = await updateReturning(app.pg, 'projects', params.data.id, projectPayload(input))
     const project = projectRow(await loadProject(app.pg, row.id))
     return { success: true, data: project, project }
   })
@@ -930,7 +961,8 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
   app.post('/projects/:id/archive', async (request, reply) => {
     const params = idParamSchema.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_project_id' })
-    const row = await updateReturning(app.pg, 'projects', params.data.id, { status: 'ARCHIVED', updated_at: new Date().toISOString() })
+    const row = await updateReturning(app.pg, 'projects', params.data.id, { status: 'ARCHIVED', is_archived: true, is_active: false, updated_at: new Date().toISOString() })
+    if (!row) return reply.code(404).send({ error: 'project_not_found' })
     const project = projectRow(row)
     return { success: true, data: project, project }
   })
@@ -938,7 +970,8 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
   app.post('/projects/:id/unarchive', async (request, reply) => {
     const params = idParamSchema.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_project_id' })
-    const row = await updateReturning(app.pg, 'projects', params.data.id, { status: 'ACTIVE', updated_at: new Date().toISOString() })
+    const row = await updateReturning(app.pg, 'projects', params.data.id, { status: 'ACTIVE', is_archived: false, is_active: true, updated_at: new Date().toISOString() })
+    if (!row) return reply.code(404).send({ error: 'project_not_found' })
     const project = projectRow(row)
     return { success: true, data: project, project }
   })
@@ -962,6 +995,12 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
       start_date: startDate,
       expected_end_date: duration > 0 ? new Date(new Date(startDate).getTime() + duration).toISOString().split('T')[0] : original.expected_end_date,
       actual_end_date: null,
+      actual_cost: 0,
+      spent: 0,
+      total_tasks: 0,
+      completed_tasks: 0,
+      is_archived: false,
+      is_active: true,
       progress: 0,
       status: 'PLANNING',
       created_at: new Date().toISOString(),
@@ -984,17 +1023,15 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
   app.post('/projects/:projectId/tasks', async (request, reply) => {
     const params = projectParamSchema.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_project_id' })
-    const input = request.body as Record<string, unknown>
+    const parsed = taskSchema.safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_project_task' })
+    const input = parsed.data
+    if (!(await app.pg.query('SELECT id FROM public.projects WHERE id = $1', [params.data.projectId])).rows[0]) return reply.code(404).send({ error: 'project_not_found' })
+    if (!await validTaskReferences(app.pg, params.data.projectId, input)) return reply.code(400).send({ error: 'invalid_task_reference' })
     const row = await insertReturning(app.pg, 'project_tasks', {
+      ...taskPayload(input),
       project_id: params.data.projectId,
-      title: input.title,
-      description: input.description,
-      status: input.status,
-      priority: input.priority,
-      assigned_to: input.assignedTo,
-      due_date: input.dueDate,
-      estimated_hours: input.estimatedHours,
-      phase_id: input.phaseId,
+      completed_at: input.status === 'completed' ? new Date().toISOString() : null,
       order_index: 0,
       updated_at: new Date().toISOString(),
     })
@@ -1005,19 +1042,15 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
   app.patch('/projects/:projectId/tasks/:id', async (request, reply) => {
     const params = projectChildParamSchema.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_task_id' })
-    const input = request.body as Record<string, unknown>
+    const parsed = taskPatchSchema.safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_project_task' })
+    const input = parsed.data
+    const existing = (await app.pg.query('SELECT * FROM public.project_tasks WHERE id = $1 AND project_id = $2', [params.data.id, params.data.projectId])).rows[0]
+    if (!existing) return reply.code(404).send({ error: 'task_not_found' })
+    if (!await validTaskReferences(app.pg, params.data.projectId, input)) return reply.code(400).send({ error: 'invalid_task_reference' })
     const row = await updateReturning(app.pg, 'project_tasks', params.data.id, {
-      title: input.title,
-      description: input.description,
-      status: input.status,
-      priority: input.priority,
-      assigned_to: input.assignedTo,
-      due_date: input.dueDate,
-      estimated_hours: input.estimatedHours,
-      actual_hours: input.actualHours,
-      phase_id: input.phaseId,
-      is_client_visible: input.isClientVisible,
-      updated_at: new Date().toISOString(),
+      ...taskPayload(input),
+      ...(input.status === undefined ? {} : { completed_at: input.status === 'completed' ? existing.completed_at || new Date().toISOString() : null }),
     }, { project_id: params.data.projectId })
     const task = projectTaskRow(row, params.data.projectId)
     return { success: true, data: task, task }
@@ -1041,18 +1074,13 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
   app.post('/projects/:projectId/phases', async (request, reply) => {
     const params = projectParamSchema.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_project_id' })
-    const input = request.body as Record<string, unknown>
+    const parsed = phaseSchema.safeParse(request.body)
+    if (!parsed.success || !validDateRange(parsed.data.startDate, parsed.data.endDate)) return reply.code(400).send({ error: 'invalid_project_phase' })
+    const input = parsed.data
+    if (!(await app.pg.query('SELECT id FROM public.projects WHERE id = $1', [params.data.projectId])).rows[0]) return reply.code(404).send({ error: 'project_not_found' })
     const row = await insertReturning(app.pg, 'project_phases', {
+      ...phasePayload(input),
       project_id: params.data.projectId,
-      name: input.name,
-      description: input.description,
-      start_date: input.startDate,
-      end_date: input.endDate,
-      budget: input.budget,
-      order_index: input.orderIndex,
-      status: input.status || 'planning',
-      progress: 0,
-      updated_at: new Date().toISOString(),
     })
     const phase = projectPhaseRow(row, params.data.projectId)
     return { success: true, data: phase, phase }
@@ -1061,16 +1089,13 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
   app.patch('/projects/:projectId/phases/:id', async (request, reply) => {
     const params = projectChildParamSchema.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_phase_id' })
-    const input = request.body as Record<string, unknown>
-    const row = await updateReturning(app.pg, 'project_phases', params.data.id, {
-      name: input.name,
-      description: input.description,
-      status: input.status,
-      start_date: input.startDate,
-      end_date: input.endDate,
-      progress: input.progress,
-      updated_at: new Date().toISOString(),
-    }, { project_id: params.data.projectId })
+    const parsed = phasePatchSchema.safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_project_phase' })
+    const existing = (await app.pg.query('SELECT * FROM public.project_phases WHERE id = $1 AND project_id = $2', [params.data.id, params.data.projectId])).rows[0]
+    if (!existing) return reply.code(404).send({ error: 'phase_not_found' })
+    const input = parsed.data
+    if (!validDateRange(input.startDate === undefined ? calendarDate(existing.start_date) : input.startDate, input.endDate === undefined ? calendarDate(existing.end_date) : input.endDate)) return reply.code(400).send({ error: 'invalid_phase_dates' })
+    const row = await updateReturning(app.pg, 'project_phases', params.data.id, phasePayload(input), { project_id: params.data.projectId })
     const phase = projectPhaseRow(row, params.data.projectId)
     return { success: true, data: phase, phase }
   })

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Plus, Edit2, Trash2, CheckCircle, Circle, Calendar, User, AlertCircle, Eye } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -6,17 +6,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
-import { format } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
 import { toast } from 'react-hot-toast'
 import { Project, Task, Phase } from '@/types/project'
 import { backendDataService } from '@/services/backendDataService'
+import { formatDeliveryDate } from '@/lib/projects/deliveryPresentation'
 
 interface ProjectTaskManagerProps {
   project: Project
@@ -93,6 +92,10 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
   const [isPhaseModalOpen, setIsPhaseModalOpen] = useState(false)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [editingPhase, setEditingPhase] = useState<Phase | null>(null)
+  const [users, setUsers] = useState<Array<{ id: string; name: string }>>([])
+  const [usersLoaded, setUsersLoaded] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
   const [taskForm, setTaskForm] = useState<TaskFormData>({
     title: '',
     description: '',
@@ -109,9 +112,19 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
     loadTasksAndPhases()
   }, [project.id])
 
-  const loadTasksAndPhases = async () => {
+  useEffect(() => {
+    let active = true
+    backendDataService.getUsers({ limit: 500 }).then(response => {
+      if (active) { setUsers(response.data || []); setUsersLoaded(true) }
+    }).catch(() => {
+      if (active) toast.error('Não foi possível carregar os responsáveis cadastrados')
+    })
+    return () => { active = false }
+  }, [])
+
+  const loadTasksAndPhases = async (showLoading = true) => {
     try {
-      setLoading(true)
+      if (showLoading) setLoading(true)
       const [tasksResponse, phasesResponse] = await Promise.all([
         backendDataService.getProjectTasks(project.id),
         backendDataService.getProjectPhases(project.id)
@@ -146,9 +159,9 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
       status: task.status,
       priority: task.priority,
       assignedTo: task.assignedTo || '',
-      dueDate: task.dueDate ? format(new Date(task.dueDate), 'yyyy-MM-dd') : '',
+      dueDate: task.dueDate?.slice(0, 10) || '',
       phaseId: task.phaseId || '',
-      estimatedHours: task.estimatedHours || undefined
+      estimatedHours: task.estimatedHours ?? undefined
     })
     setIsTaskModalOpen(true)
   }
@@ -169,19 +182,29 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
       name: phase.name,
       description: phase.description || '',
       status: phase.status,
-      startDate: phase.startDate ? format(new Date(phase.startDate), 'yyyy-MM-dd') : '',
-      endDate: phase.endDate ? format(new Date(phase.endDate), 'yyyy-MM-dd') : '',
-      budget: phase.budget || undefined
+      startDate: phase.startDate?.slice(0, 10) || '',
+      endDate: phase.endDate?.slice(0, 10) || '',
+      budget: phase.budget ?? undefined
     })
     setIsPhaseModalOpen(true)
   }
 
   const handleSaveTask = async () => {
+    if (savingRef.current || !taskForm.title.trim()) return
+    if (taskForm.estimatedHours !== undefined && (!Number.isFinite(taskForm.estimatedHours) || taskForm.estimatedHours < 0)) {
+      toast.error('Informe uma quantidade de horas válida'); return
+    }
+    savingRef.current = true
+    setSaving(true)
     try {
       const taskData = {
         ...taskForm,
+        title: taskForm.title.trim(),
         projectId: project.id,
-        dueDate: taskForm.dueDate ? new Date(taskForm.dueDate).toISOString() : undefined
+        assignedTo: taskForm.assignedTo || null,
+        phaseId: taskForm.phaseId || null,
+        dueDate: taskForm.dueDate || null,
+        estimatedHours: taskForm.estimatedHours ?? null,
       }
 
       if (editingTask) {
@@ -193,21 +216,35 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
       }
 
       setIsTaskModalOpen(false)
-      loadTasksAndPhases()
+      loadTasksAndPhases(false)
       onUpdate?.()
     } catch (error) {
       console.error('Erro ao salvar tarefa:', error)
       toast.error('Erro ao salvar tarefa')
+    } finally {
+      savingRef.current = false
+      setSaving(false)
     }
   }
 
   const handleSavePhase = async () => {
+    if (savingRef.current || !phaseForm.name.trim()) return
+    if (phaseForm.startDate && phaseForm.endDate && phaseForm.endDate < phaseForm.startDate) {
+      toast.error('A data de fim deve ser igual ou posterior ao início'); return
+    }
+    if (phaseForm.budget !== undefined && (!Number.isFinite(phaseForm.budget) || phaseForm.budget < 0)) {
+      toast.error('Informe um orçamento válido'); return
+    }
+    savingRef.current = true
+    setSaving(true)
     try {
       const phaseData = {
         ...phaseForm,
+        name: phaseForm.name.trim(),
+        budget: phaseForm.budget ?? null,
         projectId: project.id,
-        startDate: phaseForm.startDate ? new Date(phaseForm.startDate).toISOString() : undefined,
-        endDate: phaseForm.endDate ? new Date(phaseForm.endDate).toISOString() : undefined
+        startDate: phaseForm.startDate || null,
+        endDate: phaseForm.endDate || null,
       }
 
       if (editingPhase) {
@@ -216,19 +253,20 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
       } else {
         await backendDataService.createProjectPhase(project.id, {
           ...phaseData,
-          startDate: phaseForm.startDate || new Date().toISOString().split('T')[0],
-          endDate: phaseForm.endDate || new Date().toISOString().split('T')[0],
           orderIndex: phases.length,
         })
         toast.success('Fase criada com sucesso!')
       }
 
       setIsPhaseModalOpen(false)
-      loadTasksAndPhases()
+      loadTasksAndPhases(false)
       onUpdate?.()
     } catch (error) {
       console.error('Erro ao salvar fase:', error)
       toast.error('Erro ao salvar fase')
+    } finally {
+      savingRef.current = false
+      setSaving(false)
     }
   }
 
@@ -238,7 +276,7 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
     try {
       await backendDataService.deleteProjectTask(project.id, taskId)
       toast.success('Tarefa excluída com sucesso!')
-      loadTasksAndPhases()
+      loadTasksAndPhases(false)
       onUpdate?.()
     } catch (error) {
       console.error('Erro ao excluir tarefa:', error)
@@ -252,7 +290,7 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
     try {
       await backendDataService.deleteProjectPhase(project.id, phaseId)
       toast.success('Fase excluída com sucesso!')
-      loadTasksAndPhases()
+      loadTasksAndPhases(false)
       onUpdate?.()
     } catch (error) {
       console.error('Erro ao excluir fase:', error)
@@ -264,7 +302,7 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
     const newStatus = task.status === 'completed' ? 'pending' : 'completed'
     try {
       await backendDataService.updateProjectTask(project.id, task.id, { status: newStatus })
-      loadTasksAndPhases()
+      loadTasksAndPhases(false)
       onUpdate?.()
     } catch (error) {
       console.error('Erro ao atualizar status da tarefa:', error)
@@ -275,7 +313,7 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
   const toggleTaskVisibility = async (task: Task) => {
     try {
       await backendDataService.updateProjectTaskVisibility(project.id, task.id, !task.isClientVisible)
-      loadTasksAndPhases()
+      loadTasksAndPhases(false)
       onUpdate?.()
     } catch (error) {
       console.error('Erro ao atualizar visibilidade da tarefa:', error)
@@ -312,7 +350,7 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
       {/* Progress Overview */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center justify-between">
+          <CardTitle className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <span>Progresso Geral</span>
             <span className="text-sm font-normal text-muted-foreground">
               {tasks.filter(t => t.status === 'completed').length} de {tasks.length} tarefas concluídas
@@ -361,12 +399,13 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
                 return (
                   <Card key={task.id} className="hover:shadow-md transition-shadow">
                     <CardContent className="p-4">
-                      <div className="flex items-start justify-between">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div className="flex items-start space-x-3 flex-1">
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => toggleTaskStatus(task)}
+                            aria-label={`${task.status === 'completed' ? 'Reabrir' : 'Concluir'} tarefa ${task.title}`}
                             className="p-0 h-auto"
                           >
                             {task.status === 'completed' ? (
@@ -382,7 +421,7 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
                             {task.description && (
                               <p className="text-sm text-gray-600 mt-1">{task.description}</p>
                             )}
-                            <div className="flex items-center space-x-4 mt-2">
+                            <div className="mt-2 flex flex-wrap items-center gap-3">
                               <Badge className={TASK_STATUS_COLORS[task.status]}>
                                 {TASK_STATUS_LABELS[task.status]}
                               </Badge>
@@ -397,13 +436,13 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
                               {task.dueDate && (
                                 <div className="flex items-center text-sm text-gray-500">
                                   <Calendar className="h-4 w-4 mr-1" />
-                                  {format(new Date(task.dueDate), 'dd/MM/yyyy', { locale: ptBR })}
+                                  {formatDeliveryDate(task.dueDate)}
                                 </div>
                               )}
                               {task.assignedTo && (
                                 <div className="flex items-center text-sm text-gray-500">
                                   <User className="h-4 w-4 mr-1" />
-                                  {task.assignedTo}
+                                  {users.find(user => user.id === task.assignedTo)?.name || 'Responsável atribuído'}
                                 </div>
                               )}
                             </div>
@@ -422,6 +461,7 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
                             variant="ghost"
                             size="sm"
                             onClick={() => handleEditTask(task)}
+                            aria-label={`Editar tarefa ${task.title}`}
                           >
                             <Edit2 className="h-4 w-4" />
                           </Button>
@@ -429,6 +469,7 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
                             variant="ghost"
                             size="sm"
                             onClick={() => handleDeleteTask(task.id)}
+                            aria-label={`Excluir tarefa ${task.title}`}
                             className="text-red-600 hover:text-red-700"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -484,6 +525,7 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
                             variant="ghost"
                             size="sm"
                             onClick={() => handleEditPhase(phase)}
+                            aria-label={`Editar fase ${phase.name}`}
                           >
                             <Edit2 className="h-4 w-4" />
                           </Button>
@@ -491,6 +533,7 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
                             variant="ghost"
                             size="sm"
                             onClick={() => handleDeletePhase(phase.id)}
+                            aria-label={`Excluir fase ${phase.name}`}
                             className="text-red-600 hover:text-red-700"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -521,19 +564,19 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
                             {phase.startDate && (
                               <div className="flex items-center">
                                 <Calendar className="h-4 w-4 mr-1" />
-                                Início: {format(new Date(phase.startDate), 'dd/MM/yyyy', { locale: ptBR })}
+                                Início: {formatDeliveryDate(phase.startDate)}
                               </div>
                             )}
                             {phase.endDate && (
                               <div className="flex items-center">
                                 <Calendar className="h-4 w-4 mr-1" />
-                                Fim: {format(new Date(phase.endDate), 'dd/MM/yyyy', { locale: ptBR })}
+                                Fim: {formatDeliveryDate(phase.endDate)}
                               </div>
                             )}
                           </div>
                         )}
 
-                        {phase.budget && (
+                        {phase.budget !== undefined && (
                           <div className="text-sm text-gray-500">
                             Orçamento: R$ {phase.budget.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </div>
@@ -549,14 +592,14 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
       </Tabs>
 
       {/* Task Modal */}
-      <Dialog open={isTaskModalOpen} onOpenChange={setIsTaskModalOpen}>
-        <DialogContent className="max-w-2xl">
+      <Dialog open={isTaskModalOpen} onOpenChange={open => { if (!savingRef.current) setIsTaskModalOpen(open) }}>
+        <DialogContent className="w-[calc(100%_-_2rem)] max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingTask ? 'Editar Tarefa' : 'Nova Tarefa'}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <fieldset disabled={saving} className="flex flex-col gap-4">
             <div>
               <Label htmlFor="task-title">Título *</Label>
               <Input
@@ -576,7 +619,7 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
                 rows={3}
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <Label htmlFor="task-status">Status</Label>
                 <Select value={taskForm.status} onValueChange={(value: any) => setTaskForm({ ...taskForm, status: value })}>
@@ -604,32 +647,36 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <Label htmlFor="task-phase">Fase</Label>
-                <Select value={taskForm.phaseId || ''} onValueChange={(value) => setTaskForm({ ...taskForm, phaseId: value || undefined })}>
-                  <SelectTrigger>
+                <Select value={taskForm.phaseId || 'none'} onValueChange={(value) => setTaskForm({ ...taskForm, phaseId: value === 'none' ? '' : value })}>
+                  <SelectTrigger id="task-phase">
                     <SelectValue placeholder="Selecione uma fase" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Nenhuma fase</SelectItem>
+                    <SelectGroup>
+                    <SelectItem value="none">Nenhuma fase</SelectItem>
                     {phases.map((phase) => (
                       <SelectItem key={phase.id} value={phase.id}>{phase.name}</SelectItem>
                     ))}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
               </div>
               <div>
                 <Label htmlFor="task-assigned">Responsável</Label>
-                <Input
-                  id="task-assigned"
-                  value={taskForm.assignedTo || ''}
-                  onChange={(e) => setTaskForm({ ...taskForm, assignedTo: e.target.value })}
-                  placeholder="Nome do responsável"
-                />
+                <Select disabled={!usersLoaded} value={taskForm.assignedTo || 'none'} onValueChange={value => setTaskForm({ ...taskForm, assignedTo: value === 'none' ? '' : value })}>
+                  <SelectTrigger id="task-assigned"><SelectValue placeholder="Selecione um responsável" /></SelectTrigger>
+                  <SelectContent><SelectGroup>
+                    <SelectItem value="none">Sem responsável</SelectItem>
+                    {taskForm.assignedTo && !users.some(user => user.id === taskForm.assignedTo) && <SelectItem value={taskForm.assignedTo}>Responsável atual</SelectItem>}
+                    {users.map(user => <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>)}
+                  </SelectGroup></SelectContent>
+                </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <Label htmlFor="task-due-date">Data de Vencimento</Label>
                 <Input
@@ -646,7 +693,7 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
                   type="number"
                   min="0"
                   step="0.5"
-                  value={taskForm.estimatedHours || ''}
+                  value={taskForm.estimatedHours ?? ''}
                   onChange={(e) => setTaskForm({ ...taskForm, estimatedHours: e.target.value ? parseFloat(e.target.value) : undefined })}
                   placeholder="Ex: 8"
                 />
@@ -656,23 +703,23 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
               <Button variant="outline" onClick={() => setIsTaskModalOpen(false)}>
                 Cancelar
               </Button>
-              <Button onClick={handleSaveTask} disabled={!taskForm.title.trim()}>
-                {editingTask ? 'Atualizar' : 'Criar'} Tarefa
+              <Button onClick={handleSaveTask} disabled={saving || !taskForm.title.trim()}>
+                {saving ? 'Salvando...' : `${editingTask ? 'Atualizar' : 'Criar'} Tarefa`}
               </Button>
             </div>
-          </div>
+          </fieldset>
         </DialogContent>
       </Dialog>
 
       {/* Phase Modal */}
-      <Dialog open={isPhaseModalOpen} onOpenChange={setIsPhaseModalOpen}>
-        <DialogContent className="max-w-2xl">
+      <Dialog open={isPhaseModalOpen} onOpenChange={open => { if (!savingRef.current) setIsPhaseModalOpen(open) }}>
+        <DialogContent className="w-[calc(100%_-_2rem)] max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingPhase ? 'Editar Fase' : 'Nova Fase'}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <fieldset disabled={saving} className="flex flex-col gap-4">
             <div>
               <Label htmlFor="phase-name">Nome *</Label>
               <Input
@@ -705,7 +752,7 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <Label htmlFor="phase-start-date">Data de Início</Label>
                 <Input
@@ -732,7 +779,7 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
                 type="number"
                 min="0"
                 step="0.01"
-                value={phaseForm.budget || ''}
+                value={phaseForm.budget ?? ''}
                 onChange={(e) => setPhaseForm({ ...phaseForm, budget: e.target.value ? parseFloat(e.target.value) : undefined })}
                 placeholder="Ex: 5000.00"
               />
@@ -741,11 +788,11 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
               <Button variant="outline" onClick={() => setIsPhaseModalOpen(false)}>
                 Cancelar
               </Button>
-              <Button onClick={handleSavePhase} disabled={!phaseForm.name.trim()}>
-                {editingPhase ? 'Atualizar' : 'Criar'} Fase
+              <Button onClick={handleSavePhase} disabled={saving || !phaseForm.name.trim()}>
+                {saving ? 'Salvando...' : `${editingPhase ? 'Atualizar' : 'Criar'} Fase`}
               </Button>
             </div>
-          </div>
+          </fieldset>
         </DialogContent>
       </Dialog>
     </div>

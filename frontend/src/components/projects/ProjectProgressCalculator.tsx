@@ -71,10 +71,8 @@ export function ProjectProgressCalculator({
   }
 
   useEffect(() => {
-    if (tasks.length > 0 || phases.length > 0) {
-      calculateProgress()
-    }
-  }, [tasks, phases])
+    calculateProgress()
+  }, [tasks, phases, project.progress])
 
   const calculateProgress = () => {
     // Calcular progresso das tarefas
@@ -131,6 +129,7 @@ export function ProjectProgressCalculator({
       })
 
       if (response.project) {
+        setBreakdown(previous => previous ? { ...previous, overallProgress: breakdown.suggestedProgress } : previous)
         onProgressUpdate?.(breakdown.suggestedProgress)
         toast.success('Progresso atualizado com sucesso')
       } else {

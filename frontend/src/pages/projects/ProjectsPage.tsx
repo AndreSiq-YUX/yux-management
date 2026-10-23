@@ -41,6 +41,7 @@ import {
 } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
+import { formatDeliveryDate, isDeliveryOverdue } from '@/lib/projects/deliveryPresentation'
 
 export function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([])
@@ -193,8 +194,7 @@ export function ProjectsPage() {
   }
 
   const isOverdue = (expectedEndDate: string, status: string) => {
-    if (status === 'COMPLETED' || status === 'CANCELLED') return false
-    return new Date(expectedEndDate) < new Date()
+    return isDeliveryOverdue(expectedEndDate, status)
   }
 
   return (
@@ -298,8 +298,8 @@ export function ProjectsPage() {
                   <div className="flex items-center text-sm text-muted-foreground">
                     <Calendar className="h-4 w-4 mr-2" />
                     <span>
-                      {new Date(project.startDate).toLocaleDateString('pt-BR')} - {' '}
-                      {new Date(project.expectedEndDate).toLocaleDateString('pt-BR')}
+                      {formatDeliveryDate(project.startDate)} - {' '}
+                      {formatDeliveryDate(project.expectedEndDate)}
                     </span>
                     {isOverdue(project.expectedEndDate, project.status) && (
                       <Clock className="h-4 w-4 ml-2 text-red-500" />
