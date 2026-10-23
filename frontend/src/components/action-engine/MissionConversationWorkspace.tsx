@@ -6,6 +6,7 @@ import { MissionConversationThread } from './MissionConversationThread'
 import { MissionContextDrawer } from './MissionContextDrawer'
 import { MissionInlineCorrectionPanel } from './MissionInlineCorrectionPanel'
 import { actionEngineService } from '@/services/actionEngineService'
+import { ApiClientError } from '@/lib/apiClient'
 import type { ResolvedCorrectionTarget } from '@/lib/workspace/correctionTargets'
 import type { DecisionReasonKey, MissionConversation, MissionConversationMessage, MissionConversationMissingContext, MissionConversationPlanReference } from '@/types/actionEngine'
 
@@ -25,21 +26,22 @@ export function MissionConversationWorkspace({ conversationId, organizationId, c
   const [conversation, setConversation] = useState<MissionConversation | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [draft, setDraft] = useState('')
   const [contextOpen, setContextOpen] = useState(false)
   const [acceptedTurn, setAcceptedTurn] = useState<number | null>(null)
   const [pendingRetry, setPendingRetry] = useState<{ message: string; clientMessageId: string; expectedVersion: number } | null>(null)
   const [inlineCorrection, setInlineCorrection] = useState<{ missing: MissionConversationMissingContext; target: ResolvedCorrectionTarget } | null>(null)
   const pollingAttempt = useRef(0)
   const mounted = useRef(true)
+  const sending = useRef(false)
   const conversationStatus = conversation?.status
   const conversationVersion = conversation?.version
   const shouldPoll = conversationStatus ? POLLING_STATUSES.has(conversationStatus) : false
 
   const load = useCallback(async () => {
     const next = await actionEngineService.getMissionConversation(conversationId, organizationId)
-    if (!mounted.current) return next
-    setConversation(next)
-    setError(null)
+    if (!mounted.current || sending.current) return next
+    setConversation(current => current?.id === next.id && current.version > next.version ? current : next)
     if (!POLLING_STATUSES.has(next.status)) {
       setAcceptedTurn(null)
       pollingAttempt.current = 0
@@ -50,6 +52,7 @@ export function MissionConversationWorkspace({ conversationId, organizationId, c
   useEffect(() => {
     mounted.current = true
     setLoading(true)
+    setError(null)
     load().catch(cause => setError(readError(cause))).finally(() => { if (mounted.current) setLoading(false) })
     return () => { mounted.current = false }
   }, [load])
@@ -82,11 +85,13 @@ export function MissionConversationWorkspace({ conversationId, organizationId, c
   }, [shouldPoll, load])
 
   const send = async (message: string, retry?: { clientMessageId: string; expectedVersion: number }) => {
-    if (!conversation || !canWrite || acceptedTurn != null) return
-    const clientMessageId = retry?.clientMessageId ?? crypto.randomUUID()
-    const expectedVersion = retry?.expectedVersion ?? conversation.version
+    if (!conversation || !canWrite || acceptedTurn != null || sending.current) return false
+    sending.current = true
+    const request = retry ?? (pendingRetry?.message === message ? pendingRetry : undefined)
+    const clientMessageId = request?.clientMessageId ?? crypto.randomUUID()
+    const expectedVersion = request?.expectedVersion ?? conversation.version
     const optimistic = optimisticMessage(conversation, message, clientMessageId)
-    if (!retry) setConversation({ ...conversation, status: 'collecting_context', messages: [...conversation.messages, optimistic] })
+    setConversation({ ...conversation, messages: [...conversation.messages, optimistic] })
     setAcceptedTurn(expectedVersion)
     setPendingRetry(null)
     setError(null)
@@ -94,15 +99,28 @@ export function MissionConversationWorkspace({ conversationId, organizationId, c
       const result = await actionEngineService.appendMissionConversationMessage(conversation.id, {
         organizationId, expectedVersion, message, clientMessageId,
       })
-      if (!mounted.current) return
+      if (!mounted.current) return false
       setConversation(result.conversation)
+      setDraft(current => current.trim() === message ? '' : current)
       pollingAttempt.current = 0
+      if (!POLLING_STATUSES.has(result.conversation.status)) setAcceptedTurn(null)
+      return true
     } catch (cause) {
-      if (!mounted.current) return
-      setConversation(conversation)
+      if (!mounted.current) return false
+      let latest = conversation
+      if (cause instanceof ApiClientError && cause.status === 409) {
+        latest = await actionEngineService.getMissionConversation(conversation.id, organizationId).catch(() => conversation)
+        if (!mounted.current) return false
+      }
+      setConversation(latest)
       setAcceptedTurn(null)
-      setPendingRetry({ message, clientMessageId, expectedVersion })
+      setPendingRetry(['awaiting_user', 'brief_confirmation', 'blocked'].includes(latest.status)
+        ? { message, clientMessageId, expectedVersion: latest.version }
+        : null)
       setError(readError(cause))
+      return false
+    } finally {
+      sending.current = false
     }
   }
 
@@ -198,7 +216,7 @@ export function MissionConversationWorkspace({ conversationId, organizationId, c
 
       <div className="flex min-h-0 flex-1 flex-col">
         <MissionConversationThread conversation={conversation} processing={processing} processingError={processingError} canWrite={canInteract} onQuickReply={message => void send(message)} onConfirmBrief={() => void confirmBrief()} onRetry={pendingRetry ? () => void send(pendingRetry.message, pendingRetry) : processingError ? () => void retryProcessing() : undefined} onApprovePlan={reference => void approvePlan(reference)} onRequestPlanChanges={(reference, reasonKey, comment) => void requestPlanChanges(reference, reasonKey, comment)} correctionTarget={correctionTarget} onInlineCorrection={(missing, target) => setInlineCorrection({ missing, target })} />
-        <div className="border-t border-yx-line bg-yx-surface px-4 py-4 sm:px-6"><div className="mx-auto max-w-3xl">{error ? <div className="mb-2 flex items-center justify-between gap-3 text-xs text-yx-crit"><span>{error}</span>{pendingRetry ? <button className="shrink-0 font-semibold hover:underline" onClick={() => void send(pendingRetry.message, pendingRetry)} type="button">Tentar novamente</button> : null}</div> : null}{inlineCorrection ? <MissionInlineCorrectionPanel missing={inlineCorrection.missing} target={inlineCorrection.target} busy={processing} onCancel={() => setInlineCorrection(null)} onSave={async message => { await send(message); setInlineCorrection(null) }} /> : null}{writable ? <MissionConversationComposer disabled={processing} onSend={send} /> : <p className="rounded-lg bg-yx-surface-2 p-3 text-center text-sm text-yx-fg-3">{conversation.status === 'cancelled' ? 'Esta conversa foi encerrada.' : 'Acompanhe a próxima etapa na missão.'}</p>}<p className="mt-2 text-center text-[11px] text-yx-fg-3">Nada é executado externamente sem passar pelas regras e aprovações da YUX.</p></div></div>
+        <div className="border-t border-yx-line bg-yx-surface px-4 py-4 sm:px-6"><div className="mx-auto max-w-3xl">{error ? <div role="alert" className="mb-2 flex items-center justify-between gap-3 text-xs text-yx-crit"><span>{error}</span>{pendingRetry ? <button className="shrink-0 font-semibold hover:underline" onClick={() => void send(pendingRetry.message, pendingRetry)} type="button">Tentar novamente</button> : null}</div> : null}{inlineCorrection ? <MissionInlineCorrectionPanel missing={inlineCorrection.missing} target={inlineCorrection.target} busy={processing} onCancel={() => setInlineCorrection(null)} onSave={async message => { if (await send(message)) setInlineCorrection(null) }} /> : null}{writable ? <MissionConversationComposer disabled={processing} value={draft} onValueChange={setDraft} onSend={send} /> : <p className="rounded-lg bg-yx-surface-2 p-3 text-center text-sm text-yx-fg-3">{conversation.status === 'cancelled' ? 'Esta conversa foi encerrada.' : 'Acompanhe a próxima etapa na missão.'}</p>}<p className="mt-2 text-center text-[11px] text-yx-fg-3">Nada é executado externamente sem passar pelas regras e aprovações da YUX.</p></div></div>
       </div>
       <p aria-live="polite" className="sr-only">{liveStatus}</p>
       <MissionContextDrawer conversation={conversation} open={contextOpen} onClose={() => setContextOpen(false)} correctionTarget={correctionTarget} onInlineCorrection={(missing, target) => { setContextOpen(false); setInlineCorrection({ missing, target }) }} />
@@ -210,7 +228,12 @@ function optimisticMessage(conversation: MissionConversation, content: string, c
   return { id: `pending-${clientMessageId}`, organizationId: conversation.organizationId, conversationId: conversation.id, sequence: conversation.messages.length + 1, actorType: 'user', messageKind: 'text', content, structuredPayload: {}, sourceRefs: [], clientMessageId, createdAt: new Date().toISOString() }
 }
 
-function readError(cause: unknown) { return cause instanceof Error ? cause.message : 'Não foi possível continuar a conversa agora.' }
+function readError(cause: unknown) {
+  if (cause instanceof ApiClientError && cause.message === 'mission_conversation_version_conflict') {
+    return 'A conversa foi atualizada. Sua mensagem não foi enviada; revise e tente novamente.'
+  }
+  return cause instanceof Error ? cause.message : 'Não foi possível continuar a conversa agora.'
+}
 
 function statusLabel(status: MissionConversation['status']) {
   return ({ collecting_context: 'Analisando contexto', awaiting_user: 'Aguardando sua resposta', brief_confirmation: 'Briefing pronto para confirmar', planning: 'Preparando plano', awaiting_plan_approval: 'Plano aguardando decisão', converted: 'Missão criada', blocked: 'Precisa de correção', cancelled: 'Conversa encerrada' } satisfies Record<MissionConversation['status'], string>)[status]

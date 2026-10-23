@@ -358,7 +358,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
         decisionFeedbackEnabled: app.config.MISSION_DECISION_FEEDBACK_ENABLED !== false,
         missionConversationsEnabled: isMissionConversationRolloutEnabled(app.config, parsed.data.organizationId),
         missionConversationsTenantAllowlistConfigured: Boolean(app.config.MISSION_CONVERSATIONS_TENANT_ALLOWLIST),
-        missionConversationsMaxTurns: app.config.MISSION_CONVERSATIONS_MAX_TURNS ?? 6,
+        missionConversationsMaxTurns: null,
         missionConversationsPollMaxSeconds: app.config.MISSION_CONVERSATIONS_POLL_MAX_SECONDS ?? 5,
       },
       planner: {
@@ -482,7 +482,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       const conversation = await appendUserConversationMessage(app.pg as never, {
         organizationId: body.data.organizationId, conversationId: params.data.conversationId,
         expectedVersion: body.data.expectedVersion, clientMessageId: body.data.clientMessageId,
-        content: body.data.message, createdBy: ctx.userId, maxTurns: app.config.MISSION_CONVERSATIONS_MAX_TURNS ?? 6,
+        content: body.data.message, createdBy: ctx.userId,
       })
       const job = await app.jobQueue.add('action-engine.processMissionConversation', {
         conversationId: conversation.id, organizationId: conversation.organizationId,
@@ -1463,7 +1463,6 @@ function sendDomainError(reply: FastifyReply, error: unknown) {
     mission_conversation_pack_selection_invalid: 409,
     mission_conversation_pack_unavailable: 409,
     mission_conversation_pack_not_entitled: 403,
-    mission_conversation_turn_limit_reached: 409,
     mission_conversation_deadline_required: 409,
     mission_conversation_objective_required: 409,
     mission_conversation_icp_required: 409,

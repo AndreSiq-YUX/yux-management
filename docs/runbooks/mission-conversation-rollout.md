@@ -1,6 +1,6 @@
 # Rollout e rollback — Conversas de Missão
 
-**Data:** 2026-08-31
+**Data:** 2026-08-31; continuidade corrigida em 2026-10-23
 **Responsável:** operação YUX
 **Escopo:** Harness existente, backend/worker e frontend do YUX Hub
 
@@ -22,11 +22,16 @@ Configure no serviço do backend:
 ```text
 MISSION_CONVERSATIONS_ENABLED=false
 MISSION_CONVERSATIONS_TENANT_ALLOWLIST=
-MISSION_CONVERSATIONS_MAX_TURNS=6
 MISSION_CONVERSATIONS_POLL_MAX_SECONDS=5
 ```
 
-No deploy por Compose, as quatro variáveis precisam chegar tanto ao `yux-backend-api` quanto ao `yux-backend-worker`. O arquivo `docker-compose.dokploy.yml` faz esse encaminhamento; depois de alterar os valores no Dokploy, é necessário redeploy dos dois serviços.
+No deploy por Compose, as três variáveis precisam chegar tanto ao `yux-backend-api` quanto ao `yux-backend-worker`. O arquivo `docker-compose.dokploy.yml` faz esse encaminhamento; depois de alterar os valores no Dokploy, é necessário redeploy dos dois serviços.
+
+Não existe corte por quantidade de mensagens. A antiga `MISSION_CONVERSATIONS_MAX_TURNS` foi removida do código e do Compose; valores remanescentes no painel não têm efeito. Permanecem limite de tamanho da mensagem, rate limit, autorização por conta, idempotência, controle de versão e controles de créditos/orçamento já existentes. O contexto enviado ao modelo continua limitado pelo resumo e pelo histórico recente.
+
+Em falha de envio, a interface conserva o rascunho e o aviso. Só inicia o polling depois que o servidor confirma o aceite; uma atualização automática não apaga um erro de envio. Conflito de versão carrega o estado atual e conserva o mesmo identificador para uma tentativa explícita, sem duplicar a mensagem. Correções inline só fecham após o aceite.
+
+Validação da correção em 23/10/2026: a conversa real `0b969532-7daa-4030-a332-cdcff5cc7228` tinha seis mensagens do usuário e seis do agente, versão 12; a API recebia `MISSION_CONVERSATIONS_MAX_TURNS=6`. O teste de continuidade com PostgreSQL reproduziu a rejeição do sétimo envio antes do ajuste e passou com 25 mensagens do usuário e 25 respostas simuladas após ele, incluindo replay sem duplicação, versão antiga recusada e isolamento entre organizações. Backend completo: 1508 testes passaram, 126 ignorados em suítes existentes. Interface: 19 testes passaram nos dois workspaces que usam o compositor; builds backend/frontend e orçamento do bundle passaram. Chrome local validou conflito 409, preservação do texto, reenvio com o mesmo clientMessageId e versão atualizada, uma mensagem e uma resposta simulada, sem overlay ou erro de aplicação. Não foram feitas chamadas pagas para esta correção; a resposta no navegador de teste é simulada.
 
 Durante o canário, use `MISSION_CONVERSATIONS_ENABLED=true` e coloque somente o UUID da organização YUX na allowlist. Separe vários UUIDs por vírgula. Allowlist vazia com a flag ligada habilita todos os tenants, portanto não deve ser usada antes da liberação geral.
 

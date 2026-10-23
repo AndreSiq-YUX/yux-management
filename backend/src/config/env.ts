@@ -67,7 +67,6 @@ const envSchema = z.object({
   MISSION_DECISION_FEEDBACK_ENABLED: optionalBoolean,
   MISSION_CONVERSATIONS_ENABLED: optionalBoolean,
   MISSION_CONVERSATIONS_TENANT_ALLOWLIST: optionalString,
-  MISSION_CONVERSATIONS_MAX_TURNS: z.coerce.number().int().min(1).max(20).optional(),
   MISSION_CONVERSATIONS_POLL_MAX_SECONDS: z.coerce.number().int().min(1).max(30).optional(),
   META_APP_SECRET: optionalString,
   META_APP_ID: optionalString,

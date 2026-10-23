@@ -266,7 +266,6 @@ export async function appendUserConversationMessage(pool: Connectable, input: {
   clientMessageId: string
   content: string
   createdBy: string
-  maxTurns?: number
 }): Promise<MissionConversation> {
   return inTransaction(pool, async (client) => {
     const current = await lockConversation(client, input.conversationId, input.organizationId)
@@ -278,12 +277,6 @@ export async function appendUserConversationMessage(pool: Connectable, input: {
     if (duplicate.rows[0]) return getRequiredMissionConversation(client, input.conversationId, input.organizationId)
     if (current.version !== input.expectedVersion) throw new Error('mission_conversation_version_conflict')
     if (!['awaiting_user', 'brief_confirmation', 'blocked'].includes(current.status)) throw new Error('mission_conversation_not_writable')
-    const turnCount = await client.query<{ count: number | string }>(
-      `SELECT COUNT(*)::INT AS count FROM public.action_mission_conversation_messages
-       WHERE conversation_id = $1 AND organization_id = $2 AND actor_type = 'user'`,
-      [input.conversationId, input.organizationId],
-    )
-    if (Number(turnCount.rows[0]?.count ?? 0) >= (input.maxTurns ?? 6)) throw new Error('mission_conversation_turn_limit_reached')
     const sequence = await nextMessageSequence(client, input.conversationId, input.organizationId)
     await insertMessage(client, {
       organizationId: input.organizationId,

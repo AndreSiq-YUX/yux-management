@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MissionConversationWorkspace } from './MissionConversationWorkspace'
 import { actionEngineService } from '@/services/actionEngineService'
+import { ApiClientError } from '@/lib/apiClient'
 import type { MissionConversation, MissionConversationMissingContext } from '@/types/actionEngine'
 import type { ResolvedCorrectionTarget } from '@/lib/workspace/correctionTargets'
 
@@ -69,9 +70,62 @@ describe('MissionConversationWorkspace', () => {
     await change(textarea, 'Usar PMEs de Londrina')
     await clickByLabel('Enviar mensagem')
     expect(document.body.textContent).toContain('Tentar novamente')
+    expect(textarea.value).toBe('Usar PMEs de Londrina')
     await click('Tentar novamente')
     expect(append).toHaveBeenCalledTimes(2)
     expect(append.mock.calls[1][1].clientMessageId).toBe(append.mock.calls[0][1].clientMessageId)
+    expect(textarea.value).toBe('')
+    act(() => root.unmount())
+  })
+
+  it('keeps an optimistic message visible without polling before the send is accepted', async () => {
+    const data = conversation({ status: 'awaiting_user', withAgent: true })
+    const get = vi.spyOn(actionEngineService, 'getMissionConversation').mockResolvedValue(data)
+    let rejectSend!: (error: Error) => void
+    vi.spyOn(actionEngineService, 'appendMissionConversationMessage').mockImplementation(() => new Promise((_resolve, reject) => { rejectSend = reject }))
+    const { root } = await renderWorkspace()
+    const textarea = document.body.querySelector('textarea') as HTMLTextAreaElement
+    await change(textarea, 'Continuar o diagnóstico da empresa')
+    await clickByLabel('Enviar mensagem')
+    expect(document.body.textContent).toContain('Continuar o diagnóstico da empresa')
+    expect(get).toHaveBeenCalledTimes(1)
+    await act(async () => { rejectSend(new Error('Conexão interrompida')); await flush() })
+    expect(document.body.textContent).toContain('Conexão interrompida')
+    expect(textarea.value).toBe('Continuar o diagnóstico da empresa')
+    act(() => root.unmount())
+  })
+
+  it('reloads a version conflict, preserves the draft and retries against the current version', async () => {
+    const data = conversation({ status: 'awaiting_user', withAgent: true })
+    vi.spyOn(actionEngineService, 'getMissionConversation')
+      .mockResolvedValueOnce(data).mockResolvedValue({ ...data, version: 4 })
+    const append = vi.spyOn(actionEngineService, 'appendMissionConversationMessage')
+      .mockRejectedValueOnce(new ApiClientError({ status: 409, statusText: 'Conflict' } as Response, { error: 'mission_conversation_version_conflict' }))
+      .mockResolvedValueOnce({ conversation: { ...data, status: 'collecting_context', version: 5 }, jobId: 'job-current' })
+    const { root } = await renderWorkspace()
+    const textarea = document.body.querySelector('textarea') as HTMLTextAreaElement
+    await change(textarea, 'Minha resposta precisa ser preservada')
+    await clickByLabel('Enviar mensagem')
+    expect(textarea.value).toBe('Minha resposta precisa ser preservada')
+    expect(document.body.querySelector('[role="alert"]')?.textContent).toContain('A conversa foi atualizada')
+    await click('Tentar novamente')
+    expect(append.mock.calls[1][1]).toMatchObject({ expectedVersion: 4, clientMessageId: append.mock.calls[0][1].clientMessageId })
+    expect(textarea.value).toBe('')
+    act(() => root.unmount())
+  })
+
+  it('keeps an inline correction and its values open when the message is rejected', async () => {
+    const data = conversation({ status: 'awaiting_user', withAgent: true })
+    vi.spyOn(actionEngineService, 'getMissionConversation').mockResolvedValue(data)
+    vi.spyOn(actionEngineService, 'appendMissionConversationMessage').mockRejectedValue(new Error('Envio indisponível'))
+    const { root } = await renderWorkspace(() => ({ mode: 'inline', path: null, fields: [{ key: 'targetAudience', label: 'Público-alvo' }] }))
+    await click('Preencher nesta conversa')
+    const input = document.body.querySelector('input') as HTMLInputElement
+    await changeInput(input, 'Empresas recém-abertas')
+    await click('Salvar e revalidar')
+    expect(document.body.querySelector('[aria-label="Corrigir informação da missão"]')).not.toBeNull()
+    expect(input.value).toBe('Empresas recém-abertas')
+    expect(document.body.textContent).toContain('Envio indisponível')
     act(() => root.unmount())
   })
 
