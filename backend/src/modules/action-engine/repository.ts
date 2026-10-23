@@ -372,8 +372,8 @@ export async function insertPlanRevision(
      ) VALUES ($1,$2,$3,'proposed',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
      RETURNING id`,
     [input.organizationId, input.missionId, revision, input.packVersionId, input.packContentHash,
-      planHash, input.parameters, input.deviations, input.proposedPayload ?? {}, input.compiledPayload ?? {},
-      input.estimatedEconomics, input.capabilityManifest ?? [],
+      planHash, input.parameters, JSON.stringify(input.deviations), input.proposedPayload ?? {}, input.compiledPayload ?? {},
+      input.estimatedEconomics, JSON.stringify(input.capabilityManifest ?? []),
       input.capabilityManifestHash ?? '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e1694018417eb71d718210b',
       input.createdBy ?? null],
   )
@@ -583,7 +583,7 @@ export async function decideActionApproval(pool: Connectable, input: {
     if (approval.run_id) {
       await client.query(
         `UPDATE public.action_runs run SET status = $2,
-                output = CASE WHEN $2 = 'blocked' THEN jsonb_build_object('approvalDecision',$3,'reason',$4) ELSE output END,
+                output = CASE WHEN $2 = 'blocked' THEN jsonb_build_object('approvalDecision',$3::TEXT,'reason',$4::TEXT) ELSE output END,
                 updated_at = NOW()
          WHERE run.id = $1 AND run.status = 'waiting_approval'`,
         [approval.run_id, input.decision === 'approved' ? 'queued' : 'blocked', input.decision, input.reason],
@@ -625,9 +625,9 @@ export async function createActionRuns(client: Queryable, input: { organizationI
     `INSERT INTO public.action_runs (
        organization_id, mission_id, plan_id, plan_step_id, status, idempotency_key, input
      )
-     SELECT step.organization_id, $1, step.plan_id, step.id,
+     SELECT step.organization_id, $1::UUID, step.plan_id, step.id,
             CASE WHEN cardinality(step.depends_on) = 0 THEN 'ready' ELSE 'pending' END,
-            $1::TEXT || ':' || step.plan_id::TEXT || ':' || step.step_key,
+            $1::UUID::TEXT || ':' || step.plan_id::TEXT || ':' || step.step_key,
             step.parameters
      FROM public.action_plan_steps step
      WHERE step.plan_id = $2 AND step.organization_id = $3

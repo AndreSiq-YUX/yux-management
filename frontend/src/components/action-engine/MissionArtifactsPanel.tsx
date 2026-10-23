@@ -2,6 +2,7 @@ import { Bot, ExternalLink, GitBranch, Mail, RefreshCw, Route, ShieldAlert } fro
 import { Link } from 'react-router-dom'
 import { ArtifactDiff } from './ArtifactDiff'
 import { CampaignMissionArtifacts } from './CampaignMissionArtifacts'
+import { RadarMissionArtifacts } from './RadarMissionArtifacts'
 import type { MissionArtifact } from '@/types/actionEngine'
 
 export function MissionArtifactsPanel({ artifacts, canWrite, showTechnicalProof, onRefresh, refreshing = false, destinationHref }: {
@@ -10,11 +11,14 @@ export function MissionArtifactsPanel({ artifacts, canWrite, showTechnicalProof,
 }) {
   if (!artifacts.length) return null
   const campaignArtifacts = artifacts.filter(artifact => artifact.kind.startsWith('campaign_'))
-  const standardArtifacts = artifacts.filter(artifact => !artifact.kind.startsWith('campaign_'))
+  const radarArtifacts = artifacts.filter(artifact => artifact.kind.startsWith('radar_'))
+  const standardArtifacts = artifacts.filter(artifact => !artifact.kind.startsWith('campaign_')&&!artifact.kind.startsWith('radar_'))
+  if(radarArtifacts.length&&!standardArtifacts.length&&!campaignArtifacts.length)return <RadarMissionArtifacts artifacts={radarArtifacts}/>
   if (campaignArtifacts.length && !standardArtifacts.length) return <CampaignMissionArtifacts artifacts={campaignArtifacts} canWrite={canWrite} showTechnicalProof={showTechnicalProof} destinationHref={destinationHref} />
   const stale = standardArtifacts.some(artifact => artifact.staleApproval)
   return (
     <div className="space-y-6">
+      {radarArtifacts.length?<RadarMissionArtifacts artifacts={radarArtifacts}/>:null}
       {campaignArtifacts.length ? <CampaignMissionArtifacts artifacts={campaignArtifacts} canWrite={canWrite} showTechnicalProof={showTechnicalProof} destinationHref={destinationHref} /> : null}
     <section className="border border-yx-line bg-yx-surface">
       <div className="flex flex-col gap-3 border-b border-yx-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -58,6 +62,7 @@ function records(value: unknown): Array<Record<string, unknown>> { return Array.
 function strings(value: unknown): string[] { return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [] }
 function delay(minutes: number) { if (minutes === 0) return 'imediatamente'; if (minutes % 1440 === 0) return `após ${minutes / 1440} dia(s)`; if (minutes % 60 === 0) return `após ${minutes / 60} hora(s)`; return `após ${minutes} minuto(s)` }
 const kindLabel: Record<MissionArtifact['kind'], string> = {
+  radar_campaign:'Campanha do Radar',radar_result:'Pesquisa de empresas',
   funnel: 'Funil', email: 'E-mail', sequence: 'Sequência', automation: 'Automação',
   campaign_brief: 'Brief de campanha', campaign_audience: 'Público', campaign_creative: 'Criativo',
   campaign_landing_page: 'Landing page', campaign_lead_form: 'Formulário', campaign_tracking: 'Tracking', campaign_provider: 'Provedor',

@@ -309,6 +309,7 @@ export interface MissionArtifactVersion {
 export interface MissionArtifact {
   key: string
   kind: 'funnel' | 'email' | 'sequence' | 'automation'
+    | 'radar_campaign' | 'radar_result'
     | 'campaign_brief' | 'campaign_audience' | 'campaign_creative'
     | 'campaign_landing_page' | 'campaign_lead_form' | 'campaign_tracking' | 'campaign_provider'
   title: string
@@ -533,7 +534,8 @@ export interface CreateMissionIntentInput {
   maxHumanHours: string
   maxExternalContacts?: number
   expectedValueBrl?: string
-  quickStart?: 'revenue_recovery' | 'funnel_nurture' | 'campaign_launch'
+  quickStart?: 'revenue_recovery' | 'funnel_nurture' | 'campaign_launch' | 'radar_prospecting'
+  radarParameters?: {campaign:{name:string;targetSegment:string;targetStates:string[];offerType:string;cities?:Array<{city:string;state:string}>}|{existingCampaignId:string};requestedCount:number}
   recipeSelection?: { key: string; version: number; contentHash: string }
 }
 

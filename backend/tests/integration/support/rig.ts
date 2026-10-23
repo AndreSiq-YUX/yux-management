@@ -56,7 +56,7 @@ export function getIntegrationDatabaseUrl() {
   return databaseUrl
 }
 
-export async function createIntegrationRig(options: { corsOrigin?: string; queueMode?: 'redis' | 'stub'; metaOAuth?: boolean; metaTestPhoneNumberId?: string } = {}): Promise<IntegrationRig> {
+export async function createIntegrationRig(options: { corsOrigin?: string; queueMode?: 'redis' | 'stub'; radarActionEngine?:boolean; metaOAuth?: boolean; metaTestPhoneNumberId?: string } = {}): Promise<IntegrationRig> {
   const databaseUrl = getIntegrationDatabaseUrl()
   const redisUrl = process.env.YUX_INTEGRATION_REDIS_URL
     || 'redis://:yux_test_redis_password@127.0.0.1:56379/0'
@@ -93,6 +93,8 @@ export async function createIntegrationRig(options: { corsOrigin?: string; queue
     OPENROUTER_API_KEY: 'integration-openrouter-api-key',
     JINA_API_KEY: 'integration-jina-api-key',
     KNOWLEDGE_CURATION_ENABLED: 'false',
+    RADAR_ACTION_ENGINE_ENABLED: options.radarActionEngine?'true':'false',
+    RADAR_ACTION_ENGINE_TENANT_ALLOWLIST: options.radarActionEngine?fixtureIds.organizationA:'',
     KNOWLEDGE_STORAGE_DIR: storageRoot,
     ACTION_ENGINE_MUTATION_LEASE_SECRET: 'integration-mutation-lease-secret-32-chars',
     ACTION_ENGINE_TELEMETRY_REDACTION_KEY: 'integration-redaction-key-secret-32-chars',

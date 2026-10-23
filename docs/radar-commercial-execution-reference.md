@@ -1,8 +1,8 @@
-# Radar Comercial — referência técnica para futura integração de ações
+# Radar Comercial — referência técnica da integração de ações
 
-Versão 1.0 — 22/10/2026. **Audiência exclusiva: Admin global YUX e equipe de implementação. Não ingerir este documento em conhecimento comum de clientes/operadores.**
+Versão 1.1 — 22/10/2026. **Audiência exclusiva: Admin global YUX e equipe de implementação. Não ingerir este documento em conhecimento comum de clientes/operadores.**
 
-Guia funcional cliente-seguro: [funcionalidades e operação](knowledge/radar-commercial-action-engine.md). Esta entrega escreve documentação e corrige defaults locais; não registra capabilities no Action Engine, não publica conhecimento no sistema e não comprova deploy.
+Guia funcional cliente-seguro: [funcionalidades e operação](knowledge/radar-commercial-action-engine.md). A integração assistida está implementada nesta branch, sob gate e allowlist desativados por padrão. Isso não comprova publicação do conhecimento, deploy ou canário pago. Consulte o [runbook de liberação](runbooks/radar-action-engine-rollout.md).
 
 ## 1. Fronteiras e autoridade
 
@@ -119,7 +119,17 @@ Leitura de site e busca não comprovam atendimento telefônico, WhatsApp ativo, 
 
 A classificação/organização futura dos leads no CRM pertence à outra frente mencionada pelo usuário. Não adicionar aqui automações, contato ou nutrição como efeito colateral.
 
-## 9. Checklist para quem integrar ao Action Engine depois
+## 9. Integração assistida e limites da entrega
+
+O pack `radar_prospecting@1.0.0` executa inspect → save/select → preflight → capture.start com aprovação → operation.await → results.inspect → checkpoint. Entradas protegidas são fixadas pelo compilador; a aprovação vincula os parâmetros resolvidos. O fluxo principal inicia um lote novo em campanha nova ou existente. Um lote pendente bloqueia esse início; a operação manual do Radar continua sendo o caminho contextual para resolver exceções e retomar.
+
+As dez capabilities usam o adaptador `radar/action-engine-commands.ts`, os comandos canônicos, leases consumidas e claims por campanha. O ledger da migration 0236 conserva requestId/resultados/links. O claim inicial, exclusivo da missão, permanece ativo até o encerramento junto ao claim da campanha; assim a renovação de fencing não perde o histórico. O reconciliador lê estados persistidos e conserva operações já aceitas quando o gate é desligado.
+
+Duplicação, critérios, retomada e pesquisa de empresas existentes têm adaptadores e contratos registrados; o pack assistido desta release mantém a topologia de um lote novo. Não oferecer rotinas recorrentes nem mudar para autonomous. Campanha sem teto ou com teto superior ao envelope bloqueia novos efeitos; capacidade e exceções continuam sob as regras canônicas do Radar.
+
+Publicação funcional: pacote de oito propostas em `docs/knowledge/publication/radar-commercial.review.json`, aguardando revisão. O planejamento recupera publicações autorizadas em growth_strategist/radar/radar_commercial_mission, revalidando fontes antes do efeito externo; sem publicação válida, bloqueia. A busca local sem chamada de embedding é lexical e registra modo degradado.
+
+Critérios preservados para validação e evolução:
 
 1. Usar este contrato e o catálogo real para desenhar capabilities e Action Pack do Radar, não reutilizar o pack de campanhas pagas.
 2. Projetar entradas comerciais e validação de conta/contrato/revisão. Modelo não escolhe o `organizationId` de outra conta nem recebe segredos globais.

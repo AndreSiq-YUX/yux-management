@@ -177,8 +177,8 @@ function normalizedCopy(input: z.infer<typeof copyInput>) {
 }
 
 function publication(config: {
-  key: string; title: string; domain: string; modules: string[]; permission: string; command: keyof NonNullable<CapabilityContext['commands']>;
-  entityType: string; inputMap: (input: Record<string, unknown>) => Record<string, unknown>; containCommand: keyof NonNullable<CapabilityContext['commands']>;
+  key: string; title: string; domain: string; modules: string[]; permission: string; command: Exclude<keyof NonNullable<CapabilityContext['commands']>, 'runRadarCommand'>;
+  entityType: string; inputMap: (input: Record<string, unknown>) => Record<string, unknown>; containCommand: Exclude<keyof NonNullable<CapabilityContext['commands']>, 'runRadarCommand'>;
   inputSchema?: z.ZodType
 }): CapabilityDefinition {
   return {
@@ -210,7 +210,7 @@ function publicationIdentity(entityType: string, id: string) {
   return { flowId: id }
 }
 
-function draftRecovery(command: keyof NonNullable<CapabilityContext['commands']>, entityType: string) {
+function draftRecovery(command: Exclude<keyof NonNullable<CapabilityContext['commands']>, 'runRadarCommand'>, entityType: string) {
   return {
     kind: 'compensatable' as const,
     async compensate(context: CapabilityContext, result: unknown) {
@@ -222,11 +222,11 @@ function draftRecovery(command: keyof NonNullable<CapabilityContext['commands']>
   }
 }
 
-async function invokeCommand(context: CapabilityContext, command: keyof NonNullable<CapabilityContext['commands']>, input: Record<string, unknown>, requireExecutionContext = true): Promise<MissionResult> {
+async function invokeCommand(context: CapabilityContext, command: Exclude<keyof NonNullable<CapabilityContext['commands']>, 'runRadarCommand'>, input: Record<string, unknown>, requireExecutionContext = true): Promise<MissionResult> {
   return await invokeRawCommand(context, command, input, requireExecutionContext) as MissionResult
 }
 
-async function invokeRawCommand(context: CapabilityContext, command: keyof NonNullable<CapabilityContext['commands']>, input: Record<string, unknown>, requireExecutionContext = true) {
+async function invokeRawCommand(context: CapabilityContext, command: Exclude<keyof NonNullable<CapabilityContext['commands']>, 'runRadarCommand'>, input: Record<string, unknown>, requireExecutionContext = true) {
   const handler = context.commands?.[command]
   if (!handler) throw new Error('capability_command_unavailable')
   const actorId = context.actor.id

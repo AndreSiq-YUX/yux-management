@@ -58,7 +58,7 @@ export const actionEngineService = {
     apiRequest<{ conversation: MissionConversation; jobId: string | null }>(`${root}/mission-conversations/${conversationId}/retry`, { method: 'POST', body: input }),
   approveMissionConversationPlan: (input: { organizationId: string; missionId: string; planId: string; approvalId: string; expectedMissionVersion: number; subjectHash: string }) =>
     approvePlanReference(input),
-  listPacks: () => apiRequest<ActionPack[]>(`${root}/action-packs`),
+  listPacks: (organizationId?: string) => apiRequest<ActionPack[]>(`${root}/action-packs?${query({organizationId})}`),
   listRecipes: (organizationId: string) => apiRequest<MissionRecipe[]>(`${root}/mission-recipes?${query({ organizationId })}`),
   seedRecipeSandbox: (organizationId: string, recipe: Pick<MissionRecipe, 'key' | 'version'>) =>
     apiRequest<SandboxSeedManifest>(`${root}/mission-recipes/${encodeURIComponent(recipe.key)}/versions/${recipe.version}/seed-sandbox`, { method: 'POST', body: { organizationId } }),
@@ -66,7 +66,7 @@ export const actionEngineService = {
     apiRequest<{ manifestId: string; status: string; deleted: string[]; modified: string[] }>(`${root}/sandbox-seeds/${manifestId}`, { method: 'DELETE', body: { organizationId } }),
   readiness: (input: {
     organizationId: string; contractId?: string; targetRevenueBrl: string; deadlineAt: string;
-    maxTotalCostBrl: string; maxHumanHours: string; humanHourlyRateBrl: string; packKey?: 'revenue_recovery' | 'funnel_nurture' | 'campaign_launch';
+    maxTotalCostBrl: string; maxHumanHours: string; humanHourlyRateBrl: string; packKey?: 'revenue_recovery' | 'funnel_nurture' | 'campaign_launch' | 'radar_prospecting';
   }) => apiRequest<MissionReadiness>(`${root}/readiness`, { method: 'POST', body: input }),
   listMissions: (organizationId: string, status?: MissionStatus) =>
     apiRequest<ActionMission[]>(`${root}/missions?${query({ organizationId, status })}`),

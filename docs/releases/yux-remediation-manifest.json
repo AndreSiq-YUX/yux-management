@@ -37,10 +37,10 @@
   "migrations": {
     "checksumAlgorithm": "sha256:utf8:lf:bom-and-nul-removed:trim-start:v1",
     "aggregateAlgorithm": "sha256:filename-checksum-lines:v1",
-    "count": 136,
+    "count": 137,
     "first": "0001_auth_core.sql",
-    "last": "0235_radar_funnel_operational_defaults.sql",
-    "aggregateSha256": "9ceab3adc72c279b11cd04a268c282bbb08f41bcf904643c1e9d19d83df09931",
+    "last": "0236_action_radar_commands_and_links.sql",
+    "aggregateSha256": "70631046052264bd5fa1567cb17a8b54001ed256fc081dab1e3f395d4a1f4d3d",
     "targetVerification": "not_run"
   },
   "contracts": {
@@ -62,7 +62,8 @@
     "MISSION_DECISION_FEEDBACK_ENABLED": false,
     "MISSION_CONVERSATIONS_ENABLED": false,
     "VITE_MISSION_FORM_COMPATIBILITY": true,
-    "KNOWLEDGE_CURATION_ENABLED": true
+    "KNOWLEDGE_CURATION_ENABLED": true,
+    "RADAR_ACTION_ENGINE_ENABLED": false
   },
   "legacyQueueConsumers": [
     {

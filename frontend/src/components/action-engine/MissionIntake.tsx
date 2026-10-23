@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState,useEffect } from 'react'
 import { Bot, ChevronLeft, ChevronRight, Loader2, Sparkles } from 'lucide-react'
 import { AutonomyEnvelopeForm, type AutonomyEnvelopeDraft } from './AutonomyEnvelopeForm'
 import { Button } from '@/components/ui/button'
@@ -32,9 +32,20 @@ export function MissionIntake({ open, organizationId, contractId, canWrite, onOp
   const [envelope, setEnvelope] = useState<AutonomyEnvelopeDraft>(defaultEnvelope)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [radarCatalog,setRadarCatalog]=useState({organizationId:'',available:false})
+  const [radarBrief,setRadarBrief]=useState({name:'',targetSegment:'',states:'',offerType:'',requestedCount:10})
+  const radarAvailable=radarCatalog.organizationId===organizationId&&radarCatalog.available
+  useEffect(()=>{
+    if(!open)return
+    let active=true
+    const pending=actionEngineService.listPacks?.(organizationId)
+    pending?.then(packs=>{if(active)setRadarCatalog({organizationId,available:packs.some(pack=>pack.key==='radar_prospecting')})}).catch(()=>{if(active)setRadarCatalog({organizationId,available:false})})
+    return()=>{active=false}
+  },[open,organizationId])
   const deadlineAt = envelope.deadline ? new Date(`${envelope.deadline}T23:59:59.000Z`).toISOString() : ''
   const objectiveReady = objective.trim().length >= 10
   const envelopeBlockers = [
+    ...(quickStart==='radar_prospecting'&&(!radarAvailable||!radarBrief.name.trim()||!radarBrief.targetSegment.trim()||!radarBrief.offerType.trim()||!radarBrief.states.trim()||radarBrief.requestedCount<1)?['Complete o perfil e a quantidade da pesquisa no Radar.']:[]),
     ...(envelope.allowedModules.length === 0 ? ['Selecione ao menos uma área permitida.'] : []),
     ...(!deadlineAt || Date.parse(deadlineAt) <= Date.now() ? ['Defina um prazo futuro.'] : []),
     ...(Number(envelope.maxTotalCostBrl) <= 0 ? ['O orçamento precisa ser maior que zero.'] : []),
@@ -94,6 +105,7 @@ export function MissionIntake({ open, organizationId, contractId, canWrite, onOp
         maxTotalCostBrl: envelope.maxTotalCostBrl, maxHumanHours: envelope.maxHumanHours,
         maxExternalContacts: Number(envelope.maxExternalContacts || 0),
         expectedValueBrl: expectedValueBrl || undefined, quickStart,
+        ...(quickStart==='radar_prospecting'?{radarParameters:{campaign:{name:radarBrief.name.trim(),targetSegment:radarBrief.targetSegment.trim(),targetStates:radarBrief.states.toUpperCase().split(/[,;\s]+/).filter(Boolean),offerType:radarBrief.offerType.trim()},requestedCount:radarBrief.requestedCount}}:{}),
         ...(recipe ? { recipeSelection: { key: recipe.key, version: recipe.version, contentHash: recipe.contentHash } } : {}),
       })
       onCreated(mission); onOpenChange(false)
@@ -105,6 +117,11 @@ export function MissionIntake({ open, organizationId, contractId, canWrite, onOp
 
   function updateObjective(value: string) {
     setObjective(value); setQuickStart(undefined); setRecipe(undefined)
+    if(/(radar|prospec[cç][aã]o|pesquisar.*empresas)/iu.test(value)&&radarAvailable){
+      setQuickStart('radar_prospecting')
+      setEnvelope(current=>({...current,mode:'assisted',allowedModules:['radar'],maxExternalContacts:'0'}))
+      return
+    }
     if (/(funil|pipeline|nutri[cç][aã]o|sequ[eê]ncia\s+de\s+e-?mails?)/iu.test(value)) {
       setEnvelope(current => ({ ...current, allowedModules: [...new Set([...current.allowedModules, 'crm', 'automations', 'funnel_nurture_agent'])] }))
     }
@@ -119,6 +136,7 @@ export function MissionIntake({ open, organizationId, contractId, canWrite, onOp
         <DialogHeader><div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-yx-blue"><Bot className="h-4 w-4" /> Mission Supervisor</div><DialogTitle>O que você quer que a YUX realize?</DialogTitle><DialogDescription>Descreva o resultado. O agente usará apenas a metodologia da YUX, a base publicada e as áreas autorizadas para propor um plano verificável.</DialogDescription></DialogHeader>
         {!canWrite ? <div className="border border-yx-warn-line bg-yx-warn-soft p-4 text-sm text-yx-warn">Seu perfil pode acompanhar missões, mas não criar ou alterar uma.</div> : <>
           <div className="grid grid-cols-2 gap-2 border-y border-yx-line py-3"><StepLabel active={step === 1} done={step > 1} number={1} label="Pedido" /><StepLabel active={step === 2} done={false} number={2} label="Autonomia e limites" /></div>
+          {step===1&&radarAvailable?<div className="space-y-3"><Button type="button" variant="outline" onClick={()=>{setRecipe(undefined);setQuickStart('radar_prospecting');setTitle('Pesquisar empresas no Radar Comercial');setObjective('Criar uma campanha no Radar Comercial e pesquisar empresas do público definido, com revisão antes do uso comercial.');setEnvelope(current=>({...current,mode:'assisted',allowedModules:['radar'],maxExternalContacts:'0'}))}}>Pesquisar empresas no Radar</Button>{quickStart==='radar_prospecting'?<fieldset className="grid gap-3 border border-yx-line p-4 sm:grid-cols-2"><legend className="text-sm font-semibold">Perfil da pesquisa</legend>{(['name','targetSegment','states','offerType'] as const).map(key=><TextField key={key} label={{name:'Nome da campanha',targetSegment:'Empresas que deseja encontrar',states:'Estados (UF, separados por vírgula)',offerType:'Oferta ou finalidade'}[key]} value={radarBrief[key]} onChange={value=>setRadarBrief(current=>({...current,[key]:value}))}/>)}<TextField label="Quantidade de empresas" type="number" value={String(radarBrief.requestedCount)} onChange={value=>setRadarBrief(current=>({...current,requestedCount:Number(value)}))}/><p className="text-xs text-yx-fg-3">Salvar a campanha não inicia pesquisa. O pedido de pesquisa exige aprovação.</p></fieldset>:null}</div>:null}
           {step === 1 ? <MissionRecipePicker organizationId={organizationId} canWrite={canWrite} selectedKey={recipe?.key} onSelect={selectRecipe} /> : null}
           {step === 1 ? <div className="space-y-5 py-2"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"><button type="button" onClick={selectCampaignLaunch} className={`flex w-full items-start gap-3 border p-4 text-left ${quickStart === 'campaign_launch' ? 'border-yx-blue bg-yx-blue-soft' : 'border-yx-line hover:border-yx-line-strong'}`}><Sparkles className="mt-0.5 h-5 w-5 text-yx-blue" /><span><span className="block text-sm font-semibold text-yx-fg">Campanha completa</span><span className="mt-1 block text-xs leading-5 text-yx-fg-2">Prepara público, peças, captação, tracking e mídia pausada para aprovação.</span></span></button><button type="button" onClick={selectFunnelNurture} className={`flex w-full items-start gap-3 border p-4 text-left ${quickStart === 'funnel_nurture' ? 'border-yx-blue bg-yx-blue-soft' : 'border-yx-line hover:border-yx-line-strong'}`}><Sparkles className="mt-0.5 h-5 w-5 text-yx-blue" /><span><span className="block text-sm font-semibold text-yx-fg">Funil + nutrição</span><span className="mt-1 block text-xs leading-5 text-yx-fg-2">Prepara funil, e-mails, sequência e automação para revisão.</span></span></button><button type="button" onClick={selectRevenueRecovery} className={`flex w-full items-start gap-3 border p-4 text-left ${quickStart === 'revenue_recovery' ? 'border-yx-blue bg-yx-blue-soft' : 'border-yx-line hover:border-yx-line-strong'}`}><Sparkles className="mt-0.5 h-5 w-5 text-yx-blue" /><span><span className="block text-sm font-semibold text-yx-fg">Recuperação de receita</span><span className="mt-1 block text-xs leading-5 text-yx-fg-2">Recupera oportunidades inativas com abordagem segura.</span></span></button></div><label className="block space-y-2"><span className="text-sm font-semibold text-yx-fg">Descreva o resultado desejado</span><textarea aria-label="Descreva o resultado desejado" className="min-h-36 w-full border border-yx-line-strong p-3 text-sm leading-6 outline-none focus:border-yx-blue" placeholder="Ex.: crie um funil comercial com quatro etapas e automatize uma sequência de quatro e-mails para novos leads" value={objective} onChange={event => updateObjective(event.target.value)} /><span className="block text-xs text-yx-fg-3">O agente fará no máximo três perguntas de esclarecimento, agrupadas.</span></label><div className="grid gap-4 sm:grid-cols-2"><TextField label="Título opcional" value={title} onChange={setTitle} placeholder="Será sugerido a partir do objetivo" /><TextField label="Valor esperado opcional (R$)" value={expectedValueBrl} onChange={setExpectedValueBrl} type="number" placeholder="0" /></div></div> : <div className="space-y-5 py-2"><AutonomyEnvelopeForm value={envelope} onChange={setEnvelope} /><div className="border border-yx-line bg-yx-surface-2 p-4"><p className="text-xs font-bold uppercase tracking-wide text-yx-fg-3">Antes de executar</p><p className="mt-2 text-sm leading-6 text-yx-fg-2">Conexões, permissões, consentimento, ownership, orçamento e catálogo serão verificados novamente imediatamente antes de cada ação.</p>{envelopeBlockers.length > 0 ? <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-yx-crit">{envelopeBlockers.map(blocker => <li key={blocker}>{blocker}</li>)}</ul> : null}</div></div>}
           {error ? <p className="border border-yx-crit-line bg-yx-crit-soft p-3 text-sm text-yx-crit">{error}</p> : null}

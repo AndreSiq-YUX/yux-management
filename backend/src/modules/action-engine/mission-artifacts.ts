@@ -5,6 +5,7 @@ type RecordValue = Record<string, unknown>
 export type MissionArtifactProjection = {
   key: string
   kind: 'funnel' | 'email' | 'sequence' | 'automation'
+    | 'radar_campaign' | 'radar_result'
     | 'campaign_brief' | 'campaign_audience' | 'campaign_creative'
     | 'campaign_landing_page' | 'campaign_lead_form' | 'campaign_tracking' | 'campaign_provider'
   title: string
@@ -28,6 +29,21 @@ export function buildMissionArtifactProjections(input: {
   sources: Array<{ id: string; title: string; category: string }>
 }): MissionArtifactProjection[] {
   const parameters = record(input.plan.parameters)
+  if(input.actions.some(action=>String(action.stepKey).startsWith('pack.')&&['pack.campaign','pack.await'].includes(String(action.stepKey)))) {
+    const campaign=record(parameters.campaign)
+    const saved=actionEvidence(latestAction(input.actions,'pack.campaign'))
+    const outcome=actionEvidence(latestAction(input.actions,'pack.await'))
+    const safeCampaign=Object.fromEntries(['name','targetSegment','targetStates','cities','offerType'].filter(key=>campaign[key]!==undefined).map(key=>[key,campaign[key]]))
+    // Nested objects never inherit new fields from domain outputs.
+    if(Array.isArray(safeCampaign.cities))safeCampaign.cities=safeCampaign.cities.map(value=>{const city=record(value);return{city:city.city,state:city.state}})
+    const counts=record(outcome.counts)
+    const safeCounts=Object.fromEntries(['requested','found','complete','withGaps','outsideProfile','waiting','approved'].filter(key=>typeof counts[key]==='number').map(key=>[key,counts[key]]))
+    const campaignId=typeof saved.campaignId==='string'&&/^[a-f0-9-]{36}$/i.test(saved.campaignId)?saved.campaignId:undefined
+    const artifacts=[{key:'radar.campaign',kind:'radar_campaign' as const,title:'Campanha do Radar',data:{...safeCampaign,requestedCount:parameters.requestedCount,state:campaignId?'saved':'proposed'}},
+      {key:'radar.prospecting_result',kind:'radar_result' as const,title:'Pesquisa de empresas',data:{state:['completed','partial','blocked','pending'].includes(String(outcome.status))?outcome.status:'not_started',counts:safeCounts}}]
+    return artifacts.map(artifact=>({...artifact,status:campaignId?'draft' as const:'proposed' as const,contentHash:missionArtifactHash(artifact.data),
+      ...(campaignId?{entityId:campaignId}:{}),staleApproval:false,proposedVersion:{status:'proposed',contentHash:missionArtifactHash(artifact.data)},citations:[],complianceWarnings:['Pesquisa não autoriza contato nem entrega automática ao CRM.']}))
+  }
   const campaignBundle = record(parameters.campaignLaunchArtifacts)
   if (Object.keys(campaignBundle).length) return buildCampaignArtifacts(campaignBundle, input)
   const bundle = record(parameters.funnelNurtureArtifacts)

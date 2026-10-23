@@ -1,4 +1,5 @@
 import { CapabilityRegistry } from '../capability-registry.js'
+import { radarCapabilities } from './radar.js'
 import { crmLeadAssignOwner, crmLeadTimelineRead, crmPipelineSnapshot, crmRecoveryCandidatesSearch, crmTaskCreate } from './crm.js'
 import { growthSegmentPreview } from './growth.js'
 import { humanTaskCreate } from './human.js'
@@ -20,7 +21,7 @@ import {
 } from './campaign-optimization.js'
 
 export function createActionEngineCapabilityRegistry(): CapabilityRegistry {
-  return new CapabilityRegistry()
+  const registry=new CapabilityRegistry()
     .register(systemReadinessCheck)
     .register(systemApprovalAwait)
     .register(systemSignalWait)
@@ -67,4 +68,6 @@ export function createActionEngineCapabilityRegistry(): CapabilityRegistry {
     .register(emailMessageQueue)
     .register(whatsappTemplateQueue)
     .register(automationFlowExecute)
+  for(const capability of radarCapabilities)registry.register(capability)
+  return registry
 }

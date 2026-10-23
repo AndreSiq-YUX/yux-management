@@ -118,6 +118,7 @@ function scheduleActionEngineMaintenance() {
   const learningWindow = Math.floor(Date.now() / missionLearningIntervalMs)
   return Promise.all([
     maintenanceQueue.add('action-engine.expireWaits', { window: waitWindow, limit: 100 }, { jobId: createBullMqJobId('action-engine-expire-waits', waitWindow) }),
+    maintenanceQueue.add('action-engine.reconcileRadarOperations', { window: waitWindow }, { jobId: createBullMqJobId('action-engine-radar-waits', waitWindow) }),
     maintenanceQueue.add('action-engine.collectMetrics', { window: metricWindow }, { jobId: createBullMqJobId('action-engine-collect-metrics', metricWindow) }),
     maintenanceQueue.add('action-engine.campaignOptimizationCheckpoint', { window: optimizationWindow }, { jobId: createBullMqJobId('action-engine-campaign-optimization', optimizationWindow) }),
     maintenanceQueue.add('action-engine.generateLearning', { window: learningWindow, limit: 50 }, { jobId: createBullMqJobId('action-engine-generate-learning', learningWindow) }),

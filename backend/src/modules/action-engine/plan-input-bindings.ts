@@ -27,7 +27,7 @@ export function collectPlanInputBindingSteps(input: unknown): string[] {
     if (Array.isArray(value)) return value.forEach(visit)
     if (typeof value === 'string' && value.startsWith('binding:')) {
       const reference = value.slice('binding:'.length)
-      const marker = reference.lastIndexOf('.')
+      const marker = reference.includes('.output.') ? reference.indexOf('.output.') : reference.lastIndexOf('.')
       if (marker > 0) found.add(reference.slice(0, marker))
       return
     }
@@ -51,6 +51,9 @@ function resolveReference(value: string, context: { resolvedParameters: JsonReco
     if (resolved !== undefined) return resolved
   }
   if (context.validation) {
+    if (/\.(configurationRevision|criteriaRevision|requestedCount)$/.test(reference)) return 1
+    if (reference.endsWith('.ref')) return {operationType:'capture',operationId:'00000000-0000-4000-8000-000000000001',requestId:'00000000-0000-4000-8000-000000000002',campaignId:'00000000-0000-4000-8000-000000000003',configurationRevision:1,criteriaRevision:1}
+    if (reference.endsWith('approvalSubjectHash')) return createHash('sha256').update(reference).digest('hex')
     if (reference.endsWith('contentHash')) return createHash('sha256').update(reference).digest('hex')
     const suffix = createHash('sha256').update(reference).digest('hex').slice(0, 12)
     return `00000000-0000-4000-8000-${suffix}`

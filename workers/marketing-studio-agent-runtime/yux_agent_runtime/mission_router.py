@@ -31,6 +31,7 @@ PACK_PROFILES = {
     "revenue_recovery": ["revenue_recovery"],
     "funnel_nurture": ["funnel_nurture"],
     "campaign_launch": ["campaign_launch"],
+    "radar_prospecting": ["growth_strategist"],
 }
 
 
@@ -42,8 +43,14 @@ class MissionRouter:
         selected: list[str] = []
         if re.search(r"funil|pipeline|nutri[cç][aã]o|sequ[eê]ncia\s+de\s+e-?mails?", objective):
             selected.append("funnel_nurture")
-        if re.search(r"campanha|meta\s*ads?|google\s*ads?|m[ií]dia\s+paga|an[uú]ncios?", objective):
+        radar = bool(re.search(r"radar|prospec[cç][aã]o|pesquisar.*empresas", objective))
+        ads = bool(re.search(r"meta\s*ads?|google\s*ads?|m[ií]dia\s+paga|campanha\s+(?:paga|publicit[aá]ria|de\s+publicidade)|an[uú]ncios?", objective))
+        if radar:
+            selected.append("radar_prospecting")
+        if ads:
             selected.append("campaign_launch")
+        if re.search(r"campanha", objective) and not radar and not ads:
+            return MissionRoute(clarification_questions=[RoutedQuestion(key="campaign_kind", label="Você quer pesquisar empresas no Radar ou criar uma campanha de publicidade?", whyNeeded="Prospecção e publicidade usam fluxos diferentes.")], rationale="Precisamos confirmar o tipo de campanha antes de escolher o fluxo.")
         if re.search(r"receita|revenue|oportunidades?\s+inativ|recuper", objective):
             selected.append("revenue_recovery")
         selected = list(dict.fromkeys(selected))

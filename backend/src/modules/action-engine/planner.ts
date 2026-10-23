@@ -12,6 +12,7 @@ import { collectPlanInputBindingSteps, resolvePlanInputBindings } from './plan-i
 import { compileCompositePlan, type CompositeArtifactBinding } from './composite-plan.js'
 import { createPublishedPackRegistry } from './pack-registry.js'
 import { resolvePackSelection } from './pack-resolver.js'
+import { radarProspectingParameters } from './packs/radar-prospecting-v1.js'
 
 const decimal = z.string().regex(/^-?\d+(\.\d+)?$/)
 const harnessStep = z.object({
@@ -276,6 +277,13 @@ export function compileMissionPlan(input: {
   }
   assertAcyclic(raw.steps)
   validatePlanConformance(internal, input.pack)
+  if(input.pack.key==='radar_prospecting'){
+    radarProspectingParameters.parse({campaign:raw.resolvedParameters.campaign,requestedCount:raw.resolvedParameters.requestedCount})
+    for(const template of input.pack.topologyTemplate.steps){
+      const proposed=raw.steps.find(step=>step.stepKey===template.stepKey)
+      if(!proposed||stableSerialize(proposed.input)!==stableSerialize(template.defaultParameters))throw new Error('radar_plan_protected_input_changed')
+    }
+  }
 
   const stepKeys = new Set(raw.steps.map((step) => step.stepKey))
   for (const step of raw.steps) {

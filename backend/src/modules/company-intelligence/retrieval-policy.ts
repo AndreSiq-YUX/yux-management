@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { z } from 'zod'
 import type { KnowledgeQueryV1, KnowledgeSourceRefV1, RetrievalResultV1 } from '../../contracts/generated/knowledge.js'
-import { hashCanonical } from '../action-engine/repository.js'
+import { hashCanonical, type Queryable } from '../action-engine/repository.js'
 
 export const knowledgeQueryV1Schema = z.object({
   schemaVersion: z.literal(1),
@@ -112,7 +112,7 @@ export function parseLegacyKnowledgeArgs(value: unknown) {
 }
 
 export async function retrieveAuthorizedKnowledge(
-  pool: Pick<pg.Pool, 'query'>,
+  pool: Queryable,
   input: KnowledgeQueryV1,
   options: { queryEmbedding?: number[]; embeddingModel?: string } = {},
 ): Promise<AuthorizedKnowledgeRetrieval> {
@@ -151,7 +151,7 @@ export async function retrieveAuthorizedKnowledge(
 }
 
 export async function recordAuthorizedKnowledgeRetrieval(
-  pool: Pick<pg.Pool, 'query'>,
+  pool: Queryable,
   input: KnowledgeQueryV1,
   retrieval: AuthorizedKnowledgeRetrieval,
 ) {

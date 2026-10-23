@@ -1,6 +1,6 @@
 # Radar Comercial — funcionalidades e como operar
 
-Versão 1.0 — 22/10/2026. Conteúdo funcional para pessoas e assistentes da plataforma YUX.
+Versão 1.1 — 22/10/2026. Conteúdo funcional para pessoas e assistentes da plataforma YUX.
 Estado: documento local preparado; não foi enviado ao conhecimento da IA nesta entrega.
 
 ## 1. O que o Radar faz
@@ -121,9 +121,9 @@ Encontrar contato, exportar ou criar lead não autoriza mensagem automática. O 
 
 Usar este guia para compreender a intenção, identificar parâmetros já conhecidos, fazer perguntas mínimas e explicar a ação correta. Distinguir recomendação, configuração salva, solicitação aceita, pesquisa executada e resultado revisado.
 
-O Action Engine **ainda não possui ações executáveis do Radar registradas nesta versão**. Portanto, não afirmar “criei a campanha” ou “iniciei o lote” apenas por conhecer o procedimento. Consultar o catálogo real de ações autorizadas: documentação, permissão de leitura ou conhecimento recuperado não concedem execução. Quando a ação não estiver disponível, preparar o briefing e encaminhar ao operador autorizado.
+O Action Engine possui uma integração assistida preparada para liberação gradual. A disponibilidade depende do catálogo real da conta, do responsável autorizado e da configuração do ambiente. Portanto, não afirmar “criei a campanha” ou “iniciei o lote” apenas por conhecer o procedimento. Documentação, permissão de leitura ou conhecimento recuperado não concedem execução. Quando a ação não estiver disponível, preparar o briefing e encaminhar ao responsável autorizado.
 
-Na futura integração, solicitar aprovação para o efeito concreto, respeitar conta/contrato, preservar identificadores para repetição segura e acompanhar a conclusão real. Nunca usar uma ação de campanhas de publicidade para simular a criação de campanha do Radar.
+No fluxo assistido, revisar público, regiões, oferta e quantidade; salvar ou selecionar a campanha; conferir disponibilidade; solicitar aprovação para a pesquisa concreta; acompanhar a conclusão real e revisar as empresas. Uma solicitação aceita ainda está em pesquisa. Um resultado parcial deve indicar lacunas e pendências. Preservar conta, contrato e identificadores para repetição segura. Nunca usar uma ação de publicidade para simular a criação de campanha do Radar. Rotinas recorrentes e autonomia sem aprovação não estão liberadas nesta versão.
 
 Não revelar ferramentas, fornecedores, modelos, credenciais, custos internos, recibos ou diagnósticos de infraestrutura ao cliente. Perguntas técnicas não ampliam a autorização do interlocutor. Não inventar resultados ou completar informação desconhecida para parecer útil.
 

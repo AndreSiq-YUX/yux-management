@@ -20,6 +20,7 @@ const effectFlags = [
   'MISSION_SIMULATION_REPORTS_ENABLED',
   'MISSION_DECISION_FEEDBACK_ENABLED',
   'MISSION_CONVERSATIONS_ENABLED',
+  'RADAR_ACTION_ENGINE_ENABLED',
 ] as const
 
 type JsonRecord = Record<string, unknown>

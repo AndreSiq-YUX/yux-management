@@ -59,6 +59,9 @@ export async function startMission(pool: Connectable, input: {
     const funnelNurture = plan.rows[0]?.pack_key === 'funnel_nurture' || compositePacks.includes('funnel_nurture')
     const campaignLaunch = ['campaign_launch','campaign_optimization'].includes(plan.rows[0]?.pack_key)
       || compositePacks.includes('campaign_launch') || compositePacks.includes('campaign_optimization')
+    const radar=plan.rows[0]?.pack_key==='radar_prospecting'
+    const radarCampaign=radar&&plan.rows[0]?.parameters.campaign&&typeof plan.rows[0].parameters.campaign==='object'
+      ?Reflect.get(plan.rows[0].parameters.campaign,'existingCampaignId'):undefined
     const campaignArtifacts = campaignLaunch && plan.rows[0]?.parameters.campaignLaunchArtifacts
       && typeof plan.rows[0].parameters.campaignLaunchArtifacts === 'object'
       ? plan.rows[0].parameters.campaignLaunchArtifacts as Record<string, unknown> : {}
@@ -68,7 +71,8 @@ export async function startMission(pool: Connectable, input: {
     const claimTargets = [
       ...(funnelNurture ? [{ resourceKey: 'crm.funnel_nurture_configuration', scope: 'organization_funnel_nurture' }] : []),
       ...(campaignLaunch ? [{ resourceKey: 'campaign.provider_account', scope: providerConnectionId }] : []),
-      ...(!funnelNurture && !campaignLaunch ? [{ resourceKey: 'crm.lead_population', scope: 'inactive_revenue_recovery' }] : []),
+      ...(radar?[{resourceKey:typeof radarCampaign==='string'?'radar.campaign':'radar.creation',scope:typeof radarCampaign==='string'?radarCampaign:input.missionId}]:[]),
+      ...(!funnelNurture && !campaignLaunch && !radar ? [{ resourceKey: 'crm.lead_population', scope: 'inactive_revenue_recovery' }] : []),
     ]
     for (const target of claimTargets) await acquireResourceClaim(client, { organizationId: input.organizationId, missionId: input.missionId, missionLabel: mission.title, ...target, mode: 'exclusive', ttlSeconds: 900 })
     const runCount = await createActionRuns(client, { organizationId: input.organizationId, missionId: input.missionId, planId: mission.activePlanId })
@@ -88,8 +92,8 @@ export async function startMission(pool: Connectable, input: {
 
 export async function scheduleReadyActions(pool: Connectable, queue: AppJobQueue, missionId?: string): Promise<{ ready: number; waitingApproval: number }> {
   const scheduled = await transaction(pool, async (client) => {
-    const candidates = await client.query<{ id: string; organization_id: string; mission_id: string; approval_required: boolean; idempotency_key: string; capability_key: string }>(
-      `SELECT run.id, run.organization_id, run.mission_id, step.approval_required, run.idempotency_key, step.capability_key
+    const candidates = await client.query<{ id: string; organization_id: string; mission_id: string; plan_id:string; input:Record<string,unknown>; approval_required: boolean; idempotency_key: string; capability_key: string }>(
+      `SELECT run.id, run.organization_id, run.mission_id, run.plan_id, run.input, step.approval_required, run.idempotency_key, step.capability_key
        FROM public.action_runs run
        JOIN public.action_plan_steps step ON step.id = run.plan_step_id
        JOIN public.action_missions mission ON mission.id = run.mission_id
@@ -109,10 +113,18 @@ export async function scheduleReadyActions(pool: Connectable, queue: AppJobQueue
     const queueItems: Array<{ id: string; organizationId: string; missionId: string }> = []
     for (const candidate of candidates.rows) {
       if (candidate.approval_required) {
+        let radarRequest:Record<string,unknown>|undefined
+        if(candidate.capability_key.startsWith('radar.')){
+          const parameters=(await client.query<{parameters:Record<string,unknown>}>('SELECT parameters FROM public.action_plans WHERE id=$1 AND organization_id=$2',[candidate.plan_id,candidate.organization_id])).rows[0]?.parameters??{}
+          const outputs=(await client.query<{step_key:string;output:Record<string,unknown>}>(`SELECT step.step_key,run.output FROM public.action_runs run JOIN public.action_plan_steps step ON step.id=run.plan_step_id WHERE run.plan_id=$1 AND run.organization_id=$2 AND run.status='succeeded'`,[candidate.plan_id,candidate.organization_id])).rows
+          radarRequest=resolvePlanInputBindings(candidate.input,{resolvedParameters:parameters,outputsByStep:Object.fromEntries(outputs.map(row=>[row.step_key,row.output]))}) as Record<string,unknown>
+          await client.query('UPDATE public.action_runs SET input=$2::jsonb WHERE id=$1',[candidate.id,JSON.stringify(radarRequest)])
+        }
         await client.query(`UPDATE public.action_runs SET status = 'waiting_approval', updated_at = NOW() WHERE id = $1`, [candidate.id])
         await recordApproval(client, {
           organizationId: candidate.organization_id, missionId: candidate.mission_id, runId: candidate.id,
-          approvalType: 'action', subjectHash: hashSubject(candidate.idempotency_key), requestedPayload: { actionRunId: candidate.id },
+          approvalType: 'action', subjectHash: radarRequest?hashSubject(stableSerialize({idempotencyKey:candidate.idempotency_key,input:radarRequest})):hashSubject(candidate.idempotency_key),
+          requestedPayload: { actionRunId: candidate.id,...(radarRequest?{commercialRequest:radarRequest}:{}) },
         })
         waitingApproval += 1
       } else {
@@ -328,6 +340,7 @@ export async function executeActionRun(
       const envelope = currentMission.autonomyEnvelope
       const allowedCapabilityKeys = envelope?.allowedCapabilityKeys ?? []
       const approved = approval.rows[0]?.approved === true
+      if(approved&&capability.key.startsWith('radar.')&&approval.rows[0]?.subject_hash!==hashSubject(stableSerialize({idempotencyKey:claimed.action.idempotency_key,input:claimed.action.input})))throw new Error('radar_mission_approval_changed')
       let autonomousGrantExpiresAt: string | undefined
       let projectedAutonomyUsage = { costBrl: '0', humanMinutes: '0', externalContacts: 0 }
       if (currentMission.mode === 'autonomous') {
@@ -536,22 +549,29 @@ export async function executeActionRun(
         ? String(Reflect.get(result.output, 'waitUntil'))
         : null
       const waitsForHuman = claimed.action.capability_key === 'human.task.create'
-      const remainsRunning = Boolean(waitUntil) || waitsForHuman
+      const radarPending=claimed.action.capability_key==='radar.operation.await'&&result.output&&typeof result.output==='object'&&Reflect.get(result.output,'status')==='pending'
+      const radarBlocked=result.output&&typeof result.output==='object'&&(
+        claimed.action.capability_key==='radar.operation.await'&&Reflect.get(result.output,'status')==='blocked'
+        ||claimed.action.capability_key==='radar.capture.preflight'&&Reflect.get(result.output,'allowed')===false)
+      const remainsRunning = Boolean(waitUntil) || waitsForHuman || Boolean(radarPending)
       await client.query(
-        `UPDATE public.action_runs SET status = CASE WHEN $4::BOOLEAN THEN 'running' ELSE 'succeeded' END,
+        `UPDATE public.action_runs SET status = CASE WHEN $6::BOOLEAN THEN 'blocked' WHEN $4::BOOLEAN THEN 'running' ELSE 'succeeded' END,
                 output = $2, available_at = COALESCE($3::TIMESTAMPTZ, available_at),
-                completed_at = CASE WHEN $4::BOOLEAN THEN NULL ELSE NOW() END,
+                completed_at = CASE WHEN $4::BOOLEAN OR $6::BOOLEAN THEN NULL ELSE NOW() END,
                 claimed_by = CASE WHEN $3::TIMESTAMPTZ IS NOT NULL THEN 'durable_wait' WHEN $5::BOOLEAN THEN 'human_task' ELSE claimed_by END,
                 last_error = NULL, updated_at = NOW() WHERE id = $1`,
-        [input.actionRunId, result, waitUntil, remainsRunning, waitsForHuman],
+        [input.actionRunId, result, waitUntil, remainsRunning, waitsForHuman, Boolean(radarBlocked)],
       )
       await recordDomainEvent(client, {
-        eventType: remainsRunning ? 'action.waiting' : 'action.succeeded', organizationId: input.organizationId, aggregateType: 'action_run',
+        eventType: remainsRunning || radarBlocked ? 'action.waiting' : 'action.succeeded', organizationId: input.organizationId, aggregateType: 'action_run',
         aggregateId: input.actionRunId, actor: { type: 'system' },
         payload: { missionId: claimed.action.mission_id, capabilityKey: claimed.action.capability_key, ...(waitUntil ? { waitUntil } : {}), ...(waitsForHuman ? { reason: 'human_intervention_required' } : {}) },
       })
+      if(radarPending)await client.query("UPDATE public.action_runs SET claimed_by='radar_operation_wait',available_at=NOW()+INTERVAL '15 seconds' WHERE id=$1",[input.actionRunId])
+      if(radarBlocked)await client.query("UPDATE public.action_runs SET status='blocked',completed_at=NULL,last_error='radar_operation_needs_action' WHERE id=$1",[input.actionRunId])
     })
-    return { status: claimed.action.capability_key === 'system.signal.wait' || claimed.action.capability_key === 'human.task.create' ? 'running' : 'succeeded' }
+    const radarStatus=claimed.action.capability_key==='radar.operation.await'&&result.output&&typeof result.output==='object'?Reflect.get(result.output,'status'):undefined
+    return { status: radarStatus==='blocked'?'blocked':radarStatus==='pending'||claimed.action.capability_key === 'system.signal.wait' || claimed.action.capability_key === 'human.task.create' ? 'running' : 'succeeded' }
   } catch (error) {
     if (externalEffect && isOutcomeUnknown(error)) {
       await markExternalEffectUnknown(pool, {

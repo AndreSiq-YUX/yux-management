@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto'
+import type pg from 'pg'
+import { executeRadarMissionCommand,type RadarActionEngineConfig } from '../radar/action-engine-commands.js'
 import { enrollLeadInSequence } from '../crm/scheduler.js'
 import { recordDomainEvent } from '../events/repository.js'
 import type { CapabilityContext } from './capability-registry.js'
@@ -22,8 +24,12 @@ import { createLandingPageDraft, createLeadFormDraft } from '../landing-pages/mi
 
 type CommandInput = Record<string, unknown>
 
-export function createActionEngineCommands(pool: Connectable, missionId: string): NonNullable<CapabilityContext['commands']> {
+export function createActionEngineCommands(pool: Connectable, missionId: string,radarConfig:RadarActionEngineConfig={}): NonNullable<CapabilityContext['commands']> {
   return {
+    runRadarCommand:({key,input,context})=>{
+      if(context.missionId!==missionId)throw new Error('radar_mission_scope_forbidden')
+      return executeRadarMissionCommand(pool as pg.Pool,radarConfig,context,key,input)
+    },
     createTask: (input) => createLeadTask(pool, missionId, input),
     cancelTask: (input) => cancelLeadTask(pool, missionId, input),
     assignLeadOwner: (input) => assignLeadOwner(pool, missionId, input),

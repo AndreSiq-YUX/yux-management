@@ -1,6 +1,7 @@
 import type { ZodType } from 'zod'
 import type { DomainEventActor } from '../events/types.js'
 import type { MissionMode } from './types.js'
+import type { RadarCapabilityKey,RadarMissionContext } from '../radar/action-engine-contracts.js'
 
 export type CapabilityRisk = 'read_only' | 'low' | 'medium' | 'high'
 export type CapabilityEffect = 'none' | 'draft' | 'internal' | 'external' | 'destructive'
@@ -17,6 +18,7 @@ export type CapabilityContext = {
   fencingToken?: string
   query: <TRow = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<{ rows: TRow[]; rowCount?: number | null }>
   commands?: {
+    runRadarCommand?: (request: { key: RadarCapabilityKey; input: unknown; context: RadarMissionContext }) => Promise<Record<string,unknown>>
     createTask?: (input: Record<string, unknown>) => Promise<unknown>
     cancelTask?: (input: Record<string, unknown>) => Promise<unknown>
     assignLeadOwner?: (input: Record<string, unknown>) => Promise<unknown>

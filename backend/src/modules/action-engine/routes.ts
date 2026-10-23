@@ -8,6 +8,8 @@ import { createActionEngineCapabilityRegistry } from './capabilities/index.js'
 import { REVENUE_RECOVERY_PACK_V0 } from './packs/revenue-recovery-v0.js'
 import { FUNNEL_NURTURE_PACK_V1 } from './packs/funnel-nurture-v1.js'
 import { CAMPAIGN_LAUNCH_PACK_V1 } from './packs/campaign-launch-v1.js'
+import { RADAR_PROSPECTING_PACK_V1 } from './packs/radar-prospecting-v1.js'
+import { ensureRadarProspectingPackVersion, radarMissionAvailable } from './radar-pack-registration.js'
 import { evaluateMissionReadiness, resolveReadinessCorrectionTargets, summarizeAutonomyHealth } from './readiness.js'
 import {
   answerMissionClarification, approvePlanRevision, createMission, decideActionApproval, getMission, getPlan, listMissionApprovals, listMissionPlans, listMissions,
@@ -93,7 +95,8 @@ const missionIntentCreate = z.object({
   objective: z.string().min(10).max(2000), mode: z.enum(['shadow','prepare','assisted','autonomous']).default('assisted'),
   deadlineAt: z.string().datetime(), allowedModules: z.array(z.string().min(1)).min(1).max(50),
   maxTotalCostBrl: decimal, maxHumanHours: decimal, maxExternalContacts: z.number().int().nonnegative().optional(),
-  expectedValueBrl: decimal.optional(), quickStart: z.enum(['revenue_recovery','funnel_nurture','campaign_launch']).optional(),
+  expectedValueBrl: decimal.optional(), quickStart: z.enum(['revenue_recovery','funnel_nurture','campaign_launch','radar_prospecting']).optional(),
+  radarParameters: RADAR_PROSPECTING_PACK_V1.parameters.optional(),
   recipeSelection: z.object({ key: z.string().min(1).max(100), version: z.number().int().positive(), contentHash: z.string().regex(/^[a-f0-9]{64}$/) }).optional(),
 })
 const clarificationAnswers = z.object({
@@ -148,13 +151,17 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
   app.get('/capabilities', async (request) => {
     const ctx = requireAuth(request)
     requireAccess(ctx, 'action_engine.read')
-    return registry.listMetadata()
+    const organizationId=z.object({organizationId:uuid.optional()}).parse(request.query).organizationId
+    const radarAvailable=organizationId&&await radarMissionAvailable(app.pg,app.config,organizationId,ctx.userId)
+    return registry.listMetadata().filter(item=>!item.key.startsWith('radar.')||radarAvailable)
   })
 
   app.get('/action-packs', async (request) => {
     const ctx = requireAuth(request)
     requireAccess(ctx, 'action_engine.read')
-    return [publicPack(REVENUE_RECOVERY_PACK_V0), publicPack(FUNNEL_NURTURE_PACK_V1), publicPack(CAMPAIGN_LAUNCH_PACK_V1)]
+    const organizationId=z.object({organizationId:uuid.optional()}).parse(request.query).organizationId
+    const radarAvailable=organizationId&&await radarMissionAvailable(app.pg,app.config,organizationId,ctx.userId)
+    return [publicPack(REVENUE_RECOVERY_PACK_V0), publicPack(FUNNEL_NURTURE_PACK_V1), publicPack(CAMPAIGN_LAUNCH_PACK_V1),...(radarAvailable?[publicPack(RADAR_PROSPECTING_PACK_V1)]:[])]
   })
 
   app.get('/action-pack-catalog', async (request, reply) => {
@@ -171,7 +178,8 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     )
     if (!organization.rows[0]) return reply.code(404).send({ error: 'organization_not_found' })
     const entitled = new Set(organization.rows[0].modules ?? [])
-    return createPublishedPackRegistry([REVENUE_RECOVERY_PACK_V0,FUNNEL_NURTURE_PACK_V1,CAMPAIGN_LAUNCH_PACK_V1])
+    const radarAvailable=await radarMissionAvailable(app.pg,app.config,query.data.organizationId,ctx.userId)
+    return createPublishedPackRegistry([REVENUE_RECOVERY_PACK_V0,FUNNEL_NURTURE_PACK_V1,CAMPAIGN_LAUNCH_PACK_V1,...(radarAvailable?[RADAR_PROSPECTING_PACK_V1]:[])])
       .list()
       .filter(entry => organization.rows[0]!.kind === 'yux' || entry.requiredModules.every(moduleKey => entitled.has(moduleKey)))
       .map(({ pack: _pack, ...entry }) => entry)
@@ -213,8 +221,14 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
   app.get('/action-packs/:packKey/versions/:semanticVersion', async (request, reply) => {
     const ctx = requireAuth(request)
     requireAccess(ctx, 'action_engine.read')
-    const parsed = z.object({ packKey: z.enum(['revenue_recovery','funnel_nurture','campaign_launch']), semanticVersion: z.string().min(1).max(40) }).safeParse(request.params)
+    const parsed = z.object({ packKey: z.enum(['revenue_recovery','funnel_nurture','campaign_launch','radar_prospecting']), semanticVersion: z.string().min(1).max(40) }).safeParse(request.params)
     if (!parsed.success) return reply.code(404).send({ error: 'action_pack_not_found' })
+    if (parsed.data.packKey === RADAR_PROSPECTING_PACK_V1.key) {
+      const query=organizationQuery.safeParse(request.query)
+      if(!query.success||!await radarMissionAvailable(app.pg,app.config,query.data.organizationId,ctx.userId))return reply.code(404).send({error:'action_pack_not_found'})
+      if(parsed.data.semanticVersion===RADAR_PROSPECTING_PACK_V1.semanticVersion)return publicPack(RADAR_PROSPECTING_PACK_V1)
+      return reply.code(404).send({error:'action_pack_not_found'})
+    }
     if (parsed.data.packKey === FUNNEL_NURTURE_PACK_V1.key && parsed.data.semanticVersion === FUNNEL_NURTURE_PACK_V1.semanticVersion) return publicPack(FUNNEL_NURTURE_PACK_V1)
     if (parsed.data.packKey === CAMPAIGN_LAUNCH_PACK_V1.key && parsed.data.semanticVersion === CAMPAIGN_LAUNCH_PACK_V1.semanticVersion) return publicPack(CAMPAIGN_LAUNCH_PACK_V1)
     if (parsed.data.semanticVersion === '0.1.0') {
@@ -390,8 +404,8 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     const parsed = z.object({
       organizationId: uuid, contractId: uuid.optional(), targetRevenueBrl: decimal, deadlineAt: z.string().datetime(),
       maxTotalCostBrl: decimal, maxHumanHours: decimal, humanHourlyRateBrl: decimal,
-      packKey: z.enum(['revenue_recovery','funnel_nurture','campaign_launch']).optional(),
-      packKeys: z.array(z.enum(['revenue_recovery','funnel_nurture','campaign_launch'])).min(1).max(5).optional(),
+      packKey: z.enum(['revenue_recovery','funnel_nurture','campaign_launch','radar_prospecting']).optional(),
+      packKeys: z.array(z.enum(['revenue_recovery','funnel_nurture','campaign_launch','radar_prospecting'])).min(1).max(5).optional(),
     }).safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_mission_readiness_request' })
     requireAccess(ctx, 'action_engine.write', { organizationId: parsed.data.organizationId })
@@ -532,6 +546,11 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     if (!isMissionConversationRolloutEnabled(app.config, body.data.organizationId)) return reply.code(503).send({ error: 'mission_conversations_disabled' })
     if (app.config.MISSION_SUPERVISOR_ENABLED === false) return reply.code(503).send({ error: 'mission_supervisor_disabled' })
     try {
+      const conversation=await getMissionConversation(app.pg,params.data.conversationId,body.data.organizationId)
+      if(conversation?.currentBrief.packKeys&&Array.isArray(conversation.currentBrief.packKeys)&&conversation.currentBrief.packKeys.includes('radar_prospecting')){
+        if(!await radarMissionAvailable(app.pg,app.config,body.data.organizationId,ctx.userId)||conversation.createdBy!==ctx.userId||conversation.currentBrief.mode==='autonomous')return reply.code(403).send({error:'radar_mission_unavailable'})
+        await ensureRadarProspectingPackVersion(app.pg,ctx.userId)
+      }
       const result = await confirmMissionConversationBrief(app.pg as never, {
         organizationId: body.data.organizationId, conversationId: params.data.conversationId,
         expectedVersion: body.data.expectedVersion, briefHash: body.data.briefHash, confirmedBy: ctx.userId,
@@ -611,6 +630,8 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       const recipePacks = recipe?.packSelections ?? []
       const packKeys = recipe ? recipePacks.map((item) => item.key) : selectIntentPacks(parsed.data.quickStart, parsed.data.objective)
       if (packKeys.length === 0) return reply.code(409).send({ error: 'mission_pack_selection_invalid' })
+      const radar=packKeys.includes(RADAR_PROSPECTING_PACK_V1.key)
+      if(radar&&(!await radarMissionAvailable(app.pg,app.config,parsed.data.organizationId,ctx.userId)||parsed.data.mode==='autonomous'||packKeys.length!==1||!parsed.data.allowedModules.includes('radar')))return reply.code(403).send({error:'radar_mission_unavailable'})
       if (recipe) {
         const allowedModules = Array.isArray(recipe.defaultGoal.allowedModules)
           ? recipe.defaultGoal.allowedModules.filter((item): item is string => typeof item === 'string')
@@ -626,7 +647,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
         return reply.code(403).send({ error: 'campaign_launch_contract_flag_required' })
       }
       const packKey = packKeys[0]!
-      const packVersion = packKey === FUNNEL_NURTURE_PACK_V1.key
+      const packVersion = radar ? await ensureRadarProspectingPackVersion(app.pg,ctx.userId) : packKey === FUNNEL_NURTURE_PACK_V1.key
         ? await ensureFunnelNurturePackVersion(app.pg, ctx.userId)
         : packKey === CAMPAIGN_LAUNCH_PACK_V1.key
           ? await ensureCampaignLaunchPackVersion(app.pg, ctx.userId)
@@ -634,11 +655,12 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       for (const additionalPackKey of packKeys.slice(1)) {
         if (additionalPackKey === FUNNEL_NURTURE_PACK_V1.key) await ensureFunnelNurturePackVersion(app.pg, ctx.userId)
         else if (additionalPackKey === CAMPAIGN_LAUNCH_PACK_V1.key) await ensureCampaignLaunchPackVersion(app.pg, ctx.userId)
-        else await ensurePackVersion(app.pg, ctx.userId)
+        else if(additionalPackKey==='revenue_recovery') await ensurePackVersion(app.pg, ctx.userId)
+        else throw new Error('mission_action_pack_unavailable')
       }
       const expectedValue = parsed.data.expectedValueBrl ?? '1'
       const deadlineDays = Math.max(1, Math.min(180, Math.ceil((Date.parse(parsed.data.deadlineAt) - Date.now()) / 86_400_000)))
-      const parameters = packKeys.includes(CAMPAIGN_LAUNCH_PACK_V1.key) ? {
+      const parameters = radar ? {...(parsed.data.radarParameters??{}),maxTotalCostBrl:parsed.data.maxTotalCostBrl,maxHumanHours:parsed.data.maxHumanHours} : packKeys.includes(CAMPAIGN_LAUNCH_PACK_V1.key) ? {
         targetLeads: 50, maximumCplBrl: '100', observationDays: 30,
         totalBudgetBrl: parsed.data.maxTotalCostBrl,
         targetRevenueBrl: expectedValue, deadlineDays, inactiveDays: 60, canarySize: 20, maxPopulation: 100,
@@ -1280,35 +1302,41 @@ async function ensureCampaignLaunchPackVersion(client: Queryable, createdBy: str
   })
 }
 
-function selectIntentPacks(quickStart: 'revenue_recovery' | 'funnel_nurture' | 'campaign_launch' | undefined, objective: string) {
+function selectIntentPacks(quickStart: 'revenue_recovery' | 'funnel_nurture' | 'campaign_launch' | 'radar_prospecting' | undefined, objective: string) {
   if (quickStart) return [quickStart]
+  if (/(radar|prospec[cç][aã]o|pesquisar.*empresas)/iu.test(objective)) return [RADAR_PROSPECTING_PACK_V1.key]
+  if (/campanha/iu.test(objective)&&!/(meta\s*ads?|google\s*ads?|m[ií]dia\s+paga|campanha\s+(?:paga|publicit[aá]ria|de\s+publicidade)|an[uú]ncios?)/iu.test(objective))return []
   const selected: string[] = []
   if (/(funil|pipeline|nutri[cç][aã]o|sequ[eê]ncia\s+de\s+e-?mails?|automati[sz].*e-?mails?)/iu.test(objective)) {
     selected.push(FUNNEL_NURTURE_PACK_V1.key)
   }
-  if (/(campanha|meta\s*ads?|google\s*ads?|m[ií]dia\s+paga|an[uú]ncios?)/iu.test(objective)) {
+  if (/(campanha|meta\s*ads?|google\s*ads?|m[ií]dia\s+paga|campanha\s+(?:paga|publicit[aá]ria|de\s+publicidade)|an[uú]ncios?)/iu.test(objective)) {
     selected.push(CAMPAIGN_LAUNCH_PACK_V1.key)
   }
   return selected.length > 0 ? selected : [REVENUE_RECOVERY_PACK_V0.key]
 }
 
 function packDefinitionForKey(packKey: string) {
+  if (packKey === RADAR_PROSPECTING_PACK_V1.key) return RADAR_PROSPECTING_PACK_V1
   if (packKey === CAMPAIGN_LAUNCH_PACK_V1.key) return CAMPAIGN_LAUNCH_PACK_V1
   if (packKey === FUNNEL_NURTURE_PACK_V1.key) return FUNNEL_NURTURE_PACK_V1
-  return REVENUE_RECOVERY_PACK_V0
+  if (packKey === REVENUE_RECOVERY_PACK_V0.key) return REVENUE_RECOVERY_PACK_V0
+  throw new Error('mission_action_pack_unavailable')
 }
 
-function missionPackKey(selection: Record<string, unknown>): 'revenue_recovery' | 'funnel_nurture' | 'campaign_launch' {
+function missionPackKey(selection: Record<string, unknown>): 'revenue_recovery' | 'funnel_nurture' | 'campaign_launch' | 'radar_prospecting' {
   const packs = Array.isArray(selection.packs) ? selection.packs : []
   const key = packs[0] && typeof packs[0] === 'object' ? Reflect.get(packs[0], 'key') : undefined
-  return key === 'campaign_launch' ? 'campaign_launch' : key === 'funnel_nurture' ? 'funnel_nurture' : 'revenue_recovery'
+  if(key==='radar_prospecting'||key==='campaign_launch'||key==='funnel_nurture'||key==='revenue_recovery')return key
+  if(key!==undefined)throw new Error('mission_action_pack_unavailable')
+  return 'revenue_recovery'
 }
 
-function missionPackKeys(selection: Record<string, unknown>): Array<'revenue_recovery' | 'funnel_nurture' | 'campaign_launch'> {
+function missionPackKeys(selection: Record<string, unknown>): Array<'revenue_recovery' | 'funnel_nurture' | 'campaign_launch' | 'radar_prospecting'> {
   const packs = Array.isArray(selection.packs) ? selection.packs : []
   const keys = packs.flatMap((item) => {
     const key = item && typeof item === 'object' ? Reflect.get(item, 'key') : undefined
-    return key === 'campaign_launch' || key === 'funnel_nurture' || key === 'revenue_recovery' ? [key] : []
+    return key === 'campaign_launch' || key === 'funnel_nurture' || key === 'revenue_recovery' || key==='radar_prospecting' ? [key] : []
   })
   return keys.length > 0 ? [...new Set(keys)] : [missionPackKey(selection)]
 }
@@ -1347,7 +1375,7 @@ async function hasCampaignLaunchEntitlement(client: Queryable, organizationId: s
   return result.rows[0]?.entitled === true
 }
 
-function publicPack(pack: typeof REVENUE_RECOVERY_PACK_V0 | typeof FUNNEL_NURTURE_PACK_V1 | typeof CAMPAIGN_LAUNCH_PACK_V1) {
+function publicPack(pack: typeof REVENUE_RECOVERY_PACK_V0 | typeof FUNNEL_NURTURE_PACK_V1 | typeof CAMPAIGN_LAUNCH_PACK_V1 | typeof RADAR_PROSPECTING_PACK_V1) {
   const { parameters: _parameters, ...serializable } = pack
   return serializable
 }

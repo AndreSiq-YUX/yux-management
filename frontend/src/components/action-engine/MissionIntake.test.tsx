@@ -11,6 +11,16 @@ const flush = () => new Promise(resolve => setTimeout(resolve, 0))
 afterEach(() => { document.body.innerHTML = ''; vi.restoreAllMocks() })
 
 describe('MissionIntake', () => {
+  it('shows one Radar entry only when the organization catalog enables it',async()=>{
+    vi.spyOn(actionEngineService,'listPacks').mockResolvedValue([{key:'radar_prospecting'}] as never)
+    const {root}=await renderIntake(true)
+    await act(flush)
+    expect([...document.body.querySelectorAll('button')].filter(button=>button.textContent==='Pesquisar empresas no Radar')).toHaveLength(1)
+    await click('Pesquisar empresas no Radar')
+    expect(document.body.textContent).toContain('Salvar a campanha não inicia pesquisa.')
+    expect(document.body.textContent).toContain('Quantidade de empresas')
+    act(()=>root.unmount())
+  })
   it('explains the generic request, quick start and autonomy modes', async () => {
     const { root } = await renderIntake(true)
     expect(document.body.textContent).toContain('O que você quer que a YUX realize?')

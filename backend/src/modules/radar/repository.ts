@@ -184,7 +184,7 @@ export async function listRadarCampaigns(pool: pg.Pool, user: AuthUser, organiza
   return result.rows.map(mapCampaign)
 }
 
-export async function createRadarCampaign(pool: pg.Pool, user: AuthUser, input: RadarCampaignInput) {
+export async function createRadarCampaign(pool: Pick<pg.Pool,'query'>, user: AuthUser, input: RadarCampaignInput) {
   await requireRadarScope(pool, user, { organizationId: input.organizationId }, true)
   if (input.campaignType === 'regional_b2b'
     && (user.role !== 'yux_admin' || !await isRadarEnabledOrganization(pool, input.organizationId))) {
@@ -279,7 +279,7 @@ export async function updateRadarCampaign(pool: pg.Pool, user: AuthUser, campaig
   finally { client.release() }
 }
 
-export async function duplicateRadarCampaign(pool: pg.Pool, user: AuthUser,
+export async function duplicateRadarCampaign(pool: Pick<pg.Pool,'query'>, user: AuthUser,
   input: { campaignId: string; organizationId: string; name?: string }) {
   await requireRadarScope(pool, user, { organizationId: input.organizationId, campaignId: input.campaignId }, true)
   if (user.role !== 'yux_admin' || !await isRadarEnabledOrganization(pool, input.organizationId)) {
@@ -717,7 +717,7 @@ async function findRadarOsmSnapshot(queryable: RadarQueryable, city: string, sta
   return result.rows.length === 1 ? result.rows[0] : null
 }
 
-export async function isRadarEnabledOrganization(queryable: RadarQueryable, organizationId: string) {
+export async function isRadarEnabledOrganization(queryable: {query<T = Record<string,unknown>>(sql:string,params?:unknown[]):Promise<{rows:T[]}>}, organizationId: string) {
   const result = await queryable.query<{ allowed: boolean }>(
     `SELECT ((kind = 'yux' AND is_internal_growth_workspace = TRUE)
        OR (kind = 'client' AND EXISTS (

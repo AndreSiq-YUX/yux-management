@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { reconcileRadarMissionOperations } from '../modules/action-engine/radar-operation-waits.js'
 import type pg from 'pg'
 import type { AppEnv } from '../config/env.js'
 import { processSequenceExecution, runCrmSequenceScheduler } from '../modules/crm/scheduler.js'
@@ -135,9 +136,10 @@ export const jobRegistry = {
   'action-engine.planMission': registered('interactive', 180_000, ({ pool, env, queue }, data) => handleActionEnginePlanMission(pool, env, data, queue)),
   'action-engine.processMissionConversation': registered('interactive', 180_000, ({ pool, env }, data) => handleActionEngineProcessMissionConversation(pool, env, data)),
   'action-engine.scheduleReadyActions': registered('interactive', 60_000, ({ pool, queue }, data) => handleActionEngineSchedule(pool, queue, data)),
-  'action-engine.executeAction': registered('external', 180_000, ({ pool, env, queue, jobId }, data) => handleActionEngineExecute(pool, queue, data, `worker:${jobId}`, env.ACTION_ENGINE_MUTATION_LEASE_SECRET)),
+  'action-engine.executeAction': registered('external', 180_000, ({ pool, env, queue, jobId }, data) => handleActionEngineExecute(pool, queue, data, `worker:${jobId}`, env.ACTION_ENGINE_MUTATION_LEASE_SECRET,env)),
   'action-engine.reconcileProviderEffect': registered('external', 120_000, ({ pool, queue }, data) => handleActionEngineReconcileProviderEffect(pool, queue, data)),
   'action-engine.expireWaits': registered('maintenance', 60_000, ({ pool, queue }, data) => handleActionEngineExpireWaits(pool, queue, data)),
+  'action-engine.reconcileRadarOperations': registered('maintenance', 60_000, ({ pool, queue }) => reconcileRadarMissionOperations(pool, queue)),
   'action-engine.collectMetrics': registered('maintenance', 180_000, ({ pool, queue }, data) => handleActionEngineCollectMetrics(pool, queue, data)),
   'action-engine.campaignOptimizationCheckpoint': registered('maintenance', 180_000, ({ pool }, data) => handleCampaignOptimizationCheckpoints(pool, data)),
   'action-engine.generateLearning': registered('maintenance', 180_000, ({ pool }, data) => handleActionEngineLearning(pool, data)),

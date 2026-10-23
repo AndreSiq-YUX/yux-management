@@ -2,6 +2,7 @@ import { recordDomainEvent } from '../events/repository.js'
 import { CAMPAIGN_LAUNCH_PACK_V1 } from './packs/campaign-launch-v1.js'
 import { FUNNEL_NURTURE_PACK_V1 } from './packs/funnel-nurture-v1.js'
 import { REVENUE_RECOVERY_PACK_V0 } from './packs/revenue-recovery-v0.js'
+import { RADAR_PROSPECTING_PACK_V1,radarProspectingParameters } from './packs/radar-prospecting-v1.js'
 import { createMissionInTransaction, getMission, hashCanonical, transitionMission, type Connectable, type Queryable } from './repository.js'
 import type {
   ActionMission,
@@ -667,6 +668,7 @@ const CONVERSATION_PACKS = {
   funnel_nurture: { definition: FUNNEL_NURTURE_PACK_V1, allowedModules: ['crm', 'automations', 'funnel_nurture_agent'] },
   campaign_launch: { definition: CAMPAIGN_LAUNCH_PACK_V1, allowedModules: ['campaigns', 'landing_pages', 'campaign_launch_agent'] },
   revenue_recovery: { definition: REVENUE_RECOVERY_PACK_V0, allowedModules: ['crm'] },
+  radar_prospecting: { definition: RADAR_PROSPECTING_PACK_V1, allowedModules: ['radar'] },
 } as const
 
 async function resolveConversationPacks(
@@ -676,7 +678,7 @@ async function resolveConversationPacks(
   brief: Record<string, unknown>,
 ): Promise<ConversationPack[]> {
   const requested = stringList(brief.packKeys)
-  const order = ['funnel_nurture', 'campaign_launch', 'revenue_recovery'] as const
+  const order = ['funnel_nurture', 'campaign_launch', 'revenue_recovery','radar_prospecting'] as const
   const keys = order.filter((key) => requested.includes(key))
   if (!keys.length) throw new Error('mission_conversation_pack_selection_invalid')
   const definitions = keys.map((key) => ({ key, ...CONVERSATION_PACKS[key] }))
@@ -723,6 +725,7 @@ function conversationMissionParameters(
   const constraints = recordValue(brief.constraints)
   const deadlineDays = Math.max(1, Math.min(180, Math.ceil((Date.parse(deadlineAt) - Date.now()) / 86_400_000)))
   const common = { maxTotalCostBrl, maxHumanHours, humanHourlyRateBrl: '100', deadlineDays }
+  if(packKeys.includes('radar_prospecting'))return{...common,...radarProspectingParameters.parse(constraints.radarParameters)}
   if (packKeys.includes('campaign_launch')) {
     return {
       ...common,

@@ -1,4 +1,7 @@
 import type { AppEnv } from '../../config/env.js'
+import { RADAR_PROSPECTING_PACK_V1 } from '../../modules/action-engine/packs/radar-prospecting-v1.js'
+import { radarMissionAvailable, ensureRadarProspectingPackVersion } from '../../modules/action-engine/radar-pack-registration.js'
+import { retrieveRadarMissionKnowledge,RADAR_MISSION_KNOWLEDGE_SCOPE } from '../../modules/action-engine/radar-knowledge-context.js'
 import { createHash } from 'node:crypto'
 import type { AppJobQueue } from '../../server.js'
 import { createActionEngineCapabilityRegistry } from '../../modules/action-engine/capabilities/index.js'
@@ -78,14 +81,15 @@ export async function handleActionEngineProcessMissionConversation(
   const startedAt = Date.now()
   try {
     const registry = createActionEngineCapabilityRegistry()
-    const metadata = registry.listMetadata()
+    const radarAvailable=await radarMissionAvailable(pool,env,organizationId,conversation.createdBy)
+    const metadata = registry.listMetadata().filter(item=>!item.key.startsWith('radar.')||radarAvailable)
     const manifest = createCapabilityManifest(registry, metadata.map((item) => ({ key: item.key, version: item.version })))
     const allowedModules = stringArray(conversation.currentBrief.allowedModules)
     const operational = await buildMissionOperationalContext(pool, {
       organizationId,
       ...(conversation.contractId ? { contractId: conversation.contractId } : {}),
       query: userMessage.content,
-      requestedModules: allowedModules.length ? allowedModules : ['crm', 'automations', 'campaigns', 'landing_pages'],
+      requestedModules: allowedModules.length ? allowedModules : ['crm', 'automations', 'campaigns', 'landing_pages',...(radarAvailable?['radar']:[])],
       capabilityManifest: manifest.entries,
       packKeys: stringArray(conversation.currentBrief.packKeys),
     })
@@ -93,7 +97,8 @@ export async function handleActionEngineProcessMissionConversation(
       `SELECT client_id FROM public.organizations WHERE id = $1 LIMIT 1`, [organizationId],
     )
     const bounded = boundTranscript(conversation.messages)
-    const packs = [REVENUE_RECOVERY_PACK_V0, FUNNEL_NURTURE_PACK_V1, CAMPAIGN_LAUNCH_PACK_V1, CAMPAIGN_OPTIMIZATION_PACK_V1]
+    const packs = [REVENUE_RECOVERY_PACK_V0, FUNNEL_NURTURE_PACK_V1, CAMPAIGN_LAUNCH_PACK_V1, CAMPAIGN_OPTIMIZATION_PACK_V1,...(radarAvailable?[RADAR_PROSPECTING_PACK_V1]:[])]
+    if(radarAvailable)await ensureRadarProspectingPackVersion(pool,conversation.createdBy)
     const request: MissionConversationTurnRequestWire = {
       schemaVersion: 1,
       organization_id: organizationId,
@@ -194,12 +199,13 @@ export async function handleActionEngineExecute(
   data: Record<string, unknown>,
   workerId = 'action-engine-worker',
   mutationLeaseSecret = process.env.ACTION_ENGINE_MUTATION_LEASE_SECRET,
+  radarConfig:import('../../modules/radar/action-engine-commands.js').RadarActionEngineConfig={},
 ) {
   const actionRunId = stringField(data, 'actionRunId')
   const organizationId = stringField(data, 'organizationId')
   const missionId = stringField(data, 'missionId')
   const result = await executeActionRun(pool as never, createActionEngineCapabilityRegistry(), {
-    actionRunId, organizationId, workerId, commands: createActionEngineCommands(pool as never, missionId), mutationLeaseSecret,
+    actionRunId, organizationId, workerId, commands: createActionEngineCommands(pool as never, missionId,radarConfig), mutationLeaseSecret,
   })
   if (result.reconciliation) {
     await queue.add('action-engine.reconcileProviderEffect', {
@@ -547,6 +553,8 @@ export async function handleActionEnginePlanMission(
   const registry = createActionEngineCapabilityRegistry()
   const packs = await loadMissionActionPacks(pool, mission.packVersionId, mission.packSelection)
   const pack = packs[0]!
+  const radar=packs.some(item=>item.key===RADAR_PROSPECTING_PACK_V1.key)
+  if(radar&&(!await radarMissionAvailable(pool,env,organizationId,mission.createdBy)||mission.mode==='autonomous'||packs.length!==1))throw new Error('radar_mission_unavailable')
   const serializablePacks = packs.map((item) => {
     const { parameters: _runtimeSchema, ...serializable } = item as ActionPackVersion & { parameters?: unknown }
     return serializable
@@ -583,7 +591,12 @@ export async function handleActionEnginePlanMission(
     harnessRetrievalTraceId: undefined as string | undefined,
     harnessKnowledgeContextHash: undefined as string | undefined,
   }
-  if (linkedConversation?.lastHarnessRunId && linkedConversation.lastContextHash) {
+  if (radar) {
+    const knowledge=await retrieveRadarMissionKnowledge(pool,{organizationId,...(mission.contractId?{contractId:mission.contractId}:{})})
+    groundingMetadata={...RADAR_MISSION_KNOWLEDGE_SCOPE,contractId:mission.contractId}
+    const composed=composeVerifiedMissionContext({organizationId,companyContext:linkedConversation?companyContextFromConversation(linkedConversation.contextReadiness):{},operational:operationalContext,knowledge:knowledge.verified,harnessRetrievalTraceId:knowledge.queryId,harnessKnowledgeContextHash:knowledge.contextHash})
+    planningContext={...planningContext,companyContext:composed.companyContext,knowledgeItems:composed.knowledgeItems,strategyItems:composed.strategyItems,learningMemoryItems:composed.approvedLearningMemory,liveState:composed.liveState,sourceIds:composed.sourceIds,contextHash:composed.contextHash,harnessRetrievalTraceId:composed.harnessRetrievalTraceId,harnessKnowledgeContextHash:composed.harnessKnowledgeContextHash}
+  } else if (linkedConversation?.lastHarnessRunId && linkedConversation.lastContextHash) {
     const latestGroundedMessage = [...linkedConversation.messages].reverse().find(message => message.actorType === 'agent' && message.sourceRefs.length)
     const sourceRefs = (latestGroundedMessage?.sourceRefs ?? []) as unknown as MissionSourceRefWire[]
     const audience = sourceRefs.some(source => source.kind.startsWith('knowledge_') && source.visibility === 'internal')
@@ -968,6 +981,10 @@ async function loadMissionActionPack(pool: Pool, packVersionId: string): Promise
   )
   const row = result.rows[0]
   if (!row) throw new Error('mission_action_pack_unavailable')
+  if(row.key===RADAR_PROSPECTING_PACK_V1.key&&row.semantic_version===RADAR_PROSPECTING_PACK_V1.semanticVersion){
+    if(row.content_hash!==RADAR_PROSPECTING_PACK_V1.contentHash)throw new Error('action_pack_hash_mismatch')
+    return RADAR_PROSPECTING_PACK_V1
+  }
   if (row.key === REVENUE_RECOVERY_PACK_V0.key && row.semantic_version === REVENUE_RECOVERY_PACK_V0.semanticVersion) {
     if (row.content_hash !== REVENUE_RECOVERY_PACK_V0.contentHash) throw new Error('action_pack_hash_mismatch')
     return REVENUE_RECOVERY_PACK_V0

@@ -35,6 +35,7 @@ const missionOutcomeLabels: Record<string, string> = {
   revenue_recovery: 'Recuperar receita de oportunidades existentes',
   funnel_nurture: 'Criar funil e nutrição comercial',
   campaign_launch: 'Criar e lançar uma campanha completa',
+  radar_prospecting: 'Pesquisar empresas no Radar Comercial',
   supervisor_interpreted_outcome: 'Resultado a definir com o agente',
   outcome_to_be_defined: 'Resultado a definir com o agente',
 }
@@ -43,6 +44,7 @@ const missionPackLabels: Record<string, string> = {
   revenue_recovery: 'Recuperação de receita',
   funnel_nurture: 'Funil e nutrição',
   campaign_launch: 'Campanha completa',
+  radar_prospecting: 'Radar Comercial',
   campaign_optimization: 'Otimização de campanha',
   composite: 'Missão integrada',
 }

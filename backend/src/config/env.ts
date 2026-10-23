@@ -59,6 +59,8 @@ const envSchema = z.object({
   ACTION_ENGINE_MUTATION_LEASE_SECRET: z.string().min(32).optional(),
   ACTION_ENGINE_TELEMETRY_REDACTION_KEY: z.string().min(32).optional(),
   MISSION_SUPERVISOR_ENABLED: optionalBoolean,
+  RADAR_ACTION_ENGINE_ENABLED: optionalBoolean,
+  RADAR_ACTION_ENGINE_TENANT_ALLOWLIST: optionalString,
   MISSION_DECISIONS_ENABLED: optionalBoolean,
   MISSION_DECISION_NOTIFICATIONS_ENABLED: optionalBoolean,
   MISSION_SIMULATION_REPORTS_ENABLED: optionalBoolean,
