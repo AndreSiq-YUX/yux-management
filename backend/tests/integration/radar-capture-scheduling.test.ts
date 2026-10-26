@@ -14,22 +14,86 @@ import {radarRegistryDiscoveryCandidate} from '../../src/modules/radar/discovery
 import {fixtureIds} from './support/fixtures.js'
 import {createRadarCampaign} from '../../src/modules/radar/repository.js'
 import {CnpjaSearchHttpError} from '../../src/modules/radar/cnpjaClient.js'
+import type {BusinessMentionV1} from '../../src/contracts/generated/radarResearch.js'
 
 const modulePath='../../src/modules/radar/capture-scheduling.js'
 const scheduling=await import(modulePath).catch(()=>({})) as {repairRadarCaptureScheduling?:(pool:pg.Pool,organizationId:string)=>Promise<number>}
 const env={PROVIDER_SECRET_ENCRYPTION_KEY_B64:Buffer.alloc(32,7).toString('base64')} as never
-async function fixture(cities?:Array<{city:string;state:string}>){
+async function fixture(cities?:Array<{city:string;state:string}>,requestedCount=40,sourceOrder=['cnpja_advanced_search']){
  const f=await captureFixture()
- const config={...f.campaign.searchConfiguration,...(cities?{cities}:{}),discovery:{enabled:true,sourceOrder:['cnpja_advanced_search'],terms:[]},funnel:{enabled:true,g0:{mode:'off'},g1:{mode:'off'},g3:{mode:'off'},g5:{mode:'off'},agentPolicy:{mode:'off'}},qualification:{includeAnyTerms:['atividade configurada']},research:{...f.campaign.searchConfiguration?.research,localSearchOrder:'disabled',maxSearchQueriesPerCandidate:1,maxPagesPerCandidate:2}}
+ const config={...f.campaign.searchConfiguration,...(cities?{cities}:{}),discovery:{enabled:true,sourceOrder,terms:[]},funnel:{enabled:true,g0:{mode:'off'},g1:{mode:'off'},g3:{mode:'off'},g5:{mode:'off'},agentPolicy:{mode:'off'}},qualification:{includeAnyTerms:['atividade configurada']},research:{...f.campaign.searchConfiguration?.research,localSearchOrder:'disabled',maxSearchQueriesPerCandidate:1,maxPagesPerCandidate:2}}
  await f.pool.query('UPDATE radar_campaigns SET search_configuration=$2::jsonb WHERE id=$1',[f.campaign.id,JSON.stringify(config)])
- const op=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestedCount:40,requestId:randomUUID()},{availability:available})
+ const op=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestedCount,requestId:randomUUID()},{availability:available})
  const url=new URL(connectionString!);url.username='yux_worker'
  const rawWorker=new pg.Pool({connectionString:url.toString()}),worker=createContextAwarePool(rawWorker,'worker')
  const scoped=<T>(work:()=>Promise<T>,ids:string[]=[organizationId])=>runWithDatabaseRequestContext({role:'yux_operator',organizationIds:ids,serviceRole:'worker'},work)
  const outbox=async()=>Number((await f.pool.query('SELECT COUNT(*)::int AS n FROM radar_capture_outbox WHERE operation_id=$1',[op.operationId])).rows[0].n)
  return{...f,op,worker,scoped,outbox,async close(){await rawWorker.end();await f.close()}}
 }
+const extractionDocs=[0,1].map(index=>({url:`https://public-directory.example/list-${index}`,title:`Lista ${index}`,snippets:['Lista pública'],observedAt:'2026-10-26T12:00:00Z'}))
+const savedMentions=[1,2].map((index):{mention:BusinessMentionV1}=>({mention:{schemaVersion:1,name:`Empresa Prefixo ${index}`,contacts:[],sourceUrl:extractionDocs[0].url,observedAt:extractionDocs[0].observedAt,subjectScope:'company',needsVerification:true,evidenceSpans:[{field:'name',evidenceId:'doc-0',excerpt:`Empresa Prefixo ${index}`}]}}))
+async function extractionFailure(f:Awaited<ReturnType<typeof fixture>>,pageId:string,received=true){
+ const owner=randomUUID(),hash='b'.repeat(64),requestId=`discovery:${pageId}:0:0`
+ const analysis=(await f.pool.query(`INSERT INTO radar_analysis_receipts(organization_id,action,request_id,input_hash,owner_token,status,input_request) VALUES($1,'radar_discovery_extraction',$2,$3,$4,'uncertain','{}') RETURNING id`,[organizationId,requestId,hash,owner])).rows[0]
+ return(await f.pool.query(`INSERT INTO radar_effect_receipts(organization_id,effect_key,attempt,analysis_receipt_id,owner_token,input_hash,lease_until,transport_outcome,validation_outcome,billing_outcome,response_body,failure_code) VALUES($1,$2,1,$3,$4,$5,NOW()-INTERVAL '1 hour',$6,$7,$8,$9,$10) RETURNING *`,[organizationId,requestId,analysis.id,owner,hash,received?'received':'uncertain',received?'invalid':'pending',received?'known':'uncertain',received?JSON.stringify({content:'incomplete',finish_reason:'length'}):null,received?'output_truncated':null])).rows[0]
+}
 describe.skipIf(!connectionString)('requested-count scheduling with isolated PostgreSQL',()=>{
+ it('admits enough already validated web mentions before spending on unread documents and retains all surplus',async()=>{
+  const f=await fixture(undefined,2,['brave_web_search'])
+  try{
+   let purchases=0
+   const deps={availability:available,adaptiveDiscover:async()=>{purchases++;return{candidates:savedMentions,documents:extractionDocs,exhaustion:'exhausted' as const}},runtime:async()=>{throw Error('unexpected_new_generation')},collect:async()=>{throw Error('unexpected_new_read')}}
+   for(let turn=0;turn<2;turn++)await advanceRadarCaptureDiscovery(f.pool,env,{organizationId,operationId:f.op.operationId},deps)
+   expect((await getRadarCaptureOperation(f.pool,admin,organizationId,f.op.operationId)).counts.admitted).toBe(2)
+   expect(purchases).toBe(1)
+   const page=(await f.pool.query('SELECT status,normalized_page,admitted_offset,extraction FROM radar_discovery_pages WHERE operation_id=$1',[f.op.operationId])).rows[0]
+   expect(page).toMatchObject({status:'received',admitted_offset:2,normalized_page:{candidates:savedMentions,documents:extractionDocs},extraction:{}})
+  }finally{await f.close()}
+ })
+ it.each([true,false])('recovers a saved prefix only with a confirmed invalid extraction receipt: received=%s',async received=>{
+  const f=await fixture(undefined,2,['brave_web_search'])
+  try{
+   const deps={availability:available,adaptiveDiscover:async()=>({candidates:savedMentions,documents:extractionDocs,exhaustion:'exhausted' as const}),runtime:async()=>{throw Error('unexpected_generation')},collect:async()=>{throw Error('unexpected_read')}}
+   await advanceRadarCaptureDiscovery(f.pool,env,{organizationId,operationId:f.op.operationId},deps)
+   const page=(await f.pool.query('SELECT id FROM radar_discovery_pages WHERE operation_id=$1',[f.op.operationId])).rows[0]
+   const failed=await extractionFailure(f,page.id,received)
+   await f.pool.query("UPDATE radar_capture_operations SET status='blocked',blockers='[\"radar_capture_unavailable\"]',lease_id=NULL,lease_until=NULL WHERE id=$1",[f.op.operationId])
+   await f.pool.query('DELETE FROM radar_capture_outbox WHERE operation_id=$1',[f.op.operationId])
+   expect(await f.scoped(()=>scheduling.repairRadarCaptureScheduling!(f.worker,organizationId))).toBe(received?1:0)
+   if(received){
+    await advanceRadarCaptureDiscovery(f.pool,env,{organizationId,operationId:f.op.operationId},deps)
+    expect((await getRadarCaptureOperation(f.pool,admin,organizationId,f.op.operationId)).counts.admitted).toBe(2)
+   }else expect((await getRadarCaptureOperation(f.pool,admin,organizationId,f.op.operationId)).status).toBe('blocked')
+   expect((await f.pool.query('SELECT * FROM radar_effect_receipts WHERE id=$1',[failed.id])).rows[0]).toEqual(failed)
+  }finally{await f.close()}
+ })
+ it.each([true,false])('isolates a truncated document and extracts later documents without replaying it: already saved=%s',async alreadySaved=>{
+  const f=await fixture(undefined,2,['brave_web_search'])
+  try{
+   let calls=0,pageId=''
+   let failed:Awaited<ReturnType<typeof extractionFailure>>|undefined
+   const deps={availability:available,adaptiveDiscover:async()=>({candidates:[],documents:extractionDocs,exhaustion:'exhausted' as const}),collect:async(url:string)=>[{url,text:'Empresa Segura',observedAt:extractionDocs[0].observedAt}],runtime:(async(_env:unknown,_path:string,payload:Record<string,unknown>)=>{
+    calls++
+    if((payload.document as any).id==='doc-0'){
+     expect(alreadySaved).toBe(false)
+     failed=await extractionFailure(f,pageId)
+     throw Error('agent_runtime_422:output_truncated')
+    }
+    expect((payload.document as any).id).toBe('doc-1')
+    return{mentions:[{name:'Empresa Segura',contacts:[],subjectScope:'company',evidenceSpans:[{field:'name',evidenceId:'doc-1',excerpt:'Empresa Segura'}]}],provider:'fixture',model:'fixture',usage:{inputTokens:1,outputTokens:1,costUsd:0}}
+   }) as never}
+   await advanceRadarCaptureDiscovery(f.pool,env,{organizationId,operationId:f.op.operationId},deps)
+   const page=(await f.pool.query('SELECT id FROM radar_discovery_pages WHERE operation_id=$1',[f.op.operationId])).rows[0]
+   pageId=page.id
+   if(alreadySaved)failed=await extractionFailure(f,page.id)
+   for(let turn=0;turn<3;turn++)await advanceRadarCaptureDiscovery(f.pool,env,{organizationId,operationId:f.op.operationId},deps)
+   expect(calls).toBe(alreadySaved?1:2)
+   expect((await getRadarCaptureOperation(f.pool,admin,organizationId,f.op.operationId)).counts.admitted).toBe(1)
+   expect((await f.pool.query('SELECT extraction FROM radar_discovery_pages WHERE id=$1',[page.id])).rows[0].extraction).toMatchObject({documentIndex:2,limitations:[{documentIndex:0,offset:0,code:'output_truncated'}]})
+   if(!failed)throw Error('fixture_receipt_not_created')
+   expect((await f.pool.query('SELECT * FROM radar_effect_receipts WHERE id=$1',[failed.id])).rows[0]).toEqual(failed)
+  }finally{await f.close()}
+ })
  it('continues another valid cursor after a provider rejects one region, without buying the rejected cursor again',async()=>{
   const f=await fixture(['Curitiba','Londrina'].map(city=>({city,state:'PR'})))
   try{

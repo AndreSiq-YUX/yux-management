@@ -53,6 +53,27 @@ export async function loadRadarAdaptiveItems(db:Db,operationId:string,organizati
  return rows.map(row=>({candidateId:row.candidate_id,isNew:row.is_new,qualification:row.target_status??'review',state:row.status==='queued'?'pending':row.status==='researching'?'running':row.status==='blocked'?'waiting':'completed'}))
 }
 type Page=pg.QueryResultRow&{id:string;scope_key:string;source:string;status:'reserved'|'received'|'admitted'|'uncertain'|'rejected';normalized_page:RadarDiscoveryPage|null;input:RadarDiscoveryTransportInput;response_body:unknown;admitted_offset:number;extraction:Record<string,unknown>;page_number:number;continuation?:Record<string,unknown>;exhaustion:'more'|'exhausted'|'unknown'}
+async function savedRadarExtractionFailure(db:Db,organizationId:string,page:Page){
+ const requestId=`discovery:${page.id}:${Number(page.extraction.documentIndex??0)}:${Number(page.extraction.offset??0)}`
+ const row=(await db.query(`SELECT effect.failure_code FROM public.radar_analysis_receipts analysis
+  JOIN LATERAL(SELECT transport_outcome,validation_outcome,failure_code FROM public.radar_effect_receipts WHERE analysis_receipt_id=analysis.id AND organization_id=analysis.organization_id ORDER BY attempt DESC LIMIT 1) effect ON TRUE
+  WHERE analysis.organization_id=$1 AND analysis.action='radar_discovery_extraction' AND analysis.request_id=$2 AND analysis.status='uncertain'
+   AND effect.transport_outcome='received' AND effect.validation_outcome='invalid'
+   AND effect.failure_code IN('output_truncated','radar_discovery_extraction_invalid_response')`,[organizationId,requestId])).rows[0]
+ return row?.failure_code as string|undefined
+}
+/** A saved, invalid document reply must not hide prior validated mentions.
+ * This check never repeats the generation or changes its receipt. */
+export async function canContinueRadarAdaptiveAfterSavedExtraction(db:Db,op:pg.QueryResultRow):Promise<boolean>{
+ if(op.pipeline_version!==2||op.discovery_stopped||op.discovery_pending)return false
+ const stored=op.discovery_plan as StoredPlan
+ if(!stored?.plan||stored.plan.pipelineVersion!==2)return false
+ const pages=(await db.query<Page>(`SELECT * FROM public.radar_discovery_pages WHERE organization_id=$1 AND campaign_id=$2 AND criteria_revision=$3 AND status='received' AND normalized_page IS NOT NULL ORDER BY created_at,id`,[op.organization_id,op.campaign_id,op.configuration_revision])).rows
+ for(const page of pages){
+  if(stored.plan.scopes.some(scope=>scope.key===page.scope_key)&&Number(page.extraction.documentIndex??0)<page.normalized_page!.documents.length&&await savedRadarExtractionFailure(db,op.organization_id,page))return true
+ }
+ return false
+}
 /** Read-only recovery check for older parents globally paused by a rejected
  * cursor. It never restarts that cursor or grants research/spending authority. */
 export async function canContinueRadarAdaptiveAfterCursorRejection(db:Db,op:pg.QueryResultRow):Promise<boolean>{
@@ -208,7 +229,15 @@ async function admitAdaptivePage(pool:pg.Pool,env:AppEnv,op:pg.QueryResultRow,pa
  if(!rights.canPersist||!rights.canDeliver)throw failure('radar_discovery_source_rights_required')
  // One document/window per durable turn. Each paid extraction has a stable ID;
  // re-delivery reuses its runtime receipt rather than paying again.
- if(documentIndex<normalized.documents.length){
+ // Enough validated mentions may already fill this request. Admit them before
+ // reading/generating the rest; retain every unread document and surplus item.
+ if(documentIndex<normalized.documents.length&&normalized.candidates.length-Number(page.admitted_offset)<remaining){
+  const skipInvalidDocument=async(code:string)=>{
+   const limitations=Array.isArray(page.extraction.limitations)?page.extraction.limitations:[]
+   await pool.query(`UPDATE public.radar_discovery_pages SET extraction=extraction||$3::jsonb,updated_at=NOW() WHERE id=$1 AND organization_id=$2`,[page.id,op.organization_id,JSON.stringify({documentIndex:documentIndex+1,document:null,offset:0,limitations:[...limitations,{documentIndex,offset:Number(page.extraction.offset??0),code}]})])
+  }
+  const priorFailure=await savedRadarExtractionFailure(pool,op.organization_id,page)
+  if(priorFailure){await skipInvalidDocument(priorFailure);return}
   const hit=normalized.documents[documentIndex]
   let document=page.extraction.document as {text:string;observedAt:string;url?:string;searchExcerpt?:boolean}|undefined
   if(!document){
@@ -223,8 +252,15 @@ async function admitAdaptivePage(pool:pg.Pool,env:AppEnv,op:pg.QueryResultRow,pa
   }
   const tenant=(await pool.query(`SELECT organization.client_id,contract.id AS contract_id FROM public.organizations organization LEFT JOIN LATERAL(SELECT id FROM public.contracts WHERE client_id=organization.client_id AND status='active' ORDER BY starts_at DESC,id DESC LIMIT 1) contract ON TRUE WHERE organization.id=$1`,[op.organization_id])).rows[0]
   const offset=Number(page.extraction.offset??0)
-  const extracted=await extractRadarBusinesses({enabled:true,requestId:`discovery:${page.id}:${documentIndex}:${offset}`,tenant:{organizationId:op.organization_id,clientId:tenant?.client_id,contractId:tenant?.contract_id},document:{id:`doc-${documentIndex}`,source_url:document.url??hit.url,text:document.text,kind:document.searchExcerpt?'third_party':classifyRadarSource(document.url??hit.url).kind,observed_at:document.observedAt,canPersist:true},offsetBytes:offset,criteria:{segment:op.configuration_snapshot.target_segment,...config.qualification},region:{state:page.input.scope.state,city:page.input.scope.city}},
-   {runtime:(path,payload)=>(dependencies.runtime??invokeAgentRuntime)(env,path,payload)})
+  let extracted:Awaited<ReturnType<typeof extractRadarBusinesses>>
+  try{
+   extracted=await extractRadarBusinesses({enabled:true,requestId:`discovery:${page.id}:${documentIndex}:${offset}`,tenant:{organizationId:op.organization_id,clientId:tenant?.client_id,contractId:tenant?.contract_id},document:{id:`doc-${documentIndex}`,source_url:document.url??hit.url,text:document.text,kind:document.searchExcerpt?'third_party':classifyRadarSource(document.url??hit.url).kind,observed_at:document.observedAt,canPersist:true},offsetBytes:offset,criteria:{segment:op.configuration_snapshot.target_segment,...config.qualification},region:{state:page.input.scope.state,city:page.input.scope.city}},
+    {runtime:(path,payload)=>(dependencies.runtime??invokeAgentRuntime)(env,path,payload)})
+  }catch(cause){
+   const confirmedFailure=await savedRadarExtractionFailure(pool,op.organization_id,page)
+   if(!confirmedFailure)throw cause
+   await skipInvalidDocument(confirmedFailure);return
+  }
   const candidates=[...normalized.candidates,...extracted.mentions.map(mention=>({mention}))]
   await pool.query(`UPDATE public.radar_discovery_pages SET normalized_page=$3::jsonb,extraction=extraction||$4::jsonb,updated_at=NOW() WHERE id=$1 AND organization_id=$2`,[page.id,op.organization_id,JSON.stringify({...normalized,candidates}),JSON.stringify({documentIndex:extracted.nextOffsetBytes===null?documentIndex+1:documentIndex,document:extracted.nextOffsetBytes===null?null:document,offset:extracted.nextOffsetBytes??0,lastAnalysis:extracted.analysis})]);return
  }
@@ -253,7 +289,7 @@ async function admitAdaptivePage(pool:pg.Pool,env:AppEnv,op:pg.QueryResultRow,pa
    }
    offset++;scanned++
   }
-  await db.query(`UPDATE public.radar_discovery_pages SET admitted_offset=$3::int,status=CASE WHEN $3::int>=$4::int THEN 'admitted' ELSE 'received' END,updated_at=NOW() WHERE id=$1 AND organization_id=$2`,[page.id,op.organization_id,offset,normalized.candidates.length])
+  await db.query(`UPDATE public.radar_discovery_pages SET admitted_offset=$3::int,status=CASE WHEN $3::int>=$4::int AND $5 THEN 'admitted' ELSE 'received' END,updated_at=NOW() WHERE id=$1 AND organization_id=$2`,[page.id,op.organization_id,offset,normalized.candidates.length,Number(locked.extraction.documentIndex??0)>=normalized.documents.length])
   if(op.funnel_enabled){const current=(await db.query('SELECT * FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2 FOR UPDATE',[op.id,op.organization_id])).rows[0];await syncRadarFunnelDiscovery(db,current)}
   await db.query('COMMIT')
  }catch(cause){await db.query('ROLLBACK');throw cause}finally{db.release()}

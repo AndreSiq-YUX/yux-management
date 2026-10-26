@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import {runWithDatabaseRequestContext} from '../../db/request-context.js'
 import {reconcileRadarCaptureSummary} from './capture-reconciliation.js'
-import {canContinueRadarAdaptiveAfterCursorRejection} from './adaptive-capture.js'
+import {canContinueRadarAdaptiveAfterCursorRejection,canContinueRadarAdaptiveAfterSavedExtraction} from './adaptive-capture.js'
 
 /** Repair scheduling metadata for an existing authorized active request only.
  * No provider/AI effects, receipt resets, child retries or spending grants. */
@@ -10,7 +10,7 @@ export async function repairRadarCaptureScheduling(pool:pg.Pool,organizationId:s
   FROM public.radar_capture_operations operation
   JOIN public.radar_campaigns campaign ON campaign.id=operation.campaign_id AND campaign.organization_id=operation.organization_id
   JOIN public.app_users actor ON actor.id=operation.requested_by
-  WHERE operation.organization_id=$1 AND (operation.status IN('queued','discovering','researching') OR operation.status='blocked' AND operation.blockers @> '["radar_discovery_continuation_rejected"]'::jsonb)
+  WHERE operation.organization_id=$1 AND (operation.status IN('queued','discovering','researching') OR operation.status='blocked' AND operation.blockers ?| ARRAY['radar_discovery_continuation_rejected','radar_capture_unavailable'])
    AND operation.historical_closed_at IS NULL AND (operation.lease_until IS NULL OR operation.lease_until<NOW())
    AND campaign.configuration_revision=operation.configuration_revision AND campaign.status NOT IN('paused','completed','archived')
    AND actor.role='yux_admin' AND actor.is_active=TRUE
@@ -25,7 +25,7 @@ export async function repairRadarCaptureScheduling(pool:pg.Pool,organizationId:s
    // Match every capture writer's lock order; recheck after any competing repair.
    const campaign=(await db.query('SELECT configuration_revision,status FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[candidate.campaign_id,organizationId])).rows[0]
    const operation=(await db.query(`SELECT operation.* FROM public.radar_capture_operations operation JOIN public.app_users actor ON actor.id=operation.requested_by
-    WHERE operation.id=$1 AND operation.organization_id=$2 AND (operation.status IN('queued','discovering','researching') OR operation.status='blocked' AND operation.blockers @> '["radar_discovery_continuation_rejected"]'::jsonb)
+    WHERE operation.id=$1 AND operation.organization_id=$2 AND (operation.status IN('queued','discovering','researching') OR operation.status='blocked' AND operation.blockers ?| ARRAY['radar_discovery_continuation_rejected','radar_capture_unavailable'])
      AND operation.historical_closed_at IS NULL AND (operation.lease_until IS NULL OR operation.lease_until<NOW())
      AND actor.role='yux_admin' AND actor.is_active=TRUE FOR UPDATE OF operation`,[candidate.id,organizationId])).rows[0]
    const delivered=(await db.query('SELECT 1 FROM public.radar_capture_outbox WHERE operation_id=$1 AND organization_id=$2',[candidate.id,organizationId])).rows.length>0
@@ -36,7 +36,8 @@ export async function repairRadarCaptureScheduling(pool:pg.Pool,organizationId:s
    // can only release independent discovery, with another usable scope proven.
    const discoveryBlockers=(operation.blockers as string[]).filter(code=>!childReasons.has(code))
    if(operation.status==='blocked'){
-    if(discoveryBlockers.length!==1||discoveryBlockers[0]!=='radar_discovery_continuation_rejected'||!await canContinueRadarAdaptiveAfterCursorRejection(db,operation)){await db.query('COMMIT');continue}
+    const recoverable=discoveryBlockers.length===1&&(discoveryBlockers[0]==='radar_discovery_continuation_rejected'&&await canContinueRadarAdaptiveAfterCursorRejection(db,operation)||discoveryBlockers[0]==='radar_capture_unavailable'&&await canContinueRadarAdaptiveAfterSavedExtraction(db,operation))
+    if(!recoverable){await db.query('COMMIT');continue}
     discoveryBlockers.length=0
    }
    if(operation.discovery_pending)discoveryBlockers.push('radar_capture_discovery_uncertain')

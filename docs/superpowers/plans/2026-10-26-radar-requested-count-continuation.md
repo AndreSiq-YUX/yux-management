@@ -59,3 +59,12 @@ The same request advanced from 10 to 38 admissions. At 38, the next Assis cursor
 2. Let a confirmed cursor rejection yield to the next normal planning turn. Unknown transport outcomes and non-cursor validation errors continue to block normally.
 3. Recover an already blocked legacy request only when its sole parent blocker is this proven cursor rejection and another unheld, nonexhausted scope remains. Preserve all child statuses, receipts, budgets and grants. Keep generic blocked requests, all-held scopes and any uncertain discovery protected.
 4. Run PostgreSQL recovery/transport regressions, the full backend suite and build; publish normally, verify deployment, and monitor the original request. No fresh restart authorization or individual analysis retry is implied.
+
+## Saved discovery results before remaining extraction
+
+Production8077e80 recovered the parent and tried the other existing cursor, preserving both rejections. It then used the already configured Perplexity Search source. That paid response has10 documents; the first4 produced4 validated mentions. Document4 received an explicitly recorded output_truncated response from the configured Haiku model. The generic runtime exception blocked the entire lot before any of those4 ready mentions was admitted.
+
+- Reproduce enough validated saved mentions to meet the remaining count while more documents are unread: admit those mentions first and retain the unprocessed surplus/documents for future requests.
+- A document whose saved extraction receipt proves a received invalid/truncated response may be skipped, keeping its receipt and a document-specific limitation. Continue other documents; do not retry the failed generation or skip missing configuration/unknown billing failures.
+- Recover a legacy parent only when a saved received page and the corresponding confirmed invalid extraction receipt prove this exact recoverable state. Preserve child analyses, all prior grants, source response and model receipts; schedule only the normal discovery planner.
+- Verify the same-count target, retained surplus, no additional source/model call for saved-prefix admission, per-document failure isolation, uncertain-receipt guards and the full existing suites before publishing. No provider/model/limit/grant is changed.
