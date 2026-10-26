@@ -403,6 +403,11 @@ def build_mission_source_catalog(
                     "bindingFingerprint": _text(raw.get("binding_fingerprint")),
                 } if governed else {}),
             ))
+    for raw in context.get('company_strategy_sources') or []:
+        source = MissionSourceRefWire.model_validate(raw)
+        if source.ref not in seen:
+            sources.append(source)
+            seen.add(source.ref)
     return sources
 
 
@@ -416,6 +421,13 @@ def normalize_mission_conversation_response(
 ) -> MissionConversationTurnResponseWire:
     parsed = _normalize_provider_shape(parsed, request)
     parsed = enforce_account_availability(parsed, request.operationalContext, request.organization_id)
+    strategy_coverage = ((retrieval_context or {}).get('company_strategy_context') or {}).get('coverage') or {}
+    if strategy_coverage.get('incomplete'):
+        parsed['readiness']['status'] = 'needs_configuration'
+        parsed['readiness']['missing'].append({'key': 'company_strategy_context', 'category': 'company', 'reason': 'Os limites obrigatórios da estratégia não foram recuperados integralmente.', 'requiredFor': ['mission_planning']})
+        if parsed.get('brief', {}).get('packKeys') or any(action.get('capabilityKey') for action in parsed.get('suggestedActions') or [] if isinstance(action, dict)):
+            parsed.update(kind='blocked', questions=[], suggestedActions=[], reply='Preciso recuperar os limites completos da estratégia da empresa antes de propor uma execução. A estratégia pode continuar sendo revisada em Empresa > Estratégia.')
+            parsed['brief']['packKeys'] = []
     source_catalog = build_mission_source_catalog(retrieval_context, request.audience)
     by_ref = {source.ref: source for source in source_catalog}
     selected_refs: list[str] = []

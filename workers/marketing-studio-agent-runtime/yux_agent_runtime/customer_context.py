@@ -7,6 +7,7 @@ from math import sqrt
 from typing import Any
 
 from .runtime_store import AgentRuntimeStore
+from .company_strategy_context import CompanyStrategyContextService
 
 
 def _list(value: Any) -> list[Any]:
@@ -50,6 +51,8 @@ class CustomerContextService:
         retrieval_audience = audience or ("external_contact" if external else "client_user")
         if retrieval_audience not in {"internal_operator", "client_user", "external_contact"}:
             raise ValueError("invalid_customer_context_audience")
+        strategy = CompanyStrategyContextService(self.store).retrieve(organization_id=organization_id, contract_id=contract_id, profile_key=profile_key, audience=retrieval_audience, query=query)
+        strategy_fields = {'company_strategy_context': strategy['strategy_context'], 'company_strategy_sources': strategy['sources']}
 
         company = _latest(self.store.list("organization_company_profiles", {"organization_id": organization_id}, limit=2))
         brands = self.store.list("marketing_brand_profiles", {"organization_id": organization_id}, limit=20)
@@ -100,6 +103,7 @@ class CustomerContextService:
             source_ids = [str(item["document_id"]) for item in context_items if item.get("document_id")]
             safety_rules = self._assistant_safety_rules(assistant_id)
             return {
+                **strategy_fields,
                 "company_profile": self._safe_company(company),
                 "customer_context": self._company_summary(company),
                 "brand_summary": self._brand_summary(brand),
@@ -172,6 +176,7 @@ class CustomerContextService:
         brand_rules = self._brand_rules(brand, safety_rules)
 
         return {
+            **strategy_fields,
             "company_profile": self._safe_company(company),
             "customer_context": self._company_summary(company),
             "brand_summary": self._brand_summary(brand),

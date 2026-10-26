@@ -836,7 +836,8 @@ export type Contenthash1 = string
 export type Displaymode = 'named' | 'generic' | 'hidden'
 export type Id = string
 export type Itemid = string | null
-export type Kind1 = 'strategy_card' | 'strategy_chunk' | 'knowledge_source' | 'knowledge_chunk' | 'mission_memory'
+export type Kind1 =
+  'strategy_card' | 'strategy_chunk' | 'knowledge_source' | 'knowledge_chunk' | 'mission_memory' | 'company_strategy'
 export type Knowledgepolicyversion = 1 | null
 export type Publicationid = string | null
 export type Ref = string

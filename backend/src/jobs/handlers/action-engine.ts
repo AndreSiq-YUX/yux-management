@@ -47,6 +47,7 @@ import {
   recordMissionConversationProcessingError,
 } from '../../modules/action-engine/mission-conversations.js'
 import { composeVerifiedMissionContext, verifyMissionKnowledgeContext } from '../../modules/action-engine/mission-source-verifier.js'
+import { addCompanyStrategyToMissionPlanning } from '../../modules/action-engine/mission-company-strategy.js'
 import type { MissionSourceRefWire } from '../../modules/action-engine/generated/mission-wire.js'
 import type { MissionConversationTurnRequestWire, MissionConversationTurnResponseWire } from '../../modules/action-engine/generated/mission-wire.js'
 import type { MissionConversationMessage } from '../../modules/action-engine/types.js'
@@ -618,7 +619,7 @@ export async function handleActionEnginePlanMission(
   } else if (linkedConversation?.lastHarnessRunId && linkedConversation.lastContextHash) {
     const latestGroundedMessage = [...linkedConversation.messages].reverse().find(message => message.actorType === 'agent' && message.sourceRefs.length)
     const sourceRefs = (latestGroundedMessage?.sourceRefs ?? []) as unknown as MissionSourceRefWire[]
-    const audience = sourceRefs.some(source => source.kind.startsWith('knowledge_') && source.visibility === 'internal')
+    const audience = sourceRefs.some(source => (source.kind.startsWith('knowledge_') || source.kind === 'company_strategy') && source.visibility === 'internal')
       ? 'internal_operator' as const : 'client_user' as const
     groundingMetadata = {
       audience,
@@ -658,6 +659,7 @@ export async function handleActionEnginePlanMission(
       harnessKnowledgeContextHash: composed.harnessKnowledgeContextHash,
     }
   }
+  planningContext = await addCompanyStrategyToMissionPlanning(pool, { organizationId, contractId: mission.contractId, query: planningContext.query, context: planningContext })
   const contextSnapshot = await transaction(pool, (client) => insertMissionContextSnapshot(client, {
     organizationId, missionId, query: planningContext.query, companyContext: planningContext.companyContext,
     knowledgeItems: planningContext.knowledgeItems, strategyItems: planningContext.strategyItems,

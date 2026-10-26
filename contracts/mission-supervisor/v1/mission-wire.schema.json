@@ -1124,7 +1124,8 @@
             "strategy_chunk",
             "knowledge_source",
             "knowledge_chunk",
-            "mission_memory"
+            "mission_memory",
+            "company_strategy"
           ],
           "title": "Kind",
           "type": "string"

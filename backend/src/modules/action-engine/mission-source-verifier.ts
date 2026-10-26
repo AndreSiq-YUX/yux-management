@@ -1,6 +1,7 @@
 import type { MissionSourceRefWire } from './generated/mission-wire.js'
 import type { BuiltMissionOperationalContext } from './context-builder.js'
 import { hashCanonical, type Queryable } from './repository.js'
+import { loadPublishedCompanyStrategySources } from '../company-strategy/context.js'
 
 type StrategyRow = {
   id: string
@@ -77,6 +78,7 @@ export type VerifiedMissionSource = {
   title: string
   displayMode: MissionSourceRefWire['displayMode']
   content: string
+  companyStrategyId?: string
   sourceId?: string
   publicationId?: string
   itemId?: string
@@ -145,6 +147,8 @@ export async function verifyMissionKnowledgeContext(client: Queryable, input: {
   const duplicate = requested.find((item, index) => index > 0 && item.ref === requested[index - 1]?.ref)
   if (duplicate) throw new Error(`mission_source_duplicate:${duplicate.ref}`)
   for (const source of requested) assertRefIdentity(source)
+  const companyStrategySources = await loadPublishedCompanyStrategySources(client, { organizationId: input.organizationId, contractId: input.contractId, audience: input.audience, revisionIds: requested.filter(source => source.kind === 'company_strategy').map(source => source.id) })
+  const companyStrategyById = new Map(companyStrategySources.map(source => [source.id, source]))
 
   const cardIds = requested.filter((item) => item.kind === 'strategy_card' && !isGovernedSource(item)).map((item) => item.id)
   const chunkIds = requested.filter((item) => item.kind === 'strategy_chunk').map((item) => item.id)
@@ -265,6 +269,11 @@ export async function verifyMissionKnowledgeContext(client: Queryable, input: {
   const governedCardById = new Map(governedCards.rows.map((row) => [row.id, row]))
   const governedCustomerById = new Map(governedCustomerChunks.rows.map((row) => [row.id, row]))
   const verified = requested.map((source): VerifiedMissionSource => {
+    if (source.kind === 'company_strategy') {
+      const row = companyStrategyById.get(source.id)
+      if (!row) return failed(source)
+      return { ...verifySource(source, { namespace: 'customer', version: String(row.revision_number), content: row.content, title: row.title, visibility: 'internal', displayMode: 'named' }), companyStrategyId: row.strategy_id }
+    }
     if (source.kind === 'strategy_card') {
       if (isGovernedSource(source)) {
         const governed = governedCardById.get(source.id)
@@ -428,13 +437,15 @@ function failed(source: MissionSourceRefWire): never {
 function assertRefIdentity(source: MissionSourceRefWire): void {
   const namespace = source.ref.split(':', 1)[0]
   const expected = source.ref.slice(namespace.length + 1)
-  if (expected !== source.id) throw new Error(`mission_source_identity_mismatch:${source.ref}`)
+  if (expected !== (source.kind === 'company_strategy' ? `strategy:${source.id}` : source.id)) throw new Error(`mission_source_identity_mismatch:${source.ref}`)
   if ((source.kind.startsWith('strategy_') && namespace !== 'yux')
     || (source.kind.startsWith('knowledge_') && namespace !== 'customer')
-    || (source.kind === 'mission_memory' && namespace !== 'memory')) {
+    || (source.kind === 'mission_memory' && namespace !== 'memory')
+    || (source.kind === 'company_strategy' && namespace !== 'customer')) {
     throw new Error(`mission_source_namespace_mismatch:${source.ref}`)
   }
   const governed = [source.publicationId, source.itemId, source.knowledgePolicyVersion, source.useMode, source.bindingFingerprint]
+  if (source.kind === 'company_strategy' && governed.some(value => value != null)) throw new Error(`company_strategy_document_identity_forbidden:${source.ref}`)
   if (governed.some(value => value != null) && !governed.every(value => value != null)) {
     throw new Error(`mission_source_governed_identity_incomplete:${source.ref}`)
   }

@@ -101,7 +101,7 @@ class ModelUsageWire(StrictWireModel):
 
 class MissionSourceRefWire(StrictWireModel):
     ref: str = Field(pattern=r"^(yux|customer|memory):[A-Za-z0-9._:@/-]+$")
-    kind: Literal["strategy_card", "strategy_chunk", "knowledge_source", "knowledge_chunk", "mission_memory"]
+    kind: Literal["strategy_card", "strategy_chunk", "knowledge_source", "knowledge_chunk", "mission_memory", "company_strategy"]
     id: str = Field(min_length=1)
     version: str = Field(min_length=1)
     contentHash: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -127,6 +127,8 @@ class MissionSourceRefWire(StrictWireModel):
             raise ValueError("mission_source_governed_identity_incomplete")
         if self.kind == "mission_memory" and any(value is not None for value in governed):
             raise ValueError("mission_memory_governed_identity_forbidden")
+        if self.kind == 'company_strategy' and any(value is not None for value in governed):
+            raise ValueError('company_strategy_document_identity_forbidden')
         return self
 
 

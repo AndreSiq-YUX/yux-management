@@ -15,7 +15,7 @@ export type MissionConversationStatus =
 
 export interface MissionConversationSource {
   ref: string
-  kind: 'strategy_card' | 'strategy_chunk' | 'knowledge_source' | 'knowledge_chunk' | 'mission_memory'
+  kind: 'strategy_card' | 'strategy_chunk' | 'knowledge_source' | 'knowledge_chunk' | 'mission_memory' | 'company_strategy'
   id: string
   version: string
   contentHash: string
