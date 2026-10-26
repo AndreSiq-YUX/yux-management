@@ -30,6 +30,23 @@ describe.skipIf(!connectionString)('Radar commercial HTTP audience with isolated
  })
  afterAll(async()=>{await app?.close();await apiPool?.end();if(campaignId)await pool.query('DELETE FROM public.radar_campaigns WHERE id=$1',[campaignId]);await pool.end()})
  const get=(path:string,user:string)=>app.inject({method:'GET',url:`/api/radar${path}`,headers:{cookie:cookies.get(user)!}})
+ it('keeps the configured discovery order and budget only in the global Admin response, including nested fields',async()=>{
+  const created=await createRadarCampaign(pool,fixtureUsers.yux_admin as AuthUser,{organizationId:fixtureIds.organizationA,name:'Configuração interna',targetSegment:'Refeições',targetStates:['SP'],campaignType:'regional_b2b',offerType:'Oferta',budgetLimit:17.35,searchConfiguration:{discovery:{enabled:true,sourceOrder:['serper_web_search','brave_web_search','cnpja_advanced_search','perplexity_search_web'],terms:[]}}} as never)
+  try{
+   for(const user of ['yux_admin','yux_operator','client_admin_A','client_member_A']){
+    const response=await get(`/campaigns?organizationId=${fixtureIds.organizationA}`,user)
+    expect(response.statusCode).toBe(200)
+    const record=response.json().find((item:{id:string})=>item.id===created.id)
+    expect(record.name).toBe('Configuração interna')
+    if(user==='yux_admin')expect(record).toMatchObject({budgetLimit:17.35,searchConfiguration:{discovery:{sourceOrder:['serper_web_search','brave_web_search','cnpja_advanced_search','perplexity_search_web']}}})
+    else expect(JSON.stringify(record)).not.toMatch(/serper|brave|cnpja|perplexity|sourceOrder|budgetLimit|searchConfiguration|estimatedCost|costPer/i)
+   }
+   expect((await get(`/campaigns?organizationId=${fixtureIds.organizationA}`,'client_admin_B')).statusCode).toBe(403)
+   // A real business name containing a provider word must survive projection.
+   const companies=await get(`/campaigns/${campaignId}/candidates`,'client_admin_A')
+   expect(companies.statusCode).toBe(200);expect(companies.body).toContain('Brave Transportes')
+  }finally{await pool.query('DELETE FROM public.radar_campaigns WHERE id=$1',[created.id])}
+ })
  it('persists all default stages through HTTP for partial creation and keeps technical settings Admin-only',async()=>{
   const response=await app.inject({method:'POST',url:'/api/radar/campaigns',headers:{cookie:cookies.get('yux_admin')!},payload:{organizationId:fixtureIds.organizationA,name:'Pesquisa completa independente',campaignType:'regional_b2b',targetStates:['SC'],targetSegment:'Manutenção industrial',offerType:'Equipamentos',searchConfiguration:{research:{contactPurpose:'sales'},cities:[{city:'Joinville',state:'SC'}]}}})
   expect(response.statusCode).toBe(201)

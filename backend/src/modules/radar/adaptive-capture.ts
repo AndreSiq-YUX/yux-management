@@ -21,7 +21,7 @@ import {classifyRadarSource} from './source-identity.js'
 import {invokeAgentRuntime} from '../../lib/agent-runtime-client.js'
 import {loadRadarOperationalLimits} from './operational-limits.js'
 import {radarAdaptiveContinuations,effectiveRadarAdaptivePage} from './adaptive-continuation.js'
-import {CnpjaSearchHttpError} from './cnpjaClient.js'
+import {CnpjaPreparationError,CnpjaSearchHttpError} from './cnpjaClient.js'
 type Db=Pick<pg.Pool,'query'>
 type Campaign=pg.QueryResultRow&{id:string;organization_id:string;configuration_revision:number;search_configuration:unknown;target_segment:string;target_states:string[];target_cnaes:string[];target_keywords:string[]}
 type PlanInput=Parameters<typeof buildRadarAdaptiveDiscoveryPlan>[0]
@@ -147,12 +147,14 @@ export async function advanceRadarAdaptiveCapture(pool:pg.Pool,env:AppEnv,operat
   }})
   const saved=await pool.query(`UPDATE public.radar_discovery_pages SET status='received',normalized_page=$4::jsonb,continuation=$5::jsonb,exhaustion=$6,updated_at=NOW() WHERE id=$1 AND organization_id=$2 AND lease_id=$3 AND lease_until>NOW() RETURNING id`,[pageId,op.organization_id,owner,JSON.stringify(result),JSON.stringify(result.continuation??null),result.exhaustion]);if(!saved.rows.length)throw failure('radar_discovery_lease_lost')
  }catch(cause){
+  const notDispatched=cause instanceof CnpjaPreparationError
   const rejected=cause instanceof CnpjaSearchHttpError&&cause.requestRejected||(cause as {billingOutcome?:string})?.billingOutcome==='not_billed'
-  const code=rejected&&input.continuation?.token?'radar_discovery_continuation_rejected':rejected?'radar_discovery_parameters_rejected':cause instanceof Error&&/^[a-z][a-z0-9_]+$/.test(cause.message)?cause.message:'radar_discovery_request_uncertain'
+  const code=notDispatched?cause.message:rejected&&input.continuation?.token?'radar_discovery_continuation_rejected':rejected?'radar_discovery_parameters_rejected':cause instanceof Error&&/^[a-z][a-z0-9_]+$/.test(cause.message)?cause.message:'radar_discovery_request_uncertain'
   await pool.query(`UPDATE public.radar_discovery_pages SET status=CASE WHEN response_body IS NOT NULL THEN 'received' WHEN $5 THEN 'rejected' ELSE 'uncertain' END,error_code=$4,updated_at=NOW() WHERE id=$1 AND organization_id=$2 AND lease_id=$3`,[pageId,op.organization_id,owner,code,rejected])
-  if((cause as {billingOutcome?:string})?.billingOutcome==='not_billed')await pool.query(`WITH original AS(SELECT id,cost_estimate_brl,created_at::date AS usage_date FROM public.radar_discovery_pages WHERE id=$1 AND organization_id=$2 AND cost_estimate_brl>0 AND status='rejected' FOR UPDATE),recorded AS(UPDATE public.radar_discovery_pages page SET cost_estimate_brl=0 FROM original WHERE page.id=original.id RETURNING original.cost_estimate_brl,original.usage_date) UPDATE public.radar_source_usage_counters counter SET estimated_cost=GREATEST(0,counter.estimated_cost-recorded.cost_estimate_brl),updated_at=NOW() FROM recorded WHERE counter.organization_id=$2 AND counter.campaign_id=$3 AND counter.source_type=$4 AND counter.usage_date=recorded.usage_date`,[pageId,op.organization_id,op.campaign_id,scope.source])
-  if(rejected)throw failure(code)
-  throw cause
+  // Only the typed local preparation failure proves that no request consumed
+  // a source unit. A non-billed response alone does not prove that.
+  if((cause as {billingOutcome?:string})?.billingOutcome==='not_billed')await pool.query(`WITH original AS(SELECT id,cost_estimate_brl,created_at::date AS usage_date FROM public.radar_discovery_pages WHERE id=$1 AND organization_id=$2 AND cost_estimate_brl>0 AND status='rejected' FOR UPDATE),recorded AS(UPDATE public.radar_discovery_pages page SET cost_estimate_brl=0 FROM original WHERE page.id=original.id RETURNING original.cost_estimate_brl,original.usage_date) UPDATE public.radar_source_usage_counters counter SET units=GREATEST(0,counter.units-CASE WHEN $5 THEN 1 ELSE 0 END),estimated_cost=GREATEST(0,counter.estimated_cost-recorded.cost_estimate_brl),updated_at=NOW() FROM recorded WHERE counter.organization_id=$2 AND counter.campaign_id=$3 AND counter.source_type=$4 AND counter.usage_date=recorded.usage_date`,[pageId,op.organization_id,op.campaign_id,scope.source,notDispatched])
+  throw Object.assign(failure(code),{cause})
  }
 }
 async function admitAdaptivePage(pool:pg.Pool,env:AppEnv,op:pg.QueryResultRow,page:Page,remaining:number,dependencies:{runtime?:typeof invokeAgentRuntime;collect?:typeof collectRadarSiteEvidence}){

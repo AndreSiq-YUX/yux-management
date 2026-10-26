@@ -1,5 +1,8 @@
 import { radarSizeMetricLabels, type RadarSizeMetric } from './radarSearchConfiguration'
 const explanations:Record<string,string>={
+  cnpja_municipality_not_found:'Não foi possível identificar a cidade na UF selecionada. Confira o nome e o estado na configuração da campanha. Nenhuma consulta foi enviada e a reserva foi liberada.',
+  cnpja_city_requires_state:'Selecione uma UF válida para identificar a cidade. Nenhuma consulta foi enviada e a reserva foi liberada.',
+  radar_discovery_request_uncertain:'Não foi possível confirmar a resposta da última busca. Não repita a consulta sem conferir o histórico e confirmar a retomada; a chamada anterior pode ter sido cobrada. Os resultados salvos foram preservados.',
   radar_analysis_retry_policy_changed:'A autorização não corresponde aos limites ou modelos atuais. Nenhuma chamada ao modelo foi iniciada nesta tentativa. Atualize a conciliação no Admin e confirme a retomada com a configuração atual; os dados encontrados foram preservados.',
   radar_analysis_retry_authorization_invalid:'A autorização de retomada venceu, já foi usada ou não corresponde a esta análise. Nenhuma chamada ao modelo foi iniciada nesta tentativa. Atualize a conciliação no Admin antes de confirmar novamente.',
   radar_analysis_retry_scope_invalid:'A retomada não corresponde à empresa ou à análise autorizada. Nenhuma chamada ao modelo foi iniciada nesta tentativa. Confira a seleção na conciliação do Admin.',

@@ -1,5 +1,11 @@
 import {it,expect} from 'vitest'
 import {radarResearchMessage} from './radarResearchMessages'
+it('explains invalid municipality preparation separately from an uncertain dispatched search',()=>{
+ expect(radarResearchMessage('cnpja_municipality_not_found')).toContain('cidade')
+ expect(radarResearchMessage('cnpja_municipality_not_found')).toContain('Nenhuma consulta foi enviada')
+ expect(radarResearchMessage('cnpja_city_requires_state')).toContain('UF')
+ expect(radarResearchMessage('radar_discovery_request_uncertain')).toContain('Não repita')
+})
 it('distinguishes a pre-provider authorization mismatch from an uncertain paid call',()=>{
  const message=radarResearchMessage('radar_analysis_retry_policy_changed');
  expect(message).toContain('limites ou modelos');expect(message).toContain('Nenhuma chamada ao modelo');expect(message).toContain('conciliação');

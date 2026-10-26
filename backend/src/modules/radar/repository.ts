@@ -38,7 +38,7 @@ import type {
 import { parseRadarCsv, type RadarCsvImportIssue } from './csvImport.js'
 import { createRadarDuplicateCandidates } from './dedupe.js'
 import { readJinaUrl, searchJinaWeb, type RadarJinaEvidence, type RadarJinaSearchResult } from './jinaClient.js'
-import { buildCnpjaCandidateSnippet, CnpjaSearchHttpError, searchCnpjaAdvanced, searchCnpjaAdvancedPage, type CnpjaCandidate, type CnpjaProviderConfig } from './cnpjaClient.js'
+import { buildCnpjaCandidateSnippet, CnpjaPreparationError, CnpjaSearchHttpError, searchCnpjaAdvanced, searchCnpjaAdvancedPage, type CnpjaCandidate, type CnpjaProviderConfig } from './cnpjaClient.js'
 import { assertSmallBatchLimit, estimateRadarCost } from './sourceRules.js'
 import {addRadarDecimal,compareRadarDecimal,remainingRadarCostUnits} from './cost-conversion.js'
 import {loadRadarOperationalLimits,validateRadarOperationalConfiguration,assertRadarOperationalLimit} from './operational-limits.js'
@@ -1268,8 +1268,9 @@ export async function runRadarCnpjaAdvancedSearch(
     } else results = await (dependencies.search ?? searchCnpjaAdvanced)(searchInput)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Falha ao executar pesquisa avancada no CNPJa.'
-    const rejected = error instanceof CnpjaSearchHttpError && error.requestRejected
-    const failedIssues = [{ code: rejected ? 'radar_capture_discovery_request_rejected' : 'provider_failed', sourceType: 'cnpja_advanced_search', message }]
+    const notDispatched = error instanceof CnpjaPreparationError
+    const rejected = notDispatched || error instanceof CnpjaSearchHttpError && error.requestRejected
+    const failedIssues = [{ code: notDispatched ? message : rejected ? 'radar_capture_discovery_request_rejected' : 'provider_failed', sourceType: 'cnpja_advanced_search', message }]
     const receipt = await pool.connect()
     try {
       await receipt.query('BEGIN')
@@ -1277,9 +1278,16 @@ export async function runRadarCnpjaAdvancedSearch(
         await receipt.query('SELECT id FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[input.campaignId,input.organizationId])
         await receipt.query('SELECT id FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2 FOR UPDATE',[input.captureOperationId,input.organizationId])
       }
+      if (notDispatched) {
+        // The locked running receipt is the idempotency marker. Use its date,
+        // not today's date, when releasing an unsent reservation after midnight.
+        const original = (await receipt.query('SELECT started_at::date AS usage_date FROM public.radar_enrichment_runs WHERE id=$1 AND status=\'running\' FOR UPDATE',[runId])).rows[0]
+        if (original) await receipt.query(`UPDATE public.radar_source_usage_counters SET units=GREATEST(0,units-1),estimated_cost=GREATEST(0,estimated_cost-$5),updated_at=NOW() WHERE organization_id=$1 AND campaign_id=$2 AND source_type=$3 AND usage_date=$4`,[input.organizationId,input.campaignId,'cnpja_advanced_search',original.usage_date,estimatedCost])
+      }
       // Do not free pending discovery until its rejection receipt is durable.
-      await updateRadarRunCompletion(receipt, runId, 'failed', { candidateCount: 0, estimatedCost, issues: failedIssues,
-        discoveryOutcome: rejected ? 'rejected' : 'uncertain',
+      await updateRadarRunCompletion(receipt, runId, 'failed', { candidateCount: 0, estimatedCost:notDispatched?0:estimatedCost, issues: failedIssues,
+        discoveryOutcome: notDispatched ? 'not_dispatched' : rejected ? 'rejected' : 'uncertain',
+        ...(notDispatched ? {requestStarted:false,billingOutcome:'not_billed'} : {}),
         ...(error instanceof CnpjaSearchHttpError ? {httpStatus:error.statusCode} : {}),
       }, message)
       // A crash after COMMIT must not allow the outbox to retry discovery
