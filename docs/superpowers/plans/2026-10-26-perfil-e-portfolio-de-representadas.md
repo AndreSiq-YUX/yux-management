@@ -1,6 +1,6 @@
 # Perfil e portfólio de representadas Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Identificar como o cliente atua e organizar várias empresas representadas, suas fontes e produtos no mesmo workspace.
 
@@ -46,7 +46,7 @@ API raiz `.../organizations/:organizationId/represented-businesses`: GET lista; 
 
 **Files/tests:** arquivos de perfil, novos schemas/repository/componentes; `backend/tests/represented-businesses.test.ts`, `backend/tests/integration/represented-businesses.test.ts`, `frontend/src/components/company-intelligence/RepresentedBusinessesSection.test.tsx` e teste existente de CompanyProfileForm.
 
-- [ ] **Step 1: Escrever RED:** leitura de perfil legado resulta businessModels=[], representante sem site é válido, múltiplos modelos coexistem, mudança de modelo preserva dados, membro não altera e empresa B não acessa relação de A por HTTP.
+- [x] **Step 1: Escrever RED:** leitura de perfil legado resulta businessModels=[], representante sem site é válido, múltiplos modelos coexistem, mudança de modelo preserva dados, membro não altera e empresa B não acessa relação de A por HTTP.
 
   ```ts
   expect(legacyProfile.businessModels).toEqual([])
@@ -54,10 +54,10 @@ API raiz `.../organizations/:organizationId/represented-businesses`: GET lista; 
   expect(afterModelChange.representedBusinesses.map(item => item.id)).toContain(representedId)
   expect(foreignOrganizationRead.statusCode).toBe(404)
   ```
-- [ ] **Step 2: Rodar RED:** backend `npm test -- tests/represented-businesses.test.ts`; frontend `npm test -- src/components/company-intelligence/RepresentedBusinessesSection.test.tsx src/components/company-intelligence/CompanyProfileForm.test.tsx`.
-- [ ] **Step 3: Implementar migration, rotas e UI** com RLS/escopo e CAS de versão; businessModels opcional nas escritas legadas preserva valor atual quando omitido. Exibir Como a empresa atua e reaproveitar Segmento; seção de representadas contextual com acesso aos registros existentes mesmo fora desses modelos. Dados não são inferidos de nomes de empresas.
-- [ ] **Step 4: GREEN e integração real**, quatro perfis e HTTP direto: `npm run test:integration -- tests/integration/represented-businesses.test.ts`; type-check de backend/frontend.
-- [ ] **Step 5: Commit:** `feat(company): model business roles and represented businesses`.
+- [x] **Step 2: Rodar RED:** backend `npm test -- tests/represented-businesses.test.ts`; frontend `npm test -- src/components/company-intelligence/RepresentedBusinessesSection.test.tsx src/components/company-intelligence/CompanyProfileForm.test.tsx`.
+- [x] **Step 3: Implementar migration, rotas e UI** com RLS/escopo e CAS de versão; businessModels opcional nas escritas legadas preserva valor atual quando omitido. Exibir Como a empresa atua e reaproveitar Segmento; seção de representadas contextual com acesso aos registros existentes mesmo fora desses modelos. Dados não são inferidos de nomes de empresas.
+- [x] **Step 4: GREEN e integração real**, quatro perfis e HTTP direto: `npm run test:integration -- tests/integration/represented-businesses.test.ts`; type-check de backend/frontend.
+- [x] **Step 5: Commit:** `feat(company): model business roles and represented businesses`.
 
 ### Task 2: Vínculos do catálogo, fontes e estratégia
 
@@ -67,7 +67,7 @@ Definir `RepresentedProductInput={name:string,category?:string,description:strin
 
 **Files/tests:** migration aditiva 0244 do mapa, repositórios/tipos/editores de produto e conhecimento; schemas de estratégia; `backend/tests/represented-portfolio-links.test.ts`, `backend/tests/integration/represented-portfolio-links.test.ts`, `frontend/src/components/company-intelligence/RepresentedBusinessEditor.test.tsx`.
 
-- [ ] **Step 1: Escrever RED:** produto homônimo de duas marcas permanece distinto; vínculo cruzado entre organizações falha; produto sem representada continua válido; arquivar fabricante preserva histórico mas o retira do portfólio ativo; estratégia não aceita ID estrangeiro.
+- [x] **Step 1: Escrever RED:** produto homônimo de duas marcas permanece distinto; vínculo cruzado entre organizações falha; produto sem representada continua válido; arquivar fabricante preserva histórico mas o retira do portfólio ativo; estratégia não aceita ID estrangeiro.
 
   ```ts
   expect(products.filter(item => item.name === 'Lasanha').length).toBe(2)
@@ -75,10 +75,10 @@ Definir `RepresentedProductInput={name:string,category?:string,description:strin
   expect(foreignProductLink.statusCode).toBe(404)
   expect(legacyProduct.representedBusinessId).toBeUndefined()
   ```
-- [ ] **Step 2: Rodar RED:** `npm test -- tests/represented-portfolio-links.test.ts` em backend; teste frontend da tarefa.
-- [ ] **Step 3: Implementar relações e UI** com filtros por marca/linha e contagem de produtos/fontes; origem não substitui revisão/publicação documental. Não mover produto para outra organização nem publicar automaticamente conteúdo. Preservar campos e metadados existentes em updates parciais.
-- [ ] **Step 4: GREEN**, integração com banco real e teste de produto/estratégia legados. Não renomear cliente real Vilma automaticamente.
-- [ ] **Step 5: Commit:** `feat(company): link products and knowledge to represented businesses`.
+- [x] **Step 2: Rodar RED:** `npm test -- tests/represented-portfolio-links.test.ts` em backend; teste frontend da tarefa.
+- [x] **Step 3: Implementar relações e UI** com filtros por marca/linha e contagem de produtos/fontes; origem não substitui revisão/publicação documental. Não mover produto para outra organização nem publicar automaticamente conteúdo. Preservar campos e metadados existentes em updates parciais.
+- [x] **Step 4: GREEN**, integração com banco real e teste de produto/estratégia legados. Não renomear cliente real Vilma automaticamente.
+- [x] **Step 5: Commit:** `feat(company): link products and knowledge to represented businesses`.
 
 ### Task 3: Importação com alvo explícito e revisão do portfólio
 
@@ -86,7 +86,7 @@ Definir `RepresentedProductInput={name:string,category?:string,description:strin
 
 **Files/tests:** `WebsiteOnboardingCard.tsx`, handlers e aplicação de sugestões existentes; `backend/tests/represented-website-onboarding.test.ts`, frontend `WebsiteOnboardingCard.test.tsx`.
 
-- [ ] **Step 1: Escrever RED:** fonte representada não altera razão social/site/logo do representante; mudança de alvo no apply é recusada; mesma referência de fonte/SKU não duplica; mesmo nome com embalagem/marca diferente não é fundido; tentativa de aplicar relação de outra conta falha.
+- [x] **Step 1: Escrever RED:** fonte representada não altera razão social/site/logo do representante; mudança de alvo no apply é recusada; mesma referência de fonte/SKU não duplica; mesmo nome com embalagem/marca diferente não é fundido; tentativa de aplicar relação de outra conta falha.
 
   ```ts
   expect(profileAfterImport.tradeName).toBe('Representante de teste')
@@ -95,10 +95,10 @@ Definir `RepresentedProductInput={name:string,category?:string,description:strin
   expect(importedProduct.representedBusinessId).toBe(selectedRepresentedId)
   expect(productsAfterSameSourceReplay.length).toBe(productsBeforeReplay.length)
   ```
-- [ ] **Step 2: Rodar RED:** backend `npm test -- tests/represented-website-onboarding.test.ts`; frontend `npm test -- src/components/company-intelligence/WebsiteOnboardingCard.test.tsx`.
-- [ ] **Step 3: Implementar target na UI/run/aplicação**, whitelist de campos por alvo e conciliação por referência estável. Sem identidade estável, mostrar sugestões de possíveis duplicados e deixar confirmação comercial. No curador, descrever a relação sem assumir autorização para toda linha do fabricante.
-- [ ] **Step 4: GREEN com leitor/curador simulados** e regressões de importação de site próprio. Catálogo em PDF usa vínculo de fonte e curadoria existente; não prometer que extraiu imagens. Uma execução paga real exige autorização separada.
-- [ ] **Step 5: Commit:** `feat(company): scope website imports to represented businesses`.
+- [x] **Step 2: Rodar RED:** backend `npm test -- tests/represented-website-onboarding.test.ts`; frontend `npm test -- src/components/company-intelligence/WebsiteOnboardingCard.test.tsx`.
+- [x] **Step 3: Implementar target na UI/run/aplicação**, whitelist de campos por alvo e conciliação por referência estável. Sem identidade estável, mostrar sugestões de possíveis duplicados e deixar confirmação comercial. No curador, descrever a relação sem assumir autorização para toda linha do fabricante.
+- [x] **Step 4: GREEN com leitor/curador simulados** e regressões de importação de site próprio. Catálogo em PDF usa vínculo de fonte e curadoria existente; não prometer que extraiu imagens. Uma execução paga real exige autorização separada.
+- [x] **Step 5: Commit:** `feat(company): scope website imports to represented businesses`.
 
 ### Task 4: Portfólio relevante no Harness e homologação conjunta
 
@@ -106,7 +106,7 @@ Definir `RepresentedProductInput={name:string,category?:string,description:strin
 
 **Files/tests:** migration aditiva 0245 do mapa, `portfolio-context.ts`, runtime novo/context/store/workflow, referências no domínio de estratégia; `tests/test_portfolio_context.py`, `backend/tests/integration/represented-portfolio-context.test.ts`; atualizar `docs/company-intelligence-operations.md` e runbook de estratégia.
 
-- [ ] **Step 1: Escrever RED:** produto 31 relevante é recuperado; duas marcas preservam nomes/embalagens/restrições; uma região-alvo não vira cobertura de entrega; dados internos não passam ao SDR; marca arquivada sai do contexto novo e permanece na auditoria; conta estrangeira e contrato adulterado são recusados.
+- [x] **Step 1: Escrever RED:** produto 31 relevante é recuperado; duas marcas preservam nomes/embalagens/restrições; uma região-alvo não vira cobertura de entrega; dados internos não passam ao SDR; marca arquivada sai do contexto novo e permanece na auditoria; conta estrangeira e contrato adulterado são recusados.
 
   ```python
   assert product_31_id in [item['id'] for item in relevant['items']]
@@ -114,12 +114,12 @@ Definir `RepresentedProductInput={name:string,category?:string,description:strin
   assert 'Margem interna' not in json.dumps(external_context, ensure_ascii=False)
   assert unknown_delivery['commercialAvailability'] == 'unconfirmed'
   ```
-- [ ] **Step 2: Rodar RED:** runtime `python -m pytest tests/test_portfolio_context.py -q`; backend teste de integração da tarefa.
-- [ ] **Step 3: Implementar recuperação paginada/relevante**, preferindo produto/representada selecionados por refs validadas; compor resumo de linhas para estratégia ampla. Encaminhar dados na requisição real ao provedor simulado. Manter doutrina global comum a todas as contas e perfil do representante como identidade principal.
-- [ ] **Step 4: GREEN e jornada local:** empresa sintética com duas representadas e mais de 30 produtos → publicar contexto → estratégia em Missões → salvar/publicar → conteúdo segmentado → SDR com orientação correta. Repetir sites YUX e oficina sem representadas. Não executar pesquisas nem enviar WhatsApp em produção.
-- [ ] **Step 5: Verificar checks** de backend/frontend/runtime afetados e jornadas do primeiro plano; documentar biblioteca visual/envio de anexos como fora deste incremento. Entregar diff, evidências e instruções de implantação; não afirmar disponibilidade em produção antes de deploy/homologação autorizados.
-- [ ] **Step 6: Commit:** `feat(harness): ground agents in represented portfolios`.
+- [x] **Step 2: Rodar RED:** runtime `python -m pytest tests/test_portfolio_context.py -q`; backend teste de integração da tarefa.
+- [x] **Step 3: Implementar recuperação paginada/relevante**, preferindo produto/representada selecionados por refs validadas; compor resumo de linhas para estratégia ampla. Encaminhar dados na requisição real ao provedor simulado. Manter doutrina global comum a todas as contas e perfil do representante como identidade principal.
+- [x] **Step 4: GREEN e jornada local:** empresa sintética com duas representadas e mais de 30 produtos → publicar contexto → estratégia em Missões → salvar/publicar → conteúdo segmentado → SDR com orientação correta. Repetir sites YUX e oficina sem representadas. Não executar pesquisas nem enviar WhatsApp em produção.
+- [x] **Step 5: Verificar checks** de backend/frontend/runtime afetados e jornadas do primeiro plano; documentar biblioteca visual/envio de anexos como fora deste incremento. Entregar diff, evidências e instruções de implantação; não afirmar disponibilidade em produção antes de deploy/homologação autorizados.
+- [x] **Step 6: Commit:** `feat(harness): ground agents in represented portfolios`.
 
 ## Autorrevisão do plano
 
-Tarefas cobrem atuação, relações, fontes, importação e recuperação. Reaproveitam perfil/produtos/base atuais e a estratégia do primeiro incremento. Extração visual automática, catálogo de mídia e automação comercial completa ficam para entrega posterior. Implementação ainda não iniciada.
+Tarefas cobrem atuação, relações, fontes, importação e recuperação. Reaproveitam perfil/produtos/base atuais e a estratégia do primeiro incremento. Extração visual automática, catálogo de mídia e automação comercial completa ficam para entrega posterior. Implementação local executada; a implantação em produção depende de autorização e homologação próprias.

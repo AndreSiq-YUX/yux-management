@@ -1,6 +1,6 @@
 # Estratégia persistente da empresa Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Registrar, editar e publicar estratégias flexíveis em Empresa, compartilhadas pelo Harness e propostas por Missões.
 
@@ -54,7 +54,7 @@ Integração de Missões em `backend/src/modules/action-engine/{mission-conversa
 - `setPrimaryCompanyStrategy(db,access,{strategyId:string,expectedVersion:number}):Promise<CompanyStrategy>` e `setCompanyStrategyArchived(db,access,{strategyId:string,expectedVersion:number,archived:boolean}):Promise<CompanyStrategy>`.
 - HTTP raiz `/api/company-intelligence/organizations/:organizationId/strategies`: GET lista; POST cria draft; GET `/:strategyId`; PUT `/:strategyId/draft`; POST `/:strategyId/publish`, `/primary`, `/archive`, `/restore`. Contratos de input usam as funções acima; POST create não aceita strategyId e exige expectedVersion=null. includeDrafts não supera permissão.
 
-- [ ] **Step 1: Escrever RED** nos dois arquivos de teste: `draft_keeps_published_revision`, `publish_rejects_stale_version`, `replay_does_not_duplicate`, `same_company_two_contracts`, `foreign_org_reference_denied`, `member_cannot_write_or_read_draft`, `publication_and_event_rollback_together`. Usar três títulos e seções diferentes dos exemplos da spec, sem enum de objetivo setorial.
+- [x] **Step 1: Escrever RED** nos dois arquivos de teste: `draft_keeps_published_revision`, `publish_rejects_stale_version`, `replay_does_not_duplicate`, `same_company_two_contracts`, `foreign_org_reference_denied`, `member_cannot_write_or_read_draft`, `publication_and_event_rollback_together`. Usar três títulos e seções diferentes dos exemplos da spec, sem enum de objetivo setorial.
 
   Asserções centrais, com fixtures `strategyId`, `revision1`, `revision2` e `actorA`:
 
@@ -66,11 +66,11 @@ Integração de Missões em `backend/src/modules/action-engine/{mission-conversa
   expect(memberWrite.statusCode).toBe(403)
   expect((await listCompanyStrategies(db, actorA, { includeDrafts: true })).length).toBe(1)
   ```
-- [ ] **Step 2: Executar RED:** em backend, `npm test -- tests/company-strategy.test.ts`; esperado falhar pelo módulo ausente. Integração usa `createIntegrationRig({queueMode:'stub'})` e banco isolado verificado pelo rig.
-- [ ] **Step 3: Implementar contratos e migration** com as quatro tabelas da spec, FKs compostas, índices por organização/estado, unique parcial de principal e gatilho de imutabilidade de revisões/publicações. API e runtime com privilégios distintos; RLS e guards seguem helpers existentes. REVOKE de acesso público. Origem/referências são validadas por organização e IDs reais.
-- [ ] **Step 4: Implementar repository/routes** com lock na estratégia, CAS de version e idempotência transacional. Publicar somente draft atual e hash exato; principal e arquivamento incrementam versão e têm auditoria. Restaurar deixa sem publicação vigente até ato explícito. Sanitizar leitura de membro para somente conteúdo publicado. Erros: 403 para operação sem permissão, 404 para ID fora do escopo e 409 para versão/base obsoleta.
-- [ ] **Step 5: Verificar GREEN:** comandos anteriores; `npm run test:integration -- tests/integration/company-strategy.test.ts`; `npm run type-check`. Papéis reais `yux_api/yux_runtime`, quatro atores e chamada HTTP direta; nenhuma chamada paga.
-- [ ] **Step 6: Commit** somente arquivos da tarefa: `feat(company): add versioned company strategies`.
+- [x] **Step 2: Executar RED:** em backend, `npm test -- tests/company-strategy.test.ts`; esperado falhar pelo módulo ausente. Integração usa `createIntegrationRig({queueMode:'stub'})` e banco isolado verificado pelo rig.
+- [x] **Step 3: Implementar contratos e migration** com as quatro tabelas da spec, FKs compostas, índices por organização/estado, unique parcial de principal e gatilho de imutabilidade de revisões/publicações. API e runtime com privilégios distintos; RLS e guards seguem helpers existentes. REVOKE de acesso público. Origem/referências são validadas por organização e IDs reais.
+- [x] **Step 4: Implementar repository/routes** com lock na estratégia, CAS de version e idempotência transacional. Publicar somente draft atual e hash exato; principal e arquivamento incrementam versão e têm auditoria. Restaurar deixa sem publicação vigente até ato explícito. Sanitizar leitura de membro para somente conteúdo publicado. Erros: 403 para operação sem permissão, 404 para ID fora do escopo e 409 para versão/base obsoleta.
+- [x] **Step 5: Verificar GREEN:** comandos anteriores; `npm run test:integration -- tests/integration/company-strategy.test.ts`; `npm run type-check`. Papéis reais `yux_api/yux_runtime`, quatro atores e chamada HTTP direta; nenhuma chamada paga.
+- [x] **Step 6: Commit** somente arquivos da tarefa: `feat(company): add versioned company strategies`.
 
 ### Task 2: Página flexível e edição manual em Empresa
 
@@ -78,7 +78,7 @@ Integração de Missões em `backend/src/modules/action-engine/{mission-conversa
 
 **Interfaces:** serviço expõe `list,get,createDraft,saveDraft,publish,setPrimary,archive,restore` com input/output da Task 1. `StrategyEditor({content,onChange,saving})` edita o contrato V1; `StrategyOverview({strategy,onEdit,onPublish})` mostra publicação vigente e aviso de draft separado. URLs e labels exatamente seção 3 da spec.
 
-- [ ] **Step 1: Escrever RED:** `manual_strategy_without_action_engine`, `sections_are_optional_and_reorderable`, `member_sees_published_only`, `failed_save_keeps_editor_text`, `stale_publish_shows_comparison`, `both_workspace_paths_use_same_record`. Formulários de oficina, sites e representante não exibem campos obrigatórios exclusivos de outro caso.
+- [x] **Step 1: Escrever RED:** `manual_strategy_without_action_engine`, `sections_are_optional_and_reorderable`, `member_sees_published_only`, `failed_save_keeps_editor_text`, `stale_publish_shows_comparison`, `both_workspace_paths_use_same_record`. Formulários de oficina, sites e representante não exibem campos obrigatórios exclusivos de outro caso.
 
   ```ts
   expect(createStrategyButton.disabled).toBe(false) // fixture sem action_engine
@@ -86,10 +86,10 @@ Integração de Missões em `backend/src/modules/action-engine/{mission-conversa
   expect(sectionTitlesAfterReorder).toEqual(['Próximos passos', 'Públicos'])
   expect(memberHtml).not.toContain('Alterações em rascunho')
   ```
-- [ ] **Step 2: Executar RED:** em frontend, `npm test -- src/pages/client-portal/company/PortalCompanyStrategyPage.test.tsx src/components/company-strategy/StrategyEditor.test.tsx src/lib/platform/navigation.test.ts`.
-- [ ] **Step 3: Implementar página e navegação**, leitura por padrão, seções adicionáveis/reordenáveis, modo de edição, botões Salvar rascunho/Publicar para os agentes e histórico. Renderização segura reutiliza Markdown existente; sem HTML arbitrário ou novo editor/dependência. Sem chamada de IA ao abrir, editar, salvar ou publicar. Links usam `usePortalWorkspacePath`; validar disponibilidade de Missões antes de oferecer botão de conversa.
-- [ ] **Step 4: Verificar GREEN**, `npm run type-check`, uso em viewport móvel e desktop via browser. Preservar componentes e rotas de Projetos, perfil, marca e conhecimento.
-- [ ] **Step 5: Commit:** `feat(company): add strategy page and section editor`.
+- [x] **Step 2: Executar RED:** em frontend, `npm test -- src/pages/client-portal/company/PortalCompanyStrategyPage.test.tsx src/components/company-strategy/StrategyEditor.test.tsx src/lib/platform/navigation.test.ts`.
+- [x] **Step 3: Implementar página e navegação**, leitura por padrão, seções adicionáveis/reordenáveis, modo de edição, botões Salvar rascunho/Publicar para os agentes e histórico. Renderização segura reutiliza Markdown existente; sem HTML arbitrário ou novo editor/dependência. Sem chamada de IA ao abrir, editar, salvar ou publicar. Links usam `usePortalWorkspacePath`; validar disponibilidade de Missões antes de oferecer botão de conversa.
+- [x] **Step 4: Verificar GREEN**, `npm run type-check`, uso em viewport móvel e desktop via browser. Preservar componentes e rotas de Projetos, perfil, marca e conhecimento.
+- [x] **Step 5: Commit:** `feat(company): add strategy page and section editor`.
 
 ### Task 3: Contexto publicado compartilhado e proveniência
 
@@ -102,7 +102,7 @@ Integração de Missões em `backend/src/modules/action-engine/{mission-conversa
 - `CustomerContextService.retrieve` acrescenta `company_strategy_context` e `company_strategy_sources`; ausência de estratégia retorna estrutura vazia comprovada, sem inventar defaults.
 - `MissionSourceRefWire.kind` passa a aceitar `company_strategy` com identidade e sem IDs documentais falsos, exatamente seção 6 da spec.
 
-- [ ] **Step 1: Escrever RED:** `published_only_across_contracts`, `sdr_receives_only_external_guidance`, `empty_external_guidance_has_no_internal_fallback`, `profile_and_audience_spoof_rejected`, `new_publication_changes_context_hash`, `archived_strategy_removed`, `constraints_survive_context_budget`, `actual_provider_payload_contains_strategy`. Testar requisição ao contexto sem acesso direto às tabelas com `yux_runtime` real.
+- [x] **Step 1: Escrever RED:** `published_only_across_contracts`, `sdr_receives_only_external_guidance`, `empty_external_guidance_has_no_internal_fallback`, `profile_and_audience_spoof_rejected`, `new_publication_changes_context_hash`, `archived_strategy_removed`, `constraints_survive_context_budget`, `actual_provider_payload_contains_strategy`. Testar requisição ao contexto sem acesso direto às tabelas com `yux_runtime` real.
 
   ```python
   assert 'Margem interna 25%' not in json.dumps(external_context, ensure_ascii=False)
@@ -110,14 +110,14 @@ Integração de Missões em `backend/src/modules/action-engine/{mission-conversa
   assert new_context['strategy_context']['contextHash'] != old_context['strategy_context']['contextHash']
   assert provider_request['context']['company_strategy_context']['selected'][0]['revisionId'] == published_revision_id
   ```
-- [ ] **Step 2: Executar RED:** runtime `python -m pytest tests/test_company_strategy_context.py tests/test_customer_context.py tests/test_strategy.py -q`; backend `npm run test:integration -- tests/integration/company-strategy-context.test.ts`.
-- [ ] **Step 3: Implementar projeção SQL e store**, seguindo checks de sessão/contrato/perfil/audiência da migration 0238 e política de blocos. Seleção determinística principal/relevância e IDs validados, contagem de cobertura explícita, orçamento 6000. Sem embeddings ou chamadas pagas. Contexto da edição `workingDraft` nunca passa por esta função.
-- [ ] **Step 4: Integrar serviço ao Harness** e encaminhar campo no payload de `_execute_harness_agent`, especialistas e síntese. Manter doutrina e documentos. Acrescentar fonte ao catálogo e verificador com reconstituição da projeção para nova proposta; resolver versão antiga somente na auditoria de plano congelado. Alterar validadores que verificam prefixo/namespace para aceitar `company_strategy` só no namespace customer.
+- [x] **Step 2: Executar RED:** runtime `python -m pytest tests/test_company_strategy_context.py tests/test_customer_context.py tests/test_strategy.py -q`; backend `npm run test:integration -- tests/integration/company-strategy-context.test.ts`.
+- [x] **Step 3: Implementar projeção SQL e store**, seguindo checks de sessão/contrato/perfil/audiência da migration 0238 e política de blocos. Seleção determinística principal/relevância e IDs validados, contagem de cobertura explícita, orçamento 6000. Sem embeddings ou chamadas pagas. Contexto da edição `workingDraft` nunca passa por esta função.
+- [x] **Step 4: Integrar serviço ao Harness** e encaminhar campo no payload de `_execute_harness_agent`, especialistas e síntese. Manter doutrina e documentos. Acrescentar fonte ao catálogo e verificador com reconstituição da projeção para nova proposta; resolver versão antiga somente na auditoria de plano congelado. Alterar validadores que verificam prefixo/namespace para aceitar `company_strategy` só no namespace customer.
 
   Preservar essa fonte em `composeVerifiedMissionContext` e nos dois caminhos de planejamento do handler, incluindo o caminho específico de `radar_prospecting`. Não inventar `sourceId` documental para uma revisão de estratégia. A seleção de audiência não pode depender apenas de `kind.startsWith('knowledge_')`. Usar o mesmo envelope canônico de hash do verificador existente (`id`, `version`, `content` da projeção autorizada integral), com teste de paridade Python/TypeScript. Adicionar `radar_plan_retains_company_strategy_revision` e verificar o conteúdo na requisição de planejamento enviada ao runtime simulado.
-- [ ] **Step 5: Gerar contratos:** em backend `npm run generate:mission-contracts`; verificar diff e executar no runtime `python -m pytest tests/test_mission_contract_export.py tests/test_mission_conversation_contract.py -q`; backend `npm test -- tests/mission-wire-contract.test.ts`. Os três arquivos existem na base examinada.
-- [ ] **Step 6: Verificar GREEN** das provas anteriores, contrato/schema e testes de fonte adulterada/tenant estrangeiro. Usar provedor simulado para Missões, criação de conteúdo e SDR; capturar payloads e fontes, não só resposta textual.
-- [ ] **Step 7: Commit:** `feat(harness): share published company strategy context`.
+- [x] **Step 5: Gerar contratos:** em backend `npm run generate:mission-contracts`; verificar diff e executar no runtime `python -m pytest tests/test_mission_contract_export.py tests/test_mission_conversation_contract.py -q`; backend `npm test -- tests/mission-wire-contract.test.ts`. Os três arquivos existem na base examinada.
+- [x] **Step 6: Verificar GREEN** das provas anteriores, contrato/schema e testes de fonte adulterada/tenant estrangeiro. Usar provedor simulado para Missões, criação de conteúdo e SDR; capturar payloads e fontes, não só resposta textual.
+- [x] **Step 7: Commit:** `feat(harness): share published company strategy context`.
 
 ### Task 4: Propostas de estratégia e revisões pelo agente de Missões
 
@@ -130,7 +130,7 @@ Integração de Missões em `backend/src/modules/action-engine/{mission-conversa
 - GET `/api/company-intelligence/organizations/:organizationId/strategy-proposals/:proposalId`; POST no mesmo caminho `/apply` com input acima; fonte da proposta é a mensagem persistida, não conteúdo refeito no browser.
 - POST `.../strategies/:strategyId/review-conversation` com `{expectedVersion,revisionId,message,clientMessageId}` valida configuração/permissão e passa referência de edição ao fluxo de criar conversa existente. `workingDraft` é contexto de edição separado, nunca fonte publicada.
 
-- [ ] **Step 1: Escrever RED:** `consultation_without_pack_or_budget`, `proposal_does_not_publish_or_start_actions`, `propose_update_uses_current_base`, `stale_proposal_never_overwrites_manual_draft`, `message_retry_reuses_proposal`, `member_cannot_apply_forged_proposal`, `old_turn_without_proposal_still_valid` e teste de edição autorizada do draft sem vazamento aos outros agentes.
+- [x] **Step 1: Escrever RED:** `consultation_without_pack_or_budget`, `proposal_does_not_publish_or_start_actions`, `propose_update_uses_current_base`, `stale_proposal_never_overwrites_manual_draft`, `message_retry_reuses_proposal`, `member_cannot_apply_forged_proposal`, `old_turn_without_proposal_still_valid` e teste de edição autorizada do draft sem vazamento aos outros agentes.
 
   ```ts
   expect(proposalTurn.brief.packKeys).toEqual([])
@@ -139,12 +139,12 @@ Integração de Missões em `backend/src/modules/action-engine/{mission-conversa
   expect(staleApply.statusCode).toBe(409)
   expect(await rig.providerCalls()).toHaveLength(0)
   ```
-- [ ] **Step 2: Executar RED:** backend `npm test -- tests/company-strategy-proposals.test.ts`; runtime `python -m pytest tests/test_company_strategy_proposals.py -q`; frontend `npm test -- src/components/company-strategy/StrategyProposalReview.test.tsx`.
-- [ ] **Step 3: Estender contrato Pydantic** com conteúdo V1 e opcional strategyProposal; regenerar tipos/schema. Não usar campos arbitrários de `understood` ou `brief.constraints` como mutação. Modo consultivo não confirma brief executável nem exige parâmetros de Radar.
-- [ ] **Step 4: Persistir proposta no handler** depois das validações de fontes/tenant, sem alterar status de uma missão executável existente. Armazenar `proposalId` em metadata da mensagem, sem reescrever respostas antigas. Proposta malformada é rejeitada como proposta; não executar comandos inventados.
-- [ ] **Step 5: Implementar cartão e revisão**, diferenças por seção, Salvar rascunho, link canônico ao registro e ação Pedir revisão ao agente. Falha de rede mantém a proposta/edição e reutiliza idempotencyKey; conteúdo deve continuar disponível ao recarregar.
-- [ ] **Step 6: Verificar GREEN**, integração com `yux_worker/yux_api`, concorrência manual versus proposta e geração sem chamada paga. Publicação continua pela rota da Task 1; aplicar proposta não a publica.
-- [ ] **Step 7: Commit:** `feat(missions): propose and revise company strategies`.
+- [x] **Step 2: Executar RED:** backend `npm test -- tests/company-strategy-proposals.test.ts`; runtime `python -m pytest tests/test_company_strategy_proposals.py -q`; frontend `npm test -- src/components/company-strategy/StrategyProposalReview.test.tsx`.
+- [x] **Step 3: Estender contrato Pydantic** com conteúdo V1 e opcional strategyProposal; regenerar tipos/schema. Não usar campos arbitrários de `understood` ou `brief.constraints` como mutação. Modo consultivo não confirma brief executável nem exige parâmetros de Radar.
+- [x] **Step 4: Persistir proposta no handler** depois das validações de fontes/tenant, sem alterar status de uma missão executável existente. Armazenar `proposalId` em metadata da mensagem, sem reescrever respostas antigas. Proposta malformada é rejeitada como proposta; não executar comandos inventados.
+- [x] **Step 5: Implementar cartão e revisão**, diferenças por seção, Salvar rascunho, link canônico ao registro e ação Pedir revisão ao agente. Falha de rede mantém a proposta/edição e reutiliza idempotencyKey; conteúdo deve continuar disponível ao recarregar.
+- [x] **Step 6: Verificar GREEN**, integração com `yux_worker/yux_api`, concorrência manual versus proposta e geração sem chamada paga. Publicação continua pela rota da Task 1; aplicar proposta não a publica.
+- [x] **Step 7: Commit:** `feat(missions): propose and revise company strategies`.
 
 ### Task 5: Homologação integrada e preparação da entrega
 
@@ -152,7 +152,7 @@ Integração de Missões em `backend/src/modules/action-engine/{mission-conversa
 
 **Interfaces:** somente as entregues nas Tasks 1–4; não criar fixtures em produção. Reusar rig e provedor local. Release manual registra commit de API/worker/runtime/frontend e migrations efetivamente aplicadas.
 
-- [ ] **Step 1: Escrever e executar jornada** para representante, YUX e oficina: conversa simulada → proposta → draft → edição manual → publicação → novo turno de Missões → conteúdo → SDR seguro → revisão proposta concorrente → nova publicação. Asserções sobre registro/revisão/projeção no payload e zero chamadas externas, não só frases da resposta.
+- [x] **Step 1: Escrever e executar jornada** para representante, YUX e oficina: conversa simulada → proposta → draft → edição manual → publicação → novo turno de Missões → conteúdo → SDR seguro → revisão proposta concorrente → nova publicação. Asserções sobre registro/revisão/projeção no payload e zero chamadas externas, não só frases da resposta.
 
   ```ts
   expect(missionContextRevision).toBe(contentContextRevision)
@@ -161,12 +161,12 @@ Integração de Missões em `backend/src/modules/action-engine/{mission-conversa
   expect(historicalPlanRevision).toBe(firstPublishedRevision.id)
   expect(await rig.providerCalls()).toHaveLength(0)
   ```
-- [ ] **Step 2: Executar checks**: backend `npm test`, `npm run type-check`, integração de company-strategy; frontend testes novos e conversas/navegação mais `npm run type-check` e `npm run build`; runtime `python -m pytest -q`. Corrigir regressões pertinentes sem reformatar módulos alheios.
-- [ ] **Step 3: Verificar no browser local** páginas nos dois contextos, quatro perfis, celular/desktop, refresh, falha de API, link de proposta e volta à conversa. Nunca marcar tentativa de fonte/ação externa como teste necessário deste plano.
-- [ ] **Step 4: Preparar runbook** com ordem migration → API/worker → runtime → frontend; em atualização mista, só oferecer propostas depois de todos aceitarem o contrato. Documentar retirada da navegação/propostas e preservação dos registros para recuperação, sem DROP de tabelas em rollback. Leitura antiga ignora campo opcional.
+- [x] **Step 2: Executar checks**: backend `npm test`, `npm run type-check`, integração de company-strategy; frontend testes novos e conversas/navegação mais `npm run type-check` e `npm run build`; runtime `python -m pytest -q`. Corrigir regressões pertinentes sem reformatar módulos alheios.
+- [x] **Step 3: Verificar no browser local** páginas nos dois contextos, quatro perfis, celular/desktop, refresh, falha de API, link de proposta e volta à conversa. Nunca marcar tentativa de fonte/ação externa como teste necessário deste plano.
+- [x] **Step 4: Preparar runbook** com ordem migration → API/worker → runtime → frontend; em atualização mista, só oferecer propostas depois de todos aceitarem o contrato. Documentar retirada da navegação/propostas e preservação dos registros para recuperação, sem DROP de tabelas em rollback. Leitura antiga ignora campo opcional.
 - [ ] **Step 5: Revisão final e entrega** do diff e evidências. Publicação em produção e piloto pago dependem de autorização específica; não ampliar allowlist do Radar. Atualizar checkboxes somente com provas realmente executadas.
-- [ ] **Step 6: Commit:** `test(company): verify shared strategy journeys and rollout`.
+- [x] **Step 6: Commit:** `test(company): verify shared strategy journeys and rollout`.
 
 ## Autorrevisão do plano
 
-As Tasks 1–5 cobrem cadastro, página, agentes, conversa e validação. Modelos de negócio e representadas estão no plano seguinte e não bloqueiam esta entrega. A versão da empresa não é Strategy Pack global nem conhecimento documental duplicado. A leitura do runtime é restrita e a proposta não é publicação. Implementação ainda não iniciada.
+As Tasks 1–5 cobrem cadastro, página, agentes, conversa e validação. Modelos de negócio e representadas estão no plano seguinte e não bloqueiam esta entrega. A versão da empresa não é Strategy Pack global nem conhecimento documental duplicado. A leitura do runtime é restrita e a proposta não é publicação. Implementação local executada; a implantação em produção depende de autorização e homologação próprias.

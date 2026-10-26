@@ -53,7 +53,7 @@ class CustomerContextService:
         if retrieval_audience not in {"internal_operator", "client_user", "external_contact"}:
             raise ValueError("invalid_customer_context_audience")
         strategy = CompanyStrategyContextService(self.store).retrieve(organization_id=organization_id, contract_id=contract_id, profile_key=profile_key, audience=retrieval_audience, query=query)
-        portfolio=CompanyPortfolioContextService(self.store).retrieve(organization_id=organization_id,contract_id=contract_id,profile_key=profile_key,audience=retrieval_audience,query=query)
+        portfolio=CompanyPortfolioContextService(self.store).retrieve(organization_id=organization_id,contract_id=contract_id,profile_key=profile_key,audience=retrieval_audience,query=query,represented_business_ids=strategy.get('portfolio_selection',{}).get('representedBusinessIds',[]))
         strategy_fields = {'company_strategy_context': strategy['strategy_context'], 'company_strategy_sources': strategy['sources'],'portfolio_context':portfolio}
 
         company = _latest(self.store.list("organization_company_profiles", {"organization_id": organization_id}, limit=2))

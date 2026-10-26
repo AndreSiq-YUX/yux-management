@@ -5,8 +5,8 @@ import { usePlatformStore } from '@/stores/platformStore'
 import { ApiClientError } from '@/lib/apiClient'
 
 const service = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), createDraft: vi.fn(), saveDraft: vi.fn(), publish: vi.fn(), setPrimary: vi.fn(), archive: vi.fn(), restore: vi.fn(), history: vi.fn() }))
-const route = vi.hoisted(() => ({ strategyId: undefined as string | undefined }))
-vi.mock('react-router-dom', async importOriginal => ({ ...await importOriginal<typeof import('react-router-dom')>(), useParams: () => route }))
+const route = vi.hoisted(() => ({ strategyId: undefined as string | undefined,navigate:vi.fn() }))
+vi.mock('react-router-dom', async importOriginal => ({ ...await importOriginal<typeof import('react-router-dom')>(), useParams: () => route,useNavigate:()=>route.navigate }))
 vi.mock('@/services/companyStrategyService', () => ({ companyStrategyService: service }))
 import { PortalCompanyStrategyPage } from './PortalCompanyStrategyPage'
 
@@ -47,6 +47,7 @@ describe('Company strategy page', () => {
     await click(byText(container, 'button', 'Salvar rascunho'))
     expect(service.createDraft.mock.calls.length).toBe(1)
     expect(service.saveDraft.mock.calls.length).toBe(0)
+    expect(route.navigate).toHaveBeenCalledWith('/portal/empresa/estrategia/strategy-2',{replace:true})
     await unmount()
   })
   it('does not show a completed write from the previous account after switching workspace', async () => {

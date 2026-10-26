@@ -28,3 +28,13 @@ def test_portfolio_reaches_actual_mission_provider_and_retains_conditions():
     assert 'Portfólio da empresa' in rendered
     assert 'Lasanha especial' in rendered
     assert 'unconfirmed' in rendered
+
+def test_published_strategy_brand_references_control_the_internal_portfolio_selection():
+    from test_company_strategy_context import store_with_strategy
+    from yux_agent_runtime.customer_context import CustomerContextService
+    store=store_with_strategy()
+    store.tables['company_strategy_revisions'][0]['content']['references']['representedBusinessIds']=['chosen']
+    store.tables['company_represented_businesses']=[{'id':key,'name':key,'organization_id':'org-a','status':'active'} for key in ['chosen','other']]
+    store.tables['marketing_products_services']=[{'id':key,'name':'Produto '+key,'organization_id':'org-a','status':'active','represented_business_id':key} for key in ['chosen','other']]
+    result=CustomerContextService(store).retrieve(organization_id='org-a',contract_id=None,profile_key='growth_strategist',query='estratégia')
+    assert [item['representedBusinessId'] for item in result['portfolio_context']['items']]==['chosen']

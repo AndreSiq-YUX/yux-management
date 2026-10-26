@@ -230,6 +230,8 @@ export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: 
   const storedRun=await getWebsiteOnboardingRun(pool,organizationId,runId)
   const target=websiteTargetSchema.parse(storedRun.run.outputPayload.target??{kind:'own_company'})
   await assertRepresentedWebsiteTarget(pool,organizationId,target)
+  const representedName=target.kind==='represented_business'?(await pool.query('SELECT name FROM public.company_represented_businesses WHERE organization_id=$1 AND id=$2',[organizationId,target.representedBusinessId])).rows[0]?.name:null
+  const sourceTitle=representedName?`Site de ${representedName} — ${new Date(storedRun.run.createdAt).toISOString()}`:'Site institucional'
   const jina = dependencies.discover?{value:undefined}:await resolveEffectiveProviderCredential(pool,env,'jina_ai')
   try {
     await updateKnowledgeIntelligenceRun(pool, runId, { status: 'running', stage: 'discovering', progress: 10 })
@@ -277,7 +279,7 @@ export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: 
     const shell = existingKnowledge
       ? { sourceId: existingKnowledge.sourceId, documentId: existingKnowledge.id }
       : await createKnowledgeShell(pool, {
-          organizationId, contractId, representedBusinessId:target.kind==='represented_business'?target.representedBusinessId:undefined,title:target.kind==='represented_business'?'Site da representada':'Site institucional', sourceType: 'manual',
+          organizationId, contractId, representedBusinessId:target.kind==='represented_business'?target.representedBusinessId:undefined,title:sourceTitle, sourceType: 'manual',
           sourceUrl: discovery.rootUrl, documentType: 'other', visibility: 'both',
           checksumSha256,
           metadata: { websiteOnboardingRunId: runId, discoveredUrls: discovery.pages.map(page => page.url) },
@@ -286,7 +288,7 @@ export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: 
       await completeKnowledgeIngestion(pool, {
         sourceId: shell.sourceId,
         documentId: shell.documentId,
-        extracted: extractManualKnowledge('Site institucional', combined),
+        extracted: extractManualKnowledge(sourceTitle, combined),
       })
     }
     await updateKnowledgeIntelligenceRun(pool, runId, {

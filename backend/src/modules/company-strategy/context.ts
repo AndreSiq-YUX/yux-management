@@ -6,13 +6,15 @@ type StrategyContextItem = { strategyId: string; revisionId: string; revisionNum
 type RawContext = { index: unknown[]; selected: StrategyContextItem[]; coverage: Record<string, unknown>; contextHash: string }
 export function normalizeCompanyStrategyContext(raw: RawContext, audience: Audience) {
   const sources: MissionSourceRefWire[] = []
+  const representedBusinessIds:string[]=[]
   const selected = raw.selected.map(({ sourceContent, ...item }) => {
+    if(audience!=='external_contact')representedBusinessIds.push(...(JSON.parse(sourceContent).references?.representedBusinessIds??[]))
     const contentHash = hashCanonical({ id: item.revisionId, version: String(item.revisionNumber), content: sourceContent })
     sources.push({ ref: `customer:strategy:${item.revisionId}`, kind: 'company_strategy', id: item.revisionId, version: String(item.revisionNumber), contentHash,
       visibility: audience === 'external_contact' ? 'external' : 'internal', title: item.title.slice(0, 240), displayMode: 'named' })
     return { ...item, projectionHash: contentHash }
   })
-  return { context: { ...raw, selected }, sources }
+  return { context: { ...raw, selected }, sources,portfolioSelection:{representedBusinessIds:[...new Set(representedBusinessIds)].slice(0,100)} }
 }
 export async function getCompanyStrategyContext(db: Queryable, input: { organizationId: string; contractId?: string | null; profileKey: string; audience: Audience; query: string; strategyIds?: string[]; maxChars?: number }) {
   const result = await db.query<{ context: RawContext }>('SELECT private.get_company_strategy_context_v1($1,$2,$3,$4,$5,$6::uuid[],$7) AS context', [input.organizationId,input.contractId ?? null,input.profileKey,input.audience,input.query,input.strategyIds ?? [],input.maxChars ?? 6000])

@@ -72,11 +72,14 @@ class CompanyStrategyContextService:
     def retrieve(self, *, organization_id, contract_id, profile_key, audience, query, strategy_ids=None, max_chars=6000) -> dict:
         result = self.store.retrieve_company_strategy_context(organization_id=organization_id, contract_id=contract_id, profile_key=profile_key, audience=audience, query=query, strategy_ids=strategy_ids or [], max_chars=max_chars)
         selected, sources = [], []
+        represented_ids=[]
         for raw in result.get('selected', []):
             item = dict(raw)
             source_content = item.pop('sourceContent')
+            if audience != 'external_contact':
+                represented_ids.extend((json.loads(source_content).get('references') or {}).get('representedBusinessIds',[]))
             content_hash = canonical_hash({'id': item['revisionId'], 'version': str(item['revisionNumber']), 'content': source_content})
             item['projectionHash'] = content_hash
             selected.append(item)
             sources.append({'ref': f"customer:strategy:{item['revisionId']}", 'kind': 'company_strategy', 'id': item['revisionId'], 'version': str(item['revisionNumber']), 'contentHash': content_hash, 'visibility': 'external' if audience == 'external_contact' else 'internal', 'title': item['title'], 'displayMode': 'named'})
-        return {'strategy_context': {**result, 'selected': selected}, 'sources': sources}
+        return {'strategy_context': {**result, 'selected': selected}, 'sources': sources,'portfolio_selection':{'representedBusinessIds':list(dict.fromkeys(represented_ids))[:100]}}

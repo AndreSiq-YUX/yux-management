@@ -5,8 +5,8 @@ export async function getCompanyPortfolioContext(db:Queryable,input:{organizatio
  const context=result.rows[0]?.context
  if(!context)throw new Error('company_portfolio_context_unavailable')
  context.coverage.omittedForBudget=0
- while(JSON.stringify(context).length>10000&&context.items.length){context.items.pop();context.coverage.omittedForBudget=Number(context.coverage.omittedForBudget)+1}
- while(JSON.stringify(context).length>10000&&context.representedBusinesses.length){context.representedBusinesses.pop();context.coverage.omittedForBudget=Number(context.coverage.omittedForBudget)+1}
+ while(JSON.stringify(context).length>9900&&context.items.length){context.items.pop();context.coverage.omittedForBudget=Number(context.coverage.omittedForBudget)+1}
+ while(JSON.stringify(context).length>9900&&context.representedBusinesses.length){context.representedBusinesses.pop();context.coverage.omittedForBudget=Number(context.coverage.omittedForBudget)+1}
  context.coverage.selected=context.items.length
  context.contextHash=hashCanonical(context)
  return context

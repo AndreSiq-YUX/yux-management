@@ -9,7 +9,7 @@ export async function addCompanyStrategyToMissionPlanning<T extends PlanningCont
   const strategyIds = [...new Set(input.context.knowledgeItems.filter(item => item.kind === 'company_strategy').map(item => item.companyStrategyId).filter((id): id is string => typeof id === 'string'))]
   const current = await getCompanyStrategyContext(db, { organizationId: input.organizationId, contractId: input.contractId, profileKey: 'growth_strategist', audience: 'client_user', query: input.query, strategyIds })
   if (current.context.coverage.incomplete) throw new Error('mission_company_strategy_context_incomplete')
-  const portfolio=await getCompanyPortfolioContext(db,{organizationId:input.organizationId,contractId:input.contractId,profileKey:'growth_strategist',audience:'client_user',query:input.query})
+  const portfolio=await getCompanyPortfolioContext(db,{organizationId:input.organizationId,contractId:input.contractId,profileKey:'growth_strategist',audience:'client_user',query:input.query,representedBusinessIds:current.portfolioSelection.representedBusinessIds})
   const verified = await verifyMissionKnowledgeContext(db, { organizationId: input.organizationId, contractId: input.contractId, audience: 'client_user', agentProfileKey: 'growth_strategist', sourceRefs: current.sources })
   const knowledgeItems = [
     ...input.context.knowledgeItems.filter(item => item.kind !== 'company_strategy'),
