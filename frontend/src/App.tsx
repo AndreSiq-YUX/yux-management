@@ -51,6 +51,7 @@ const PortalLeadScoringPage = lazy(() => import('@/pages/client-portal/commercia
 const PortalBrandVoicePage = lazy(() => import('@/pages/client-portal/company/PortalBrandVoicePage').then(module => ({ default: module.PortalBrandVoicePage })))
 const PortalCompanyIntegrationsPage = lazy(() => import('@/pages/client-portal/company/PortalCompanyIntegrationsPage').then(module => ({ default: module.PortalCompanyIntegrationsPage })))
 const PortalCompanyProfilePage = lazy(() => import('@/pages/client-portal/company/PortalCompanyProfilePage').then(module => ({ default: module.PortalCompanyProfilePage })))
+const PortalCompanyStrategyPage = lazy(() => import('@/pages/client-portal/company/PortalCompanyStrategyPage').then(module => ({ default: module.PortalCompanyStrategyPage })))
 const PortalCompanyUsersPage = lazy(() => import('@/pages/client-portal/company/PortalCompanyUsersPage').then(module => ({ default: module.PortalCompanyUsersPage })))
 const PortalKnowledgeBasePage = lazy(() => import('@/pages/client-portal/company/PortalKnowledgeBasePage').then(module => ({ default: module.PortalKnowledgeBasePage })))
 const PortalCreativeAssetsPage = lazy(() => import('@/pages/client-portal/marketing/PortalCreativeAssetsPage').then(module => ({ default: module.PortalCreativeAssetsPage })))
@@ -178,6 +179,8 @@ function App() {
               <Route index element={<PortalDashboardPage />} />
 
               <Route path="empresa/perfil" element={<PortalCompanyProfilePage />} />
+              <Route path="empresa/estrategia" element={<PortalCompanyStrategyPage />} />
+              <Route path="empresa/estrategia/:strategyId" element={<PortalCompanyStrategyPage />} />
               <Route path="empresa/usuarios" element={<PortalCompanyUsersPage />} />
               <Route path="empresa/conhecimento" element={<PortalKnowledgeBasePage />} />
               <Route path="empresa/marca" element={<PortalBrandVoicePage />} />
@@ -234,6 +237,8 @@ function App() {
             <Route path="portal" element={<PortalDashboardPage />} />
 
             <Route path="portal/empresa/perfil" element={<PortalCompanyProfilePage />} />
+            <Route path="portal/empresa/estrategia" element={<PortalCompanyStrategyPage />} />
+            <Route path="portal/empresa/estrategia/:strategyId" element={<PortalCompanyStrategyPage />} />
             <Route path="portal/empresa/usuarios" element={<PortalCompanyUsersPage />} />
             <Route path="portal/empresa/conhecimento" element={<PortalKnowledgeBasePage />} />
             <Route path="portal/empresa/marca" element={<PortalBrandVoicePage />} />

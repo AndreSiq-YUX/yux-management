@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { ApiError } from '../../http/errors.js'
 import { requireOrganizationScope } from '../../http/guards.js'
 import { runWithDatabaseRequestContext } from '../../db/request-context.js'
-import { getCompanyStrategy, listCompanyStrategies, publishCompanyStrategy, saveCompanyStrategyDraft, setCompanyStrategyArchived, setPrimaryCompanyStrategy } from './repository.js'
+import { getCompanyStrategy, listCompanyStrategies, listCompanyStrategyRevisions, publishCompanyStrategy, saveCompanyStrategyDraft, setCompanyStrategyArchived, setPrimaryCompanyStrategy } from './repository.js'
 import { strategyDraftCommandSchema, strategyPublishCommandSchema, strategyVersionCommandSchema, type CompanyStrategyAccess } from './schemas.js'
 
 const params = z.object({ organizationId: z.string().uuid(), strategyId: z.string().uuid().optional() })
@@ -25,6 +25,10 @@ export async function registerCompanyStrategyRoutes(app: FastifyInstance) {
   app.get(`${root}/:strategyId`, async request => {
     const route = parse(params, request.params)
     return getCompanyStrategy(app.pg, companyStrategyRequestAccess(request, route.organizationId), route.strategyId!)
+  })
+  app.get(`${root}/:strategyId/revisions`, async request => {
+    const route = parse(params, request.params)
+    return listCompanyStrategyRevisions(app.pg, companyStrategyRequestAccess(request, route.organizationId), route.strategyId!)
   })
   for (const update of [false, true]) {
     app.route({ method: update ? 'PUT' : 'POST', url: update ? `${root}/:strategyId/draft` : root, handler: async request => {

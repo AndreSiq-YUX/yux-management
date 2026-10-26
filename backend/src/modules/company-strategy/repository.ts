@@ -37,6 +37,12 @@ export async function listCompanyStrategies(db: pg.Pool, access: CompanyStrategy
     AND ($2 OR published_revision_id IS NOT NULL) ORDER BY archived_at NULLS FIRST,is_primary DESC,updated_at DESC,id`, [access.organizationId, options.includeDrafts && canConfigureCompanyStrategy(access.role)])).rows
   return Promise.all(rows.map(row => getCompanyStrategy(db, access, row.id)))
 }
+export async function listCompanyStrategyRevisions(db: pg.Pool, access: CompanyStrategyAccess, strategyId: string): Promise<CompanyStrategyRevision[]> {
+  const strategy = await getCompanyStrategy(db, access, strategyId)
+  const rows = (await db.query<Row>(`SELECT * FROM public.company_strategy_revisions WHERE organization_id=$1 AND strategy_id=$2
+    AND ($3 OR id=$4) ORDER BY revision_number DESC`, [access.organizationId, strategyId, canConfigureCompanyStrategy(access.role), strategy.publishedRevision?.id ?? null])).rows
+  return rows.map(row => mapRevision(row)!)
+}
 function mapRevision(row: Row | null): CompanyStrategyRevision | null {
   if (!row) return null
   return { id: row.id, strategyId: row.strategy_id, revisionNumber: row.revision_number, content: row.content,
