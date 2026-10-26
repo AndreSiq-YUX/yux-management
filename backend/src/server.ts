@@ -17,6 +17,7 @@ import { registerActionEngineRoutes } from './modules/action-engine/routes.js'
 import { registerAutomationRoutes } from './modules/automations/routes.js'
 import { registerCampaignRoutes } from './modules/campaigns/routes.js'
 import { registerCompanyIntelligenceRoutes } from './modules/company-intelligence/routes.js'
+import { registerCompanyStrategyRoutes } from './modules/company-strategy/routes.js'
 import { registerCrmRoutes } from './modules/crm/routes.js'
 import { registerDataRoutes } from './modules/data/routes.js'
 import { registerEmailTemplateRoutes } from './modules/emailTemplates/routes.js'
@@ -130,6 +131,7 @@ export async function buildServer(env: AppEnv = loadEnv(), options: BuildServerO
   await app.register(registerLandingPageRoutes, { prefix: '/api/landing-pages' })
   await app.register(registerCampaignRoutes, { prefix: '/api/campaigns' })
   await app.register(registerCompanyIntelligenceRoutes, { prefix: '/api/company-intelligence' })
+  await app.register(registerCompanyStrategyRoutes, { prefix: '/api/company-intelligence' })
 
   return app
 }
