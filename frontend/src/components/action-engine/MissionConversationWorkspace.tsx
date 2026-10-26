@@ -1,3 +1,4 @@
+import { usePlatformStore } from '@/stores/platformStore'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowLeft, BookOpen, ExternalLink, Loader2, MoreHorizontal, XCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -23,6 +24,8 @@ type Props = {
 const POLLING_STATUSES = new Set(['collecting_context', 'planning'])
 
 export function MissionConversationWorkspace({ conversationId, organizationId, canWrite, backHref, missionHref, correctionTarget, pollMaxSeconds = 5 }: Props) {
+  const mode=usePlatformStore(state=>state.mode)
+  const strategyHref=mode==='portal'?'/portal/empresa/estrategia':`/client-workspaces/${organizationId}/empresa/estrategia`
   const [conversation, setConversation] = useState<MissionConversation | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -215,7 +218,7 @@ export function MissionConversationWorkspace({ conversationId, organizationId, c
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col">
-        <MissionConversationThread conversation={conversation} processing={processing} processingError={processingError} canWrite={canInteract} onQuickReply={message => void send(message)} onConfirmBrief={() => void confirmBrief()} onRetry={pendingRetry ? () => void send(pendingRetry.message, pendingRetry) : processingError ? () => void retryProcessing() : undefined} onApprovePlan={reference => void approvePlan(reference)} onRequestPlanChanges={(reference, reasonKey, comment) => void requestPlanChanges(reference, reasonKey, comment)} correctionTarget={correctionTarget} onInlineCorrection={(missing, target) => setInlineCorrection({ missing, target })} />
+        <MissionConversationThread strategyHref={strategyHref} conversation={conversation} processing={processing} processingError={processingError} canWrite={canInteract} onQuickReply={message => void send(message)} onConfirmBrief={() => void confirmBrief()} onRetry={pendingRetry ? () => void send(pendingRetry.message, pendingRetry) : processingError ? () => void retryProcessing() : undefined} onApprovePlan={reference => void approvePlan(reference)} onRequestPlanChanges={(reference, reasonKey, comment) => void requestPlanChanges(reference, reasonKey, comment)} correctionTarget={correctionTarget} onInlineCorrection={(missing, target) => setInlineCorrection({ missing, target })} />
         <div className="border-t border-yx-line bg-yx-surface px-4 py-4 sm:px-6"><div className="mx-auto max-w-3xl">{error ? <div role="alert" className="mb-2 flex items-center justify-between gap-3 text-xs text-yx-crit"><span>{error}</span>{pendingRetry ? <button className="shrink-0 font-semibold hover:underline" onClick={() => void send(pendingRetry.message, pendingRetry)} type="button">Tentar novamente</button> : null}</div> : null}{inlineCorrection ? <MissionInlineCorrectionPanel missing={inlineCorrection.missing} target={inlineCorrection.target} busy={processing} onCancel={() => setInlineCorrection(null)} onSave={async message => { if (await send(message)) setInlineCorrection(null) }} /> : null}{writable ? <MissionConversationComposer disabled={processing} value={draft} onValueChange={setDraft} onSend={send} /> : <p className="rounded-lg bg-yx-surface-2 p-3 text-center text-sm text-yx-fg-3">{conversation.status === 'cancelled' ? 'Esta conversa foi encerrada.' : 'Acompanhe a próxima etapa na missão.'}</p>}<p className="mt-2 text-center text-[11px] text-yx-fg-3">Nada é executado externamente sem passar pelas regras e aprovações da YUX.</p></div></div>
       </div>
       <p aria-live="polite" className="sr-only">{liveStatus}</p>

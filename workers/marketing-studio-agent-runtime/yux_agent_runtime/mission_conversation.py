@@ -430,7 +430,25 @@ def normalize_mission_conversation_response(
             parsed['brief']['packKeys'] = []
     source_catalog = build_mission_source_catalog(retrieval_context, request.audience)
     by_ref = {source.ref: source for source in source_catalog}
+    raw_proposal = parsed.get('strategyProposal')
+    if raw_proposal is not None:
+        from .mission_contracts import MissionStrategyProposalWire
+        try:
+            review = request.operationalContext.get('companyStrategyReview') or {}
+            if review.get('strategyId'):
+                raw_proposal = {**raw_proposal,'strategyId':review['strategyId'],'baseRevisionId':review['revisionId'],'baseStrategyVersion':review['expectedVersion']}
+            proposal = MissionStrategyProposalWire.model_validate(raw_proposal)
+            if any(ref not in by_ref for ref in proposal.sourceRefs):
+                raise ValueError('company_strategy_proposal_unknown_source')
+            if (request.operationalContext.get('companyStrategyAccess') or {}).get('canPropose') is False:
+                raise ValueError('company_strategy_proposal_forbidden')
+            parsed['strategyProposal'] = proposal.model_dump()
+        except (ValueError,TypeError,KeyError):
+            parsed['strategyProposal'] = None
+            parsed['reply'] = str(parsed.get('reply') or '') + '\n\nA proposta ainda está incompleta e não foi salva. Posso reorganizá-la nesta conversa.'
     selected_refs: list[str] = []
+    if parsed.get('strategyProposal'):
+        selected_refs.extend(parsed['strategyProposal']['sourceRefs'])
     for item in parsed.pop("sourceRefs", []) or []:
         selected_refs.append(_text(item.get("ref")) if isinstance(item, dict) else _text(item))
     for item in parsed.pop("sources", []) or []:

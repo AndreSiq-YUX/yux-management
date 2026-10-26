@@ -849,6 +849,46 @@ export type Visibility = 'internal_only' | 'client_safe' | 'internal' | 'externa
  * @maxItems 100
  */
 export type Sources = MissionSourceRefWire[]
+export type Baserevisionid = string | null
+export type Basestrategyversion = number | null
+export type Objective1 = string
+/**
+ * @maxItems 100
+ */
+export type Documentids = string[]
+/**
+ * @maxItems 100
+ */
+export type Productids = string[]
+export type Schemaversion2 = 1
+export type Agentuse = 'internal' | 'external_guidance'
+export type Body = string
+export type Id1 = string
+export type Kind2 =
+  | 'diagnosis'
+  | 'audiences'
+  | 'offers'
+  | 'markets'
+  | 'positioning'
+  | 'channels'
+  | 'initiatives'
+  | 'metrics'
+  | 'constraints'
+  | 'assumptions'
+  | 'next_steps'
+  | 'custom'
+export type Title2 = string
+/**
+ * @maxItems 30
+ */
+export type Sections = CompanyStrategySectionWire[]
+export type Summary = string
+export type Title3 = string
+/**
+ * @maxItems 100
+ */
+export type Sourcerefs = string[]
+export type Strategyid = string | null
 /**
  * @maxItems 8
  */
@@ -895,7 +935,7 @@ export type Suggestedactions =
 export type Capabilitykey = string | null
 export type Correctionkey1 = string | null
 export type Key5 = string
-export type Kind2 = 'quick_reply' | 'open_correction' | 'confirm_brief' | 'cancel'
+export type Kind3 = 'quick_reply' | 'open_correction' | 'confirm_brief' | 'cancel'
 export type Label1 = string
 export type Packkey = string | null
 export type Inputtokens = number
@@ -931,7 +971,7 @@ export type ProposedPlan = {
   [k: string]: unknown
 } | null
 export type MissionPlanResponseWire = ClarificationResponseWire | PlanProposalResponseWire
-export type Kind3 = 'clarification'
+export type Kind4 = 'clarification'
 export type Plan = null
 /**
  * @minItems 1
@@ -956,7 +996,7 @@ export type Trace = {
 export type Usage = {
   [k: string]: unknown
 } | null
-export type Kind4 = 'plan'
+export type Kind5 = 'plan'
 export type Key9 = string
 export type Templatehash = string
 export type Version3 = string
@@ -973,7 +1013,7 @@ export type Totalexecutioncost = string
 export type Missionid = string
 export type Rationale1 = string
 export type Risks = string[]
-export type Schemaversion2 = 1
+export type Schemaversion3 = 1
 /**
  * @minItems 1
  */
@@ -1050,6 +1090,7 @@ export interface MissionConversationTurnResponseWire {
   retrievalTraceId: Retrievaltraceid
   schemaVersion: Schemaversion1
   sources?: Sources
+  strategyProposal?: MissionStrategyProposalWire | null
   suggestedActions?: Suggestedactions
   understood?: Understood
   usage: ModelUsageWire
@@ -1125,11 +1166,37 @@ export interface MissionSourceRefWire {
   version: Version1
   visibility: Visibility
 }
+export interface MissionStrategyProposalWire {
+  baseRevisionId?: Baserevisionid
+  baseStrategyVersion?: Basestrategyversion
+  content: CompanyStrategyContentWire
+  sourceRefs?: Sourcerefs
+  strategyId?: Strategyid
+}
+export interface CompanyStrategyContentWire {
+  objective: Objective1
+  references?: CompanyStrategyReferencesWire
+  schemaVersion: Schemaversion2
+  sections?: Sections
+  summary: Summary
+  title: Title3
+}
+export interface CompanyStrategyReferencesWire {
+  documentIds?: Documentids
+  productIds?: Productids
+}
+export interface CompanyStrategySectionWire {
+  agentUse?: Agentuse
+  body: Body
+  id: Id1
+  kind: Kind2
+  title: Title2
+}
 export interface MissionSuggestedActionWire {
   capabilityKey?: Capabilitykey
   correctionKey?: Correctionkey1
   key: Key5
-  kind: Kind2
+  kind: Kind3
   label: Label1
   packKey?: Packkey
   payload?: Payload
@@ -1199,7 +1266,7 @@ export interface StrategyContext {
 }
 export interface ClarificationResponseWire {
   interpretation: Interpretation
-  kind: Kind3
+  kind: Kind4
   plan?: Plan
   questions: Questions1
   selectedPacks?: Selectedpacks
@@ -1221,7 +1288,7 @@ export interface ClarificationQuestionWire {
 }
 export interface PlanProposalResponseWire {
   interpretation: Interpretation1
-  kind: Kind4
+  kind: Kind5
   plan: PlanWire
   questions?: Questions2
   selectedPacks: Selectedpacks1
@@ -1241,7 +1308,7 @@ export interface PlanWire {
   rationale: Rationale1
   resolvedParameters?: Resolvedparameters
   risks?: Risks
-  schemaVersion: Schemaversion2
+  schemaVersion: Schemaversion3
   steps: Steps
 }
 export interface ActionPackReferenceWire {

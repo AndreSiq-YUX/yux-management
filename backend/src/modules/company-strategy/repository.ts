@@ -1,10 +1,9 @@
 import type pg from 'pg'
 import { ApiError } from '../../http/errors.js'
-import { hashCanonical } from '../action-engine/repository.js'
+import { hashCanonical, type Queryable } from '../action-engine/repository.js'
 import { recordDomainEvent } from '../events/repository.js'
 import { companyStrategyContentSchema, type CompanyStrategy, type CompanyStrategyAccess, type CompanyStrategyContentV1, type CompanyStrategyRevision } from './schemas.js'
 
-type Queryable = Pick<pg.PoolClient, 'query'>
 type Row = Record<string, any>
 export function canConfigureCompanyStrategy(role: string) { return ['yux_admin', 'yux_operator', 'client_admin'].includes(role) }
 export function assertCompanyStrategyWrite(access: CompanyStrategyAccess) {
@@ -42,6 +41,13 @@ export async function listCompanyStrategyRevisions(db: pg.Pool, access: CompanyS
   const rows = (await db.query<Row>(`SELECT * FROM public.company_strategy_revisions WHERE organization_id=$1 AND strategy_id=$2
     AND ($3 OR id=$4) ORDER BY revision_number DESC`, [access.organizationId, strategyId, canConfigureCompanyStrategy(access.role), strategy.publishedRevision?.id ?? null])).rows
   return rows.map(row => mapRevision(row)!)
+}
+export async function getCompanyStrategyRevisionForEditing(db: Queryable, access: CompanyStrategyAccess, strategyId:string,revisionId:string):Promise<CompanyStrategyRevision> {
+  assertCompanyStrategyWrite(access)
+  await getCompanyStrategy(db,access,strategyId)
+  const row=(await db.query<Row>('SELECT * FROM public.company_strategy_revisions WHERE organization_id=$1 AND strategy_id=$2 AND id=$3',[access.organizationId,strategyId,revisionId])).rows[0]
+  if(!row) throw new ApiError(404,'company_strategy_revision_not_found')
+  return mapRevision(row)!
 }
 function mapRevision(row: Row | null): CompanyStrategyRevision | null {
   if (!row) return null

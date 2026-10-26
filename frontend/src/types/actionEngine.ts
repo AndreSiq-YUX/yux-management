@@ -77,6 +77,8 @@ export interface MissionConversationSuggestedAction {
 }
 
 export interface MissionConversationMessagePayload {
+  strategyProposalReference?: {proposalId:string;status:'suggested'|'applied';appliedStrategyId?:string|null}
+
   kind?: 'message' | 'questions' | 'brief_confirmation' | 'plan' | 'blocked'
   understood?: Record<string, unknown>
   questions?: MissionConversationQuestion[]

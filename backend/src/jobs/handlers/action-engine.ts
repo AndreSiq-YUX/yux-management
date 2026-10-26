@@ -48,6 +48,8 @@ import {
 } from '../../modules/action-engine/mission-conversations.js'
 import { composeVerifiedMissionContext, verifyMissionKnowledgeContext } from '../../modules/action-engine/mission-source-verifier.js'
 import { addCompanyStrategyToMissionPlanning } from '../../modules/action-engine/mission-company-strategy.js'
+import { getCompanyStrategyRevisionForEditing, canConfigureCompanyStrategy, listCompanyStrategies } from '../../modules/company-strategy/repository.js'
+import { validateMissionStrategyProposal } from '../../modules/company-strategy/proposals.js'
 import type { MissionSourceRefWire } from '../../modules/action-engine/generated/mission-wire.js'
 import type { MissionConversationTurnRequestWire, MissionConversationTurnResponseWire } from '../../modules/action-engine/generated/mission-wire.js'
 import type { MissionConversationMessage } from '../../modules/action-engine/types.js'
@@ -125,11 +127,27 @@ export async function handleActionEngineProcessMissionConversation(
       })) as MissionConversationTurnRequestWire['allowedActionPacks'],
       allowedCapabilityKeys: manifest.entries.map((item) => item.key),
     }
+    const conversationOperational=request.operationalContext!
+    conversationOperational.companyStrategyAccess={canPropose:canConfigureCompanyStrategy(access.role)}
+    if(canConfigureCompanyStrategy(access.role)) {
+      const strategies=await listCompanyStrategies(pool as never,{organizationId,actorId:conversation.createdBy,role:access.role})
+      conversationOperational.companyStrategyRecords=strategies.filter(strategy=>!strategy.archivedAt).map(strategy=>({strategyId:strategy.id,version:strategy.version,title:(strategy.publishedRevision??strategy.draftRevision)?.content.title,revisionId:(strategy.draftRevision??strategy.publishedRevision)?.id,hasDraft:Boolean(strategy.draftRevision)}))
+    }
+    const review=conversation.currentBrief.companyStrategyReview as {strategyId:string;revisionId:string;expectedVersion:number}|undefined
+    if(review && canConfigureCompanyStrategy(access.role)) {
+      const revision=await getCompanyStrategyRevisionForEditing(pool,{organizationId,actorId:conversation.createdBy,role:access.role},review.strategyId,review.revisionId)
+      conversationOperational.companyStrategyReview={...review,workingDraft:revision.content}
+    }
     const response = await (dependencies.invokeTurn ?? invokeMissionConversationTurn)(env, request)
     await verifyMissionKnowledgeContext(pool, {
       organizationId, audience, sourceRefs: response.sources ?? [], agentProfileKey: 'growth_strategist',
       contractId: conversation.contractId, moduleKey: 'marketing_studio', workflowKey: 'mission_intake_conversation',
     })
+    let strategyProposal
+    if(response.strategyProposal && canConfigureCompanyStrategy(access.role)) {
+      try { strategyProposal=await validateMissionStrategyProposal(pool,{organizationId,actorId:conversation.createdBy,role:access.role},response.strategyProposal) }
+      catch { /* Invalid proposals never discard a valid conversational reply. */ }
+    }
     const status = response.kind === 'brief_confirmation'
       ? 'brief_confirmation'
       : response.kind === 'blocked' ? 'blocked' : 'awaiting_user'
@@ -143,12 +161,14 @@ export async function handleActionEngineProcessMissionConversation(
         kind: response.kind, understood: response.understood, questions: response.questions,
         readiness: response.readiness, brief: response.brief, suggestedActions: response.suggestedActions,
         usage: response.usage, latencyMs: Date.now() - startedAt,
+        ...(strategyProposal?{strategyProposal}:{}),
       },
       sourceRefs: (response.sources ?? []) as unknown as Array<Record<string, unknown>>,
       harnessRunId: response.retrievalTraceId,
       contextHash: response.contextHash,
       currentBrief: response.brief as unknown as Record<string, unknown>,
       contextReadiness: response.readiness as unknown as Record<string, unknown>,
+      ...(strategyProposal?{strategyProposalAccess:{organizationId,actorId:conversation.createdBy,role:access.role}}:{}),
     })
     return { skipped: false, conversation: updated }
   } catch (error) {

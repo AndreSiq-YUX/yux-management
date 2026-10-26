@@ -25,3 +25,12 @@ export const idempotencyKeySchema = z.string().trim().min(1).max(200)
 export const strategyDraftCommandSchema = z.object({ expectedVersion: z.number().int().positive().nullable(), content: companyStrategyContentSchema, idempotencyKey: idempotencyKeySchema }).strict()
 export const strategyPublishCommandSchema = z.object({ expectedVersion: z.number().int().positive(), revisionId: z.string().uuid(), expectedContentHash: z.string().regex(/^[a-f0-9]{64}$/), idempotencyKey: idempotencyKeySchema }).strict()
 export const strategyVersionCommandSchema = z.object({ expectedVersion: z.number().int().positive() }).strict()
+export const companyStrategyProposalSchema = z.object({
+  strategyId: z.string().uuid().nullish(), baseRevisionId: z.string().uuid().nullish(), baseStrategyVersion: z.number().int().positive().nullish(),
+  content: companyStrategyContentSchema, sourceRefs: z.array(z.string().min(1).max(300)).max(100).default([]),
+}).strict().superRefine((value, ctx) => {
+  const base = [value.strategyId,value.baseRevisionId,value.baseStrategyVersion]
+  if (base.some(item=>item!=null) && !base.every(item=>item!=null)) ctx.addIssue({code:'custom',message:'company_strategy_proposal_base_incomplete'})
+})
+export type CompanyStrategyProposalInput = z.infer<typeof companyStrategyProposalSchema>
+export const applyStrategyProposalSchema = z.object({ expectedStrategyVersion: z.number().int().positive().nullable(), idempotencyKey: idempotencyKeySchema, reviewedContent: companyStrategyContentSchema.optional() }).strict()

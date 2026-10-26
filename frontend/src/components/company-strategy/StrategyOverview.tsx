@@ -6,7 +6,7 @@ export function StrategyOverview({ strategy, revision }: { strategy: CompanyStra
   const current = revision ?? strategy.publishedRevision ?? strategy.draftRevision
   if (!current) return null
   return <div className="flex min-w-0 flex-col gap-5">
-    <SectionCard title={current.content.title} description={strategy.publishedRevision ? `Versão publicada ${strategy.publishedRevision.revisionNumber}` : 'Rascunho — ainda não orienta os agentes'} action={<StatusChip variant={strategy.archivedAt ? 'neutral' : strategy.publishedRevision ? 'ok' : 'warn'}>{strategy.archivedAt ? 'Arquivada' : strategy.publishedRevision ? 'Publicada' : 'Rascunho'}</StatusChip>}>
+    <SectionCard title={current.content.title} description={revision ? `Versão ${revision.revisionNumber} · histórico` : strategy.publishedRevision ? `Versão publicada ${strategy.publishedRevision.revisionNumber}` : 'Rascunho — ainda não orienta os agentes'} action={<StatusChip variant={strategy.archivedAt ? 'neutral' : strategy.publishedRevision ? 'ok' : 'warn'}>{strategy.archivedAt ? 'Arquivada' : strategy.publishedRevision ? 'Publicada' : 'Rascunho'}</StatusChip>}>
       <p className="text-base font-medium text-yx-fg">{current.content.objective}</p>
       <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-yx-fg-2">{current.content.summary}</p>
     </SectionCard>

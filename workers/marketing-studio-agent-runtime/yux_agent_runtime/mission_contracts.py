@@ -201,6 +201,54 @@ class MissionSuggestedActionWire(StrictWireModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class CompanyStrategySectionWire(StrictWireModel):
+    id: str = Field(pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+    kind: Literal['diagnosis','audiences','offers','markets','positioning','channels','initiatives','metrics','constraints','assumptions','next_steps','custom']
+    title: str = Field(min_length=1,max_length=160)
+    body: str = Field(min_length=1,max_length=12000)
+    agentUse: Literal['internal','external_guidance'] = 'internal'
+
+
+class CompanyStrategyReferencesWire(StrictWireModel):
+    productIds: list[str] = Field(default_factory=list,max_length=100)
+    documentIds: list[str] = Field(default_factory=list,max_length=100)
+
+
+class CompanyStrategyContentWire(StrictWireModel):
+    schemaVersion: Literal[1]
+    title: str = Field(min_length=3,max_length=200)
+    objective: str = Field(min_length=10,max_length=2000)
+    summary: str = Field(min_length=20,max_length=2000)
+    sections: list[CompanyStrategySectionWire] = Field(default_factory=list,max_length=30)
+    references: CompanyStrategyReferencesWire = Field(default_factory=CompanyStrategyReferencesWire)
+
+    @model_validator(mode='after')
+    def validate_identity_and_size(self):
+        if len({section.id for section in self.sections}) != len(self.sections):
+            raise ValueError('duplicate_section_ids')
+        if len(self.model_dump_json()) > 100000:
+            raise ValueError('strategy_content_too_large')
+        for ids in (self.references.productIds,self.references.documentIds):
+            if len(ids) != len(set(ids)):
+                raise ValueError('duplicate_references')
+        return self
+
+
+class MissionStrategyProposalWire(StrictWireModel):
+    strategyId: str | None = None
+    baseRevisionId: str | None = None
+    baseStrategyVersion: int | None = Field(default=None,ge=1)
+    content: CompanyStrategyContentWire
+    sourceRefs: list[str] = Field(default_factory=list,max_length=100)
+
+    @model_validator(mode='after')
+    def validate_base(self):
+        base=(self.strategyId,self.baseRevisionId,self.baseStrategyVersion)
+        if any(value is not None for value in base) and not all(value is not None for value in base):
+            raise ValueError('company_strategy_proposal_base_incomplete')
+        return self
+
+
 class MissionConversationTurnResponseWire(StrictWireModel):
     schemaVersion: Literal[1]
     kind: Literal["message", "questions", "brief_confirmation", "blocked"]
@@ -214,6 +262,7 @@ class MissionConversationTurnResponseWire(StrictWireModel):
     retrievalTraceId: str = Field(min_length=1)
     contextHash: str = Field(pattern=r"^[a-f0-9]{64}$")
     usage: ModelUsageWire
+    strategyProposal: MissionStrategyProposalWire | None = None
 
     @model_validator(mode="after")
     def validate_variant_and_sources(self) -> "MissionConversationTurnResponseWire":
