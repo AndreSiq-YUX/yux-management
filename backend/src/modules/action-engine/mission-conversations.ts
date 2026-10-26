@@ -88,11 +88,11 @@ export async function createMissionConversation(pool: Connectable, input: {
     }
     const inserted = await client.query<ConversationRow>(
       `INSERT INTO public.action_mission_conversations
-         (organization_id, contract_id, title, created_by, create_idempotency_key,current_brief)
-       VALUES ($1,$2,$3,$4,$5,$6)
+         (organization_id, contract_id, title, created_by, create_idempotency_key,current_brief,company_strategy_private)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
        ON CONFLICT (organization_id, create_idempotency_key) DO NOTHING
        RETURNING ${CONVERSATION_COLUMNS}`,
-      [input.organizationId, input.contractId ?? null, input.title.trim(), input.createdBy, input.idempotencyKey,input.initialBrief??{}],
+      [input.organizationId, input.contractId ?? null, input.title.trim(), input.createdBy, input.idempotencyKey,input.initialBrief??{},Boolean(input.initialBrief?.companyStrategyReview)],
     )
     if (!inserted.rows[0]) {
       const existing = await client.query<ConversationRow & { create_idempotency_key: string }>(
@@ -350,13 +350,14 @@ export async function completeAgentConversationTurn(pool: Connectable, input: {
     const updated = await client.query<ConversationRow>(
       `UPDATE public.action_mission_conversations
        SET status = $4, current_brief = $5, context_readiness = $6,
+           company_strategy_private=company_strategy_private OR $9::boolean,
            last_context_hash = $7, last_harness_run_id = $8,
            completed_at = CASE WHEN $4 IN ('converted','cancelled') THEN NOW() ELSE NULL END,
            version = version + 1
        WHERE id = $1 AND organization_id = $2 AND version = $3
        RETURNING ${CONVERSATION_COLUMNS}`,
       [input.conversationId, input.organizationId, input.expectedVersion, input.status,
-        {...input.currentBrief,...(current.current_brief.companyStrategyReview?{companyStrategyReview:current.current_brief.companyStrategyReview}:{})}, input.contextReadiness, input.contextHash, input.harnessRunId],
+        {...input.currentBrief,...(current.current_brief.companyStrategyReview?{companyStrategyReview:current.current_brief.companyStrategyReview}:{})}, input.contextReadiness, input.contextHash, input.harnessRunId,Boolean(proposalId)],
     )
     if (!updated.rows[0]) throw new Error('mission_conversation_version_conflict')
     return getRequiredMissionConversation(client, input.conversationId, input.organizationId)

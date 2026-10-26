@@ -5,9 +5,19 @@ export async function getCompanyPortfolioContext(db:Queryable,input:{organizatio
  const context=result.rows[0]?.context
  if(!context)throw new Error('company_portfolio_context_unavailable')
  context.coverage.omittedForBudget=0
- while(JSON.stringify(context).length>9900&&context.items.length){context.items.pop();context.coverage.omittedForBudget=Number(context.coverage.omittedForBudget)+1}
- while(JSON.stringify(context).length>9900&&context.representedBusinesses.length){context.representedBusinesses.pop();context.coverage.omittedForBudget=Number(context.coverage.omittedForBudget)+1}
+ context.coverage.omittedBrandsForBudget=0
+ context.coverage.omittedProductsForBudget=0
+ const necessaryBrands=new Set(context.items.map(item=>String(item.representedBusinessId??'')))
+ while(JSON.stringify(context).length>9900&&context.representedBusinesses.length){
+  let index=context.representedBusinesses.length-1
+  while(index>=0&&necessaryBrands.has(String(context.representedBusinesses[index]?.id)))index--
+  context.representedBusinesses.splice(index<0?context.representedBusinesses.length-1:index,1)
+  context.coverage.omittedBrandsForBudget=Number(context.coverage.omittedBrandsForBudget)+1
+ }
+ while(JSON.stringify(context).length>9900&&context.items.length){context.items.pop();context.coverage.omittedProductsForBudget=Number(context.coverage.omittedProductsForBudget)+1}
+ context.coverage.omittedForBudget=Number(context.coverage.omittedBrandsForBudget)+Number(context.coverage.omittedProductsForBudget)
  context.coverage.selected=context.items.length
+ context.coverage.hasMore=(input.offset??0)+context.items.length<context.total
  context.contextHash=hashCanonical(context)
  return context
 }

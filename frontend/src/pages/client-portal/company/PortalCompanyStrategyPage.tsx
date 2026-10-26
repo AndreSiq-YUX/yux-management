@@ -1,6 +1,6 @@
 import { StrategyProposalReview } from '@/components/company-strategy/StrategyProposalReview'
 import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate, useSearchParams, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams, useParams } from 'react-router-dom'
 import { BookOpen, Plus } from 'lucide-react'
 import { PortalPage } from '@/components/client-portal/PortalPage'
 import { ConfirmDialog, EmptyState, ErrorState, SectionCard, SkeletonCard, portalButtonClasses, useUnsavedChangesWarning } from '@/components/portal-ui'
@@ -21,6 +21,12 @@ export function PortalCompanyStrategyPage() {
   const navigate=useNavigate()
   const [search]=useSearchParams()
   const proposalId=search.get('proposalId')
+  const location=useLocation()
+  const mounted=useRef(true)
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false}},[])
+  const viewKey=`${organizationId}:${location.key}:${strategyId??''}:${proposalId??''}`
+  const activeView=useRef({key:viewKey})
+  if(activeView.current.key!==viewKey)activeView.current={key:viewKey}
   const [proposal,setProposal]=useState<CompanyStrategyProposal|null>(null)
   const proposalAttempt=useRef<{fingerprint:string;key:string}|null>(null)
   const reviewAttempt=useRef<{fingerprint:string;key:string}|null>(null)
@@ -59,13 +65,26 @@ export function PortalCompanyStrategyPage() {
   },[organizationId,proposalId,canWrite])
   const applyProposal=async(content:CompanyStrategyContentV1)=>{
     if(!organizationId || !proposal) return
+    const originView=activeView.current
+    const currentView=()=>mounted.current&&activeView.current===originView
     const fingerprint=JSON.stringify({id:proposal.proposalId,content})
     if(proposalAttempt.current?.fingerprint!==fingerprint) proposalAttempt.current={fingerprint,key:crypto.randomUUID()}
     try {
       const saved=await companyStrategyService.applyProposal(organizationId,proposal.proposalId,{expectedStrategyVersion:proposal.baseStrategyVersion,idempotencyKey:proposalAttempt.current.key,reviewedContent:content})
-      if(requestScope.current!==organizationId)return
+      if(!currentView())return
       replace(saved);setProposal(null);proposalAttempt.current=null
-    } catch(cause){throw new Error(cause instanceof ApiClientError && cause.status===409?'A estratégia foi alterada desde a proposta. Sua revisão foi preservada; compare a versão atual antes de continuar.':'Não foi possível salvar. Sua revisão foi preservada para tentar novamente.')}
+    } catch(cause){
+      if(!currentView())return
+      if(cause instanceof ApiClientError&&cause.status===409){
+        const latest=await companyStrategyService.getProposal(organizationId,proposal.proposalId).catch(()=>null)
+        if(!currentView())return
+        if(latest)setProposal(latest)
+      }
+      throw new Error(cause instanceof ApiClientError && cause.status===409?'A estratégia foi alterada desde a proposta. Sua revisão foi preservada; compare a versão atual antes de continuar.':'Não foi possível salvar. Sua revisão foi preservada para tentar novamente.')}
+  }
+  const continueProposalReview=(content:CompanyStrategyContentV1,current:CompanyStrategy)=>{
+    replace(current);setProposal(null);startEditing(content,current.id)
+    setBaseline(JSON.stringify((current.draftRevision??current.publishedRevision)!.content));setConflict(current)
   }
   const requestReview=async()=>{
     if(!organizationId || !selected || busy) return
@@ -120,7 +139,7 @@ export function PortalCompanyStrategyPage() {
     help={['Converse em Missões ou comece manualmente.', 'Salve alterações em rascunho e publique quando estiverem prontas para orientar os agentes.', 'Publicar a estratégia não inicia campanhas nem contatos.']}>
     {error && <ErrorState title="Atenção" description={error} />}
     {loading ? <SkeletonCard lines={5} /> : <>
-      {proposal && (proposal.status==='applied' ? <SectionCard title="Proposta já salva como rascunho"><Link className={portalButtonClasses('primary')} to={`${portalPath('/portal/empresa/estrategia')}/${proposal.appliedStrategyId}`}>Abrir estratégia</Link></SectionCard> : <StrategyProposalReview key={proposal.proposalId} proposal={proposal} onApply={applyProposal} />)}
+      {proposal && (proposal.status==='applied' ? <SectionCard title="Proposta já salva como rascunho"><Link className={portalButtonClasses('primary')} to={`${portalPath('/portal/empresa/estrategia')}/${proposal.appliedStrategyId}`}>Abrir estratégia</Link></SectionCard> : <StrategyProposalReview key={proposal.proposalId} organizationId={organizationId} proposal={proposal} onApply={applyProposal} onContinueFromCurrent={continueProposalReview} />)}
       {!proposal && !strategies.length && !editor && <EmptyState icon={BookOpen} title="Uma direção clara para a empresa" description="Registre objetivos, públicos, ofertas e frentes de atuação. A versão publicada passa a orientar os agentes." />}
       {hasMissions && canWrite && !editor && !proposal && <Link className={portalButtonClasses('ghost')} to={portalPath('/portal/missoes')}>Construir com o agente</Link>}
       {!proposal && !!strategies.length && !editor && <div className="flex flex-col gap-2 rounded-lg border border-yx-line bg-yx-surface p-4 sm:flex-row sm:items-center sm:gap-4">

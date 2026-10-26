@@ -41,11 +41,16 @@ class CompanyPortfolioContextService:
 
     def retrieve(self, *, organization_id, contract_id, profile_key, audience, query, represented_business_ids=None, offset=0, limit=20):
         context=self.store.retrieve_company_portfolio(organization_id=organization_id,contract_id=contract_id,profile_key=profile_key,audience=audience,query=query,represented_business_ids=represented_business_ids or [],offset=offset,limit=limit)
-        context['coverage']['omittedForBudget']=0
-        while len(json.dumps(context,ensure_ascii=False))>self.max_chars-100 and context['items']:
-            context['items'].pop();context['coverage']['omittedForBudget']+=1
+        context['coverage'].update(omittedForBudget=0,omittedBrandsForBudget=0,omittedProductsForBudget=0)
+        necessary_brands={str(item.get('representedBusinessId') or '') for item in context['items']}
         while len(json.dumps(context,ensure_ascii=False))>self.max_chars-100 and context['representedBusinesses']:
-            context['representedBusinesses'].pop();context['coverage']['omittedForBudget']+=1
+            brands=context['representedBusinesses']
+            index=next((i for i in range(len(brands)-1,-1,-1) if str(brands[i].get('id')) not in necessary_brands),len(brands)-1)
+            brands.pop(index)
+            context['coverage']['omittedBrandsForBudget']+=1
+        while len(json.dumps(context,ensure_ascii=False))>self.max_chars-100 and context['items']:
+            context['items'].pop();context['coverage']['omittedProductsForBudget']+=1
+        context['coverage']['omittedForBudget']=context['coverage']['omittedBrandsForBudget']+context['coverage']['omittedProductsForBudget']
         context['coverage']['selected']=len(context['items'])
         context['coverage']['hasMore']=offset+len(context['items'])<context['total']
         context['contextHash']=canonical_hash(context)

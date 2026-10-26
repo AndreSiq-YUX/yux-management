@@ -4,9 +4,9 @@ import { render, click, byText } from '@/components/portal-ui/__tests__/render'
 import { usePlatformStore } from '@/stores/platformStore'
 import { ApiClientError } from '@/lib/apiClient'
 
-const service = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), createDraft: vi.fn(), saveDraft: vi.fn(), publish: vi.fn(), setPrimary: vi.fn(), archive: vi.fn(), restore: vi.fn(), history: vi.fn() }))
-const route = vi.hoisted(() => ({ strategyId: undefined as string | undefined,navigate:vi.fn() }))
-vi.mock('react-router-dom', async importOriginal => ({ ...await importOriginal<typeof import('react-router-dom')>(), useParams: () => route,useNavigate:()=>route.navigate }))
+const service = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), createDraft: vi.fn(), saveDraft: vi.fn(), publish: vi.fn(), setPrimary: vi.fn(), archive: vi.fn(), restore: vi.fn(), history: vi.fn(),getProposal:vi.fn(),applyProposal:vi.fn(),reviewConversation:vi.fn() }))
+const route = vi.hoisted(() => ({ strategyId: undefined as string | undefined,proposalId:undefined as string|undefined,navigate:vi.fn() }))
+vi.mock('react-router-dom', async importOriginal => ({ ...await importOriginal<typeof import('react-router-dom')>(), useParams: () => route,useNavigate:()=>route.navigate,useSearchParams:()=>[new URLSearchParams(route.proposalId?`proposalId=${route.proposalId}`:''),vi.fn()] }))
 vi.mock('@/services/companyStrategyService', () => ({ companyStrategyService: service }))
 import { PortalCompanyStrategyPage } from './PortalCompanyStrategyPage'
 
@@ -15,6 +15,7 @@ const revision = { id: 'revision-1', strategyId: 'strategy-1', revisionNumber: 1
 const strategy = { id: 'strategy-1', organizationId: 'org-a', clientId: 'client-a', version: 3, isPrimary: true, archivedAt: null, draftRevision: null, publishedRevision: revision, createdAt: revision.createdAt, updatedAt: revision.createdAt }
 beforeEach(() => {
   route.strategyId = undefined
+  route.proposalId=undefined
   usePlatformStore.setState({ organization: { id: 'org-a', name: 'Empresa A' } as never, role: { key: 'client_admin' } as never, workspaceContext: { canConfigure: true } as never, enabledModuleKeys: [], mode: 'portal' })
   service.list.mockResolvedValue([])
   service.history.mockResolvedValue([])
@@ -93,4 +94,48 @@ describe('Company strategy page', () => {
     expect(byText(container, 'button', 'Editar')).toBeNull()
     await unmount()
   })
+})
+
+const proposed=(id:string)=>({proposalId:id,strategyId:null,baseRevisionId:null,baseStrategyVersion:null,content:{...content,title:`Proposta ${id}`},status:'suggested' as const,appliedStrategyId:null,currentStrategy:null,baseRevision:null})
+it('preserves reviewed text and reconciles a conflict against the explicitly compared current version',async()=>{
+ route.proposalId='proposal-a'
+ const original={...proposed('proposal-a'),strategyId:strategy.id,baseRevisionId:revision.id,baseStrategyVersion:strategy.version,currentStrategy:strategy,baseRevision:revision}
+ const current={...strategy,version:4,draftRevision:{...revision,id:'revision-2',content:{...content,summary:'A versão atual contém uma decisão comercial mais recente.'}}}
+ service.list.mockResolvedValue([strategy]);service.getProposal.mockResolvedValueOnce(original).mockResolvedValue({...original,currentStrategy:current})
+ service.applyProposal.mockRejectedValue(new ApiClientError(new Response('',{status:409}),{error:'company_strategy_proposal_base_changed'}))
+ service.saveDraft.mockResolvedValue({...current,version:5})
+ const view=await render(<PortalCompanyStrategyPage/>)
+ await fill(view.container.querySelector('input[aria-label="Título da estratégia"]')!,'Meu texto revisado e preservado')
+ await click(byText(view.container,'button','Salvar rascunho'))
+ expect(view.container.textContent).toContain('A versão atual contém uma decisão comercial mais recente.')
+ await click(byText(view.container,'button','Continuar pela versão atual'))
+ expect((view.container.querySelector('input[aria-label="Título da estratégia"]') as HTMLInputElement).value).toBe('Meu texto revisado e preservado')
+ await click(byText(view.container,'button','Salvar rascunho'))
+ expect(service.saveDraft.mock.calls[0][2]).toMatchObject({expectedVersion:4,content:{title:'Meu texto revisado e preservado'}})
+ await view.unmount()
+})
+it.each(['resolve','reject'])('ignores an obsolete proposal completion after opening another proposal: %s',async outcome=>{
+ route.proposalId='proposal-a'
+ service.getProposal.mockImplementation(async(_org,id)=>proposed(id))
+ let finish!:(value:unknown)=>void,fail!:(value:unknown)=>void
+ service.applyProposal.mockImplementation(()=>new Promise((resolve,reject)=>{finish=resolve;fail=reject}))
+ const view=await render(<PortalCompanyStrategyPage/>)
+ await click(byText(view.container,'button','Salvar rascunho'))
+ route.proposalId='proposal-b';await view.rerender(<PortalCompanyStrategyPage/>)
+ await fill(view.container.querySelector('input[aria-label="Título da estratégia"]')!,'Edição da proposta B')
+ await act(async()=>{if(outcome==='resolve')finish(strategy);else fail(new ApiClientError(new Response('',{status:409}),{}));await Promise.resolve()})
+ expect(route.navigate).not.toHaveBeenCalled()
+ expect((view.container.querySelector('input[aria-label="Título da estratégia"]') as HTMLInputElement).value).toBe('Edição da proposta B')
+ expect(view.container.textContent).not.toContain('A estratégia foi alterada desde a proposta')
+ await view.unmount()
+})
+
+it('does not navigate after a proposal save resolves on an unmounted page',async()=>{
+ route.proposalId='proposal-a';service.getProposal.mockResolvedValue(proposed('proposal-a'))
+ let finish!:(value:unknown)=>void
+ service.applyProposal.mockImplementation(()=>new Promise(resolve=>{finish=resolve}))
+ const view=await render(<PortalCompanyStrategyPage/>)
+ await click(byText(view.container,'button','Salvar rascunho'));await view.unmount()
+ await act(async()=>{finish(strategy);await Promise.resolve()})
+ expect(route.navigate).not.toHaveBeenCalled()
 })

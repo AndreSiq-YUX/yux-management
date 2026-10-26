@@ -164,9 +164,11 @@ Integração de Missões em `backend/src/modules/action-engine/{mission-conversa
 - [x] **Step 2: Executar checks**: backend `npm test`, `npm run type-check`, integração de company-strategy; frontend testes novos e conversas/navegação mais `npm run type-check` e `npm run build`; runtime `python -m pytest -q`. Corrigir regressões pertinentes sem reformatar módulos alheios.
 - [x] **Step 3: Verificar no browser local** páginas nos dois contextos, quatro perfis, celular/desktop, refresh, falha de API, link de proposta e volta à conversa. Nunca marcar tentativa de fonte/ação externa como teste necessário deste plano.
 - [x] **Step 4: Preparar runbook** com ordem migration → API/worker → runtime → frontend; em atualização mista, só oferecer propostas depois de todos aceitarem o contrato. Documentar retirada da navegação/propostas e preservação dos registros para recuperação, sem DROP de tabelas em rollback. Leitura antiga ignora campo opcional.
-- [ ] **Step 5: Revisão final e entrega** do diff e evidências. Publicação em produção e piloto pago dependem de autorização específica; não ampliar allowlist do Radar. Atualizar checkboxes somente com provas realmente executadas.
+- [x] **Step 5: Revisão final e entrega** do diff e evidências. Publicação em produção e piloto pago dependem de autorização específica; não ampliar allowlist do Radar. Atualizar checkboxes somente com provas realmente executadas.
 - [x] **Step 6: Commit:** `test(company): verify shared strategy journeys and rollout`.
 
 ## Autorrevisão do plano
 
 As Tasks 1–5 cobrem cadastro, página, agentes, conversa e validação. Modelos de negócio e representadas estão no plano seguinte e não bloqueiam esta entrega. A versão da empresa não é Strategy Pack global nem conhecimento documental duplicado. A leitura do runtime é restrita e a proposta não é publicação. Implementação local executada; a implantação em produção depende de autorização e homologação próprias.
+
+Revisão independente concluída em 2026-10-26: cinco achados relevantes corrigidos com regressões RED→GREEN; uma pendência menor de atualização visual do portfólio documentada no runbook. Migration aditiva 0247 protege conversas privadas de estratégia. Entrega mantida localmente.

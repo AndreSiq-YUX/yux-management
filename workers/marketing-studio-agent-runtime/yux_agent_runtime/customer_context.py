@@ -299,7 +299,7 @@ class CustomerContextService:
         return {
             key: company.get(key)
             for key in (
-                "legal_name", "trade_name", "description", "website_url", "industry",
+                "legal_name", "trade_name", "description", "website_url", "industry", "business_models",
                 "positioning", "differentiators", "service_regions", "social_links",
             )
             if company.get(key) not in (None, "", [], {})
@@ -309,8 +309,11 @@ class CustomerContextService:
     def _company_summary(company: dict[str, Any] | None) -> str:
         if not company:
             return ""
+        labels={'service_provider':'Prestador de serviços','retailer':'Comércio','manufacturer':'Fabricante','commercial_representative':'Representante comercial','distributor':'Distribuidor','other':'Outro'}
+        business_models=[labels[key] for key in _strings(company.get('business_models')) if key in labels]
         parts = [
             company.get("trade_name") or company.get("legal_name"),
+            'Atuação: '+', '.join(business_models) if business_models else '',
             company.get("industry"), company.get("positioning"), company.get("description"),
         ]
         return " | ".join(str(part).strip() for part in parts if str(part or "").strip())[:1800]

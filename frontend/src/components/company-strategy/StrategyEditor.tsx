@@ -7,8 +7,8 @@ import { strategySectionLabels, type CompanyStrategyContentV1, type StrategySect
 
 type Props = { organizationId?:string; content: CompanyStrategyContentV1; onChange: (content: CompanyStrategyContentV1) => void; saving: boolean }
 export function StrategyEditor({ organizationId, content, onChange, saving }: Props) {
-  const [brands,setBrands]=useState<Array<{id:string;name:string}>>([])
-  useEffect(()=>{let active=true;if(organizationId)companyIntelligenceService.listRepresentedBusinesses(organizationId).then(items=>{if(active)setBrands(items.filter(item=>item.status==='active'))}).catch(()=>{});return()=>{active=false}},[organizationId])
+  const [brands,setBrands]=useState<Array<{id:string;name:string;status:string}>>([])
+  useEffect(()=>{let active=true;if(organizationId)companyIntelligenceService.listRepresentedBusinesses(organizationId).then(items=>{if(active)setBrands(items)}).catch(()=>{});return()=>{active=false}},[organizationId])
   const [newKind, setNewKind] = useState<StrategySectionKind>('custom')
   const update = (key: 'title' | 'objective' | 'summary', value: string) => onChange({ ...content, [key]: value })
   const move = (index: number, direction: number) => {
@@ -27,7 +27,7 @@ export function StrategyEditor({ organizationId, content, onChange, saving }: Pr
         <label className="flex flex-col gap-2 text-sm font-medium">Resumo<Textarea aria-label="Resumo da estratégia" value={content.summary} maxLength={2000} rows={4} onChange={event => update('summary', event.target.value)} /></label>
       </div>
     </SectionCard>
-    {!!brands.length&&<SectionCard title="Marcas que participam desta estratégia">{brands.map(brand=><label key={brand.id} className="mr-4 inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={(content.references.representedBusinessIds??[]).includes(brand.id)} onChange={e=>onChange({...content,references:{...content.references,representedBusinessIds:e.target.checked?[...(content.references.representedBusinessIds??[]),brand.id]:(content.references.representedBusinessIds??[]).filter(id=>id!==brand.id)}})}/>{brand.name}</label>)}</SectionCard>}
+    {!!brands.length&&<SectionCard title="Marcas que participam desta estratégia">{brands.filter(brand=>brand.status==='active'||(content.references.representedBusinessIds??[]).includes(brand.id)).map(brand=><label key={brand.id} className="mr-4 inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={(content.references.representedBusinessIds??[]).includes(brand.id)} onChange={e=>onChange({...content,references:{...content.references,representedBusinessIds:e.target.checked?[...(content.references.representedBusinessIds??[]),brand.id]:(content.references.representedBusinessIds??[]).filter(id=>id!==brand.id)}})}/>{brand.name}{brand.status==='archived'?' · Arquivada':brand.status==='paused'?' · Pausada':''}</label>)}</SectionCard>}
     {content.sections.map((section, index) => <SectionCard key={section.id} title={section.title || 'Nova seção'} action={<div className="flex gap-1">
       <button type="button" className={portalButtonClasses('ghost')} aria-label={`Mover ${section.title} para cima`} disabled={index === 0} onClick={() => move(index, -1)}>↑</button>
       <button type="button" className={portalButtonClasses('ghost')} aria-label={`Mover ${section.title} para baixo`} disabled={index === content.sections.length - 1} onClick={() => move(index, 1)}>↓</button>

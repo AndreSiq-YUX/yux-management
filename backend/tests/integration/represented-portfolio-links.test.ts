@@ -20,8 +20,19 @@ it('keeps homonymous products separate, validates references and updates without
   expect((await rig.request('client_admin_B','POST',foreign,{name:'Forjado',description:'Não deve salvar'})).statusCode).toBe(404)
   expect((await rig.request('client_member_A','POST',`${root}/represented-businesses/${brands[0].id}/products`,{name:'Forjado',description:'Não deve salvar'})).statusCode).toBe(403)
   const strategy={schemaVersion:1,title:'Estratégia multimarcas',objective:'Captar cozinhas para o representante',summary:'Distinguir marcas e condições comerciais por região.',sections:[],references:{productIds:[],documentIds:[],representedBusinessIds:[brands[0].id]}}
-  expect((await rig.request('client_admin_A','POST',`${root}/strategies`,{expectedVersion:null,content:strategy,idempotencyKey:randomUUID()})).statusCode).toBe(200)
+  const draft=await rig.request('client_admin_A','POST',`${root}/strategies`,{expectedVersion:null,content:strategy,idempotencyKey:randomUUID()})
+  expect(draft.statusCode).toBe(200)
   strategy.references.representedBusinessIds=[randomUUID()]
   expect((await rig.request('client_admin_A','POST',`${root}/strategies`,{expectedVersion:null,content:strategy,idempotencyKey:randomUUID()})).statusCode).toBe(404)
+  const publication=await rig.request('client_admin_A','POST',`${root}/strategies/${draft.body.id}/publish`,{expectedVersion:draft.body.version,revisionId:draft.body.draftRevision.id,expectedContentHash:draft.body.draftRevision.contentHash,idempotencyKey:randomUUID()})
+  expect(publication.statusCode).toBe(200)
+  expect((await rig.request('client_admin_A','POST',`${root}/represented-businesses/${brands[0].id}/archive`,{expectedVersion:brands[0].version})).statusCode).toBe(200)
+  const archivedLink={...strategy,references:{...strategy.references,representedBusinessIds:[brands[0].id]}}
+  expect((await rig.request('client_admin_A','PUT',`${root}/strategies/${draft.body.id}/draft`,{expectedVersion:publication.body.version,content:archivedLink,idempotencyKey:randomUUID()})).statusCode).toBe(404)
+  const repaired=await rig.request('client_admin_A','PUT',`${root}/strategies/${draft.body.id}/draft`,{expectedVersion:publication.body.version,content:{...archivedLink,references:{...archivedLink.references,representedBusinessIds:[]}},idempotencyKey:randomUUID()})
+  expect(repaired.statusCode).toBe(200)
+  expect(repaired.body.publishedRevision.content.references.representedBusinessIds).toEqual([brands[0].id])
+  expect(repaired.body.draftRevision.content.references.representedBusinessIds).toEqual([])
+
  }finally{await rig.close()}
 })

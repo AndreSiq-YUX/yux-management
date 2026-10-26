@@ -22,7 +22,7 @@ Este incremento foi implementado e homologado localmente com empresas sintética
 
 ## Ordem dos serviços
 
-1. Aplicar pelo runner PostgreSQL existente as migrations aditivas `0240` a `0246`, na ordem do inventário. Não usar outro histórico de migrations e não reaplicar versões editadas. `0242` corrige o orçamento do contexto de estratégia; `0246` preserva orientações estruturadas dos produtos na projeção do portfólio.
+1. Aplicar pelo runner PostgreSQL existente as migrations aditivas `0240` a `0247`, na ordem do inventário. Não usar outro histórico de migrations e não reaplicar versões editadas. `0242` corrige o orçamento do contexto de estratégia; `0246` preserva orientações estruturadas dos produtos na projeção do portfólio; `0247` classifica e protege as conversas privadas de estratégia, incluindo seu histórico existente.
 2. Implantar API e worker com o contrato de propostas, validação de escopo, concorrência, importação direcionada e novas funções de contexto.
 3. Implantar o runtime com recuperação da estratégia/portfólio e `strategyProposal` opcional. Validar acesso com o papel `yux_runtime`: a projeção permitida deve funcionar; acesso bruto às estratégias deve ser negado.
 4. Implantar o frontend. Oferecer revisão por Missões somente quando todas as partes aceitarem o contrato novo e a organização já tiver acesso às conversas. Em implantação mista, manter a interface anterior até concluir os serviços; não encaminhar propostas novas a workers antigos.
@@ -56,3 +56,13 @@ Suspender a entrada de novas propostas e reverter a interface para os artefatos 
 ## Incrementos posteriores
 
 Extração visual de catálogos, biblioteca de imagens vinculada a produtos, aprovação de arquivos para envio e anexos pelo SDR não fazem parte deste incremento. Nenhuma imagem encontrada num site se torna automaticamente um material aprovado. O cadastro e a estratégia também não iniciam pesquisas pagas, campanhas ou mensagens.
+
+## Revisão final local
+
+A revisão independente identificou cinco problemas relevantes, tratados com regressões que falharam antes das correções: privacidade de conversas de estratégia na API e no PostgreSQL; orçamento de contexto preservando produtos relevantes; comparação e recuperação de propostas concorrentes; remoção explícita de referências a marcas arquivadas; descarte de respostas atrasadas após troca de página/proposta. Conversas privadas continuam acessíveis aos perfis de configuração autorizados; conversas comuns continuam visíveis ao membro.
+
+Uma proposta baseada em versão antiga não é reaplicada silenciosamente: a tela mostra a versão atual e permite transferir o texto revisado para edição manual, com nova verificação de versão ao salvar. A proposta original e as publicações históricas permanecem intactas.
+
+Pendência menor: depois de importar produtos de uma representada, reabrir seu portfólio para atualizar a lista atualmente montada. A importação é salva no banco e a contagem é atualizada; a lista aberta ainda não recebe atualização automática.
+
+Verificação final em 2026-10-26: backend **1552 testes aprovados / 126 ignorados**, frontend **1254 aprovados**, runtime **421 aprovados / 7 ignorados**, **15 testes de integração aprovados em 11 arquivos**, verificações de tipos e build com orçamento de bundle aprovados. Os testes ignorados pertencem à suíte existente e não foram usados como prova de homologação deste incremento. O navegador local verificou desktop/celular, quatro perfis, edição, publicação, busca/paginação, falha/repetição e reconciliação de conflito com preservação do texto. As provas de privacidade incluíram HTTP e PostgreSQL com papéis reais. Não houve consumo pago ou implantação em produção.

@@ -38,3 +38,30 @@ def test_published_strategy_brand_references_control_the_internal_portfolio_sele
     store.tables['marketing_products_services']=[{'id':key,'name':'Produto '+key,'organization_id':'org-a','status':'active','represented_business_id':key} for key in ['chosen','other']]
     result=CustomerContextService(store).retrieve(organization_id='org-a',contract_id=None,profile_key='growth_strategist',query='estratégia')
     assert [item['representedBusinessId'] for item in result['portfolio_context']['items']]==['chosen']
+
+def test_large_brand_summaries_preserve_the_matching_product_at_provider_boundary():
+    from test_mission_conversation import MissionConversationWorkflowTest, request
+    helper=MissionConversationWorkflowTest()
+    store=helper.make_store()
+    store.tables['company_represented_businesses']=[{'id':f'brand-{i}','name':f'Marca {i}','organization_id':'org-a','status':'active','description':'D'*500,'commercial_conditions':'C'*1000,'authorized_lines':['Massas'],'service_regions':['PR']} for i in range(8)]
+    store.tables['marketing_products_services']=[{'id':'product-31','organization_id':'org-a','contract_id':'contract-a','status':'active','represented_business_id':'brand-7','name':'Lasanha relevante 31','description':'Congelada','metadata':{'packaging':'1 kg','storageConditions':'Congelado','serviceRegions':['PR']}}]
+    captured=[]
+    helper.make_workflow(captured,store).respond(request())
+    payload=json.dumps(captured,ensure_ascii=False)
+    assert 'Lasanha relevante 31' in payload
+    assert '1 kg' in payload
+    assert 'Congelado' in payload
+    result=CompanyPortfolioContextService(store).retrieve(organization_id='org-a',contract_id='contract-a',profile_key='growth_strategist',audience='client_user',query='Lasanha relevante 31')
+    assert result['items'][0]['id']=='product-31'
+    assert len(json.dumps(result,ensure_ascii=False))<=10000
+
+def test_company_business_models_reach_the_actual_provider_as_company_identity():
+    from test_mission_conversation import MissionConversationWorkflowTest, request
+    helper=MissionConversationWorkflowTest()
+    store=helper.make_store()
+    store.tables['organization_company_profiles'][0]['business_models']=['commercial_representative','distributor']
+    captured=[]
+    helper.make_workflow(captured,store).respond(request())
+    payload=json.dumps(captured,ensure_ascii=False)
+    assert 'Representante comercial' in payload
+    assert 'Distribuidor' in payload
