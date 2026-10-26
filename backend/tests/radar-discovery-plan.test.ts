@@ -44,7 +44,7 @@ it('schedules saved receipt admission before a new source and never replays an u
 it('finishes researching admitted prospects before buying replacements and never concludes a whole market is exhausted',()=>{
  const plan=api.buildRadarAdaptiveDiscoveryPlan(base)
  expect(api.planRadarAdaptiveDiscoveryTurn({plan,requestedCount:10,items:[{isNew:true,qualification:'review',state:'pending'}],pages:[]})).toMatchObject({action:'research_pending'})
- expect(api.planRadarAdaptiveDiscoveryTurn({plan,requestedCount:10,items:[{isNew:true,qualification:'review',state:'waiting'}],pages:[]})).toMatchObject({stop:'awaiting_research_attention'})
+ expect(api.planRadarAdaptiveDiscoveryTurn({plan,requestedCount:10,items:[{isNew:true,qualification:'review',state:'waiting'}],pages:[]})).toMatchObject({action:'discover',scope:{key:plan.scopes[0].key}})
  const pages=plan.scopes.map((scope:any)=>({scopeKey:scope.key,status:'admitted',exhaustion:'exhausted',id:scope.key}))
  expect(api.planRadarAdaptiveDiscoveryTurn({plan,requestedCount:10,items:[],pages})).toMatchObject({stop:'coverage_incomplete',marketExhausted:false})
  const complete={...plan,omittedSources:[]}
@@ -54,4 +54,12 @@ it('finishes researching admitted prospects before buying replacements and never
 it('keeps paid surplus for the next lot once the qualified target is reached',()=>{
  const plan=api.buildRadarAdaptiveDiscoveryPlan(base)
  expect(api.planRadarAdaptiveDiscoveryTurn({plan,requestedCount:1,items:[{isNew:true,qualification:'confirmed',state:'completed'}],pages:[{id:'surplus',scopeKey:plan.scopes[0].key,status:'received',exhaustion:'more'}]})).toMatchObject({stop:'target_reached'})
+})
+it('isolates individual waits but still stops on an uncertain discovery page or missing continuation',()=>{
+ const plan=api.buildRadarAdaptiveDiscoveryPlan({...base,sourceOrder:['cnpja_advanced_search'],states:['SP']}),scopeKey=plan.scopes[0].key
+ const items=[{isNew:true,qualification:'review',state:'waiting'}]
+ expect(api.planRadarAdaptiveDiscoveryTurn({plan,requestedCount:40,items,pages:[{id:'old-page',scopeKey,status:'admitted',exhaustion:'more',continuation:{token:'page-2'}}]})).toMatchObject({action:'discover',continuation:{token:'page-2'}})
+ expect(api.planRadarAdaptiveDiscoveryTurn({plan,requestedCount:40,items,pages:[{id:'uncertain',scopeKey,status:'uncertain',exhaustion:'unknown'}]})).toMatchObject({stop:'awaiting_reconciliation'})
+ expect(api.planRadarAdaptiveDiscoveryTurn({plan,requestedCount:40,items,pages:[{id:'no-token',scopeKey,status:'admitted',exhaustion:'more'}]})).toMatchObject({stop:'awaiting_continuation'})
+ expect(api.planRadarAdaptiveDiscoveryTurn({plan,requestedCount:40,items,pages:[{id:'last-page',scopeKey,status:'admitted',exhaustion:'exhausted'}]})).toMatchObject({stop:'awaiting_research_attention'})
 })

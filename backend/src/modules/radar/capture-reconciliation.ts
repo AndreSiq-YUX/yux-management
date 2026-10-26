@@ -31,7 +31,9 @@ export async function reconcileRadarCaptureSummary(db:Pick<pg.PoolClient,'query'
  const status=other&&['discovering','researching','blocked'].includes(summary.status)?'partial':summary.status
  await db.query('UPDATE public.radar_capture_operations SET status=$3,blockers=$4,updated_at=NOW() WHERE id=$1 AND organization_id=$2',[op.id,input.organizationId,status,JSON.stringify(summary.blockers)])
  const pending=(await db.query(`SELECT EXISTS(SELECT 1 FROM public.radar_capture_items item JOIN public.radar_candidate_research_runs run ON run.id=item.run_id AND run.organization_id=item.organization_id WHERE item.operation_id=$1 AND item.organization_id=$2 AND item.status IN ('queued','researching') AND run.status IN ('queued','running')) AS pending`,[op.id,input.organizationId])).rows[0]?.pending
- if(pending||!op.discovery_stopped&&!summary.blockers.length){
+ // Child blockers remain visible, but do not cancel independent discovery.
+ // The summary's status already accounts for actual discovery-level blockers.
+ if(pending||!op.discovery_stopped&&status==='discovering'){
   await db.query('INSERT INTO public.radar_capture_outbox(operation_id,organization_id,campaign_id) VALUES($1,$2,$3) ON CONFLICT(operation_id) DO UPDATE SET next_dispatch_at=LEAST(radar_capture_outbox.next_dispatch_at,NOW())',[op.id,input.organizationId,op.campaign_id])
  }else await db.query('DELETE FROM public.radar_capture_outbox WHERE operation_id=$1 AND organization_id=$2',[op.id,input.organizationId])
 }

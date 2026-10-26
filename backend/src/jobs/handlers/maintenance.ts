@@ -1,13 +1,18 @@
 import type pg from 'pg'
 import {reconcileRadarCaptureOutbox as dispatchRadarOutbox} from '../../modules/radar/capture-dispatch.js'
 import {runRadarResearchWatchdog} from '../../modules/radar/stalled-research.js'
+import {repairRadarCaptureSchedulingAcrossTenants} from '../../modules/radar/capture-scheduling.js'
 export async function reconcileRadarCaptureOutbox(pool:pg.Pool,queue:Parameters<typeof dispatchRadarOutbox>[1],window:number){
+ // A poisoned orphan must not stop delivery of unrelated healthy outbox rows.
+ let repairFailure:unknown,repairFailed=false
+ try{await repairRadarCaptureSchedulingAcrossTenants(pool)}catch(cause){repairFailure=cause;repairFailed=true}
  let result:Awaited<ReturnType<typeof dispatchRadarOutbox>>|undefined,deliveryFailure:unknown,deliveryFailed=false
  try{result=await dispatchRadarOutbox(pool,queue,window)}catch(cause){deliveryFailure=cause;deliveryFailed=true}
  // Still diagnose when queue delivery failed; the watchdog never enqueues or
  // repeats provider effects. Existing outbox delivery retains its stable IDs.
  await runRadarResearchWatchdog(pool,deliveryFailed?false:undefined)
  if(deliveryFailed)throw deliveryFailure
+ if(repairFailed)throw repairFailure
  return result!
 }
 

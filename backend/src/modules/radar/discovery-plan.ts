@@ -78,7 +78,7 @@ export function planRadarAdaptiveDiscoveryTurn(input:{plan:RadarAdaptiveDiscover
  const counts=radarAdaptiveDiscoveryCounts(input.items)
  // Full-stage processing is not skipped just because the desired count is met.
  if(counts.pending)return{action:'research_pending' as const}
- if(input.items.some(item=>item.isNew&&item.qualification!=='not_target'&&item.state==='waiting'))return{stop:'awaiting_research_attention' as const,marketExhausted:false as const}
+ const waiting=input.items.some(item=>item.isNew&&item.qualification!=='not_target'&&item.state==='waiting')
  if(counts.qualifiedNew>=input.requestedCount)return{stop:'target_reached' as const,marketExhausted:false as const}
  const saved=input.pages.find(page=>page.status==='received')
  if(saved)return{action:'admit_saved_page' as const,pageId:saved.id}
@@ -96,6 +96,9 @@ export function planRadarAdaptiveDiscoveryTurn(input:{plan:RadarAdaptiveDiscover
   return{action:'discover' as const,scope:next.scope,...(previous?.continuation?{continuation:previous.continuation}:{})}
  }
  if(input.plan.nextScopeOffset!==null)return{action:'expand_plan_window' as const,offset:input.plan.nextScopeOffset}
+ // An individual analysis can wait without stopping the original discovery
+ // request. Ask for attention only after other usable discovery is exhausted.
+ if(waiting)return{stop:'awaiting_research_attention' as const,marketExhausted:false as const}
  const incomplete=input.plan.coverageGaps.length||input.plan.omittedSources.length||input.pages.some(page=>page.status==='rejected'||page.exhaustion==='unknown')
  return{stop:incomplete?'coverage_incomplete' as const:'consulted_sources_exhausted' as const,marketExhausted:false as const}
 }
