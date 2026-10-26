@@ -70,9 +70,13 @@ export async function advanceRadarAdaptiveCapture(pool:pg.Pool,env:AppEnv,operat
   sourceCapacity.set(key,{allowed:governance.allowed,code:governance.issues[0]?.code})
  }
  const savedPending=relevant.some(page=>page.status==='received')
- if(!savedPending&&(await radarAdaptiveContinuations(pool,{organizationId:op.organization_id,campaignId:op.campaign_id,configurationRevision:op.configuration_revision},await loadRadarOperationalLimits(pool))).length)throw failure('radar_capture_continuation_confirmation_required')
+ const continuations=savedPending?[]:await radarAdaptiveContinuations(pool,{organizationId:op.organization_id,campaignId:op.campaign_id,configurationRevision:op.configuration_revision},await loadRadarOperationalLimits(pool))
+ // An uncertain purchase still needs reconciliation. An expired/rejected
+ // cursor only holds its own region; unused configured regions remain usable.
+ if(continuations.some(state=>state.reason==='uncertain'))throw failure('radar_capture_continuation_confirmation_required')
+ const heldScopes=new Set(continuations.map(state=>state.scopeKey))
  if(!savedPending&&attemptedHere.length>=config.batch.maxQueriesPerBatch){await pool.query("UPDATE public.radar_capture_operations SET discovery_stopped=TRUE,discovery_reason='query_cap' WHERE id=$1 AND organization_id=$2",[op.id,op.organization_id]);return}
- const eligibleScopes=stored.plan.scopes.filter(scope=>sourceCapacity.get(scope.source)?.allowed&&attemptedHere.filter(page=>page.scope_key===scope.key).length<config.batch.maxPagesPerScope)
+ const eligibleScopes=stored.plan.scopes.filter(scope=>!heldScopes.has(scope.key)&&sourceCapacity.get(scope.source)?.allowed&&attemptedHere.filter(page=>page.scope_key===scope.key).length<config.batch.maxPagesPerScope)
  if(!savedPending&&!eligibleScopes.length&&stored.plan.scopes.length){
   // A cap applies to this scope, not all later regions/sources in a bounded
   // planning window. Expanding the frozen plan is local and buys nothing.
@@ -80,6 +84,7 @@ export async function advanceRadarAdaptiveCapture(pool:pg.Pool,env:AppEnv,operat
    const input={...stored.input,window:{...stored.input.window,offset:stored.plan.nextScopeOffset}},plan=buildRadarAdaptiveDiscoveryPlan(input)
    await pool.query('UPDATE public.radar_capture_operations SET discovery_plan=$3::jsonb,updated_at=NOW() WHERE id=$1 AND organization_id=$2',[op.id,op.organization_id,JSON.stringify({...stored,input,plan})]);return
   }
+  if([...sourceCapacity.values()].some(value=>value.allowed)&&continuations.length)throw failure('radar_capture_continuation_confirmation_required')
   if([...sourceCapacity.values()].some(value=>value.allowed))await pool.query("UPDATE public.radar_capture_operations SET discovery_stopped=TRUE,discovery_reason='page_cap' WHERE id=$1 AND organization_id=$2",[op.id,op.organization_id])
   else throw failure([...sourceCapacity.values()].find(value=>value.code)?.code??'radar_discovery_no_eligible_sources')
   return
@@ -87,6 +92,7 @@ export async function advanceRadarAdaptiveCapture(pool:pg.Pool,env:AppEnv,operat
  const planningItems=funnelProgress?items.map(item=>({...item,qualification:'confirmed' as const})):items
  const turn=planRadarAdaptiveDiscoveryTurn({plan:{...stored.plan,scopes:eligibleScopes},requestedCount:funnelProgress?items.length+funnelProgress.remaining:Number(op.requested_count),items:planningItems,pages:relevant.map(page=>({id:page.id,scopeKey:page.scope_key,status:page.status,exhaustion:page.exhaustion,continuation:page.continuation}))})
  if('stop' in turn){
+  if(continuations.length&&['awaiting_research_attention','consulted_sources_exhausted','coverage_incomplete'].includes(turn.stop!))throw failure('radar_capture_continuation_confirmation_required')
   const wait=['awaiting_research_attention','awaiting_reconciliation','awaiting_source_response','awaiting_continuation'].includes(turn.stop!)
   await pool.query(`UPDATE public.radar_capture_operations SET status=$3,discovery_stopped=$4,discovery_reason=$5,blockers=$6::jsonb,updated_at=NOW() WHERE id=$1 AND organization_id=$2`,[op.id,op.organization_id,wait?'blocked':'researching',!wait,turn.stop==='target_reached'?'target_reached':turn.stop,JSON.stringify(wait?[`radar_discovery_${turn.stop}`]:[])])
   return

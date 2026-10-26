@@ -28,7 +28,7 @@
 
 ### Task 1: Continuidade e recuperação de agendamento
 
-**Files:** modificar `backend/src/modules/radar/discovery-plan.ts`, `capture-reconciliation.ts`, `backend/src/jobs/handlers/maintenance.ts`; criar `backend/src/modules/radar/capture-scheduling.ts`. Testar em `backend/tests/radar-discovery-plan.test.ts`, `backend/tests/integration/radar-capture-scheduling.test.ts` e suites de captura, conciliação e vigia existentes.
+**Files:** modificar `backend/src/modules/radar/discovery-plan.ts`, `adaptive-capture.ts`, `capture-reconciliation.ts`, `backend/src/jobs/handlers/maintenance.ts`; criar `backend/src/modules/radar/capture-scheduling.ts`. Testar em `backend/tests/radar-discovery-plan.test.ts`, `backend/tests/integration/radar-capture-scheduling.test.ts` e suites de captura, conciliação e vigia existentes.
 
 **Interfaces:** `planRadarAdaptiveDiscoveryTurn` mantém o contrato, mas só espera atenção individual quando não existe mais descoberta utilizável. `reconcileRadarCaptureSummary` conserva os bloqueios individuais e agenda descoberta ativa. `repairRadarCaptureScheduling(pool,organizationId):Promise<number>` reconcilia lotes ativos órfãos com bloqueios de descoberta separados; `repairRadarCaptureSchedulingAcrossTenants(pool):Promise<{recovered:number}>` aplica contextos de worker por organização antes da entrega normal da outbox.
 
@@ -47,5 +47,6 @@ Planejador, conciliação e recuperação compartilham o estado existente do lot
 - Baseline: 1.540 testes backend aprovados. Após correção: 1.541 aprovados/126 opcionais ignorados; build TypeScript aprovado.
 - 72 integrações aprovadas em Postgres isolado, incluindo 17 casos de continuidade e recuperação, as suites de descoberta adaptativa, operação legada, conciliação, vigia, quatro perfis HTTP e isolamento entre organizações.
 - O caso 10/40 usa dispatcher e workers reais, transportes sintéticos e nenhuma chamada paga. Preserva oito lacunas e dois bloqueios anteriores, pesquisa mais 30 empresas, termina a descoberta em 40 e realiza exatamente quatro páginas no total, sem outro lote.
+- A mesma reprodução inclui continuação vencida há duas horas na primeira cidade. Antes da correção, permanecia em 10; depois, completa 40 nas outras três cidades, preservando o cursor antigo. Os testes existentes continuam exigindo confirmação se só restarem continuações pendentes ou houver cobrança incerta na descoberta.
 - Revisão do autor em passe separado, sem subagentes conforme preferência do usuário. Encontrou falha de isolamento: um erro na recuperação poderia impedir entregas saudáveis. Teste com trigger de falha no banco reproduziu o problema; após correção, lotes saudáveis continuam na mesma organização e nas outras, enquanto o erro permanece observável.
 - A manutenção normal já executa a cada 20 segundos; não foi criado outro agendador, API, limite de pesquisa ou regra de cobrança. Nenhum DTO cliente foi alterado.

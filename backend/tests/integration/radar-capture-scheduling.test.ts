@@ -17,9 +17,9 @@ import {createRadarCampaign} from '../../src/modules/radar/repository.js'
 const modulePath='../../src/modules/radar/capture-scheduling.js'
 const scheduling=await import(modulePath).catch(()=>({})) as {repairRadarCaptureScheduling?:(pool:pg.Pool,organizationId:string)=>Promise<number>}
 const env={PROVIDER_SECRET_ENCRYPTION_KEY_B64:Buffer.alloc(32,7).toString('base64')} as never
-async function fixture(){
+async function fixture(cities?:Array<{city:string;state:string}>){
  const f=await captureFixture()
- const config={...f.campaign.searchConfiguration,discovery:{enabled:true,sourceOrder:['cnpja_advanced_search'],terms:[]},funnel:{enabled:true,g0:{mode:'off'},g1:{mode:'off'},g3:{mode:'off'},g5:{mode:'off'},agentPolicy:{mode:'off'}},qualification:{includeAnyTerms:['atividade configurada']},research:{...f.campaign.searchConfiguration?.research,localSearchOrder:'disabled',maxSearchQueriesPerCandidate:1,maxPagesPerCandidate:2}}
+ const config={...f.campaign.searchConfiguration,...(cities?{cities}:{}),discovery:{enabled:true,sourceOrder:['cnpja_advanced_search'],terms:[]},funnel:{enabled:true,g0:{mode:'off'},g1:{mode:'off'},g3:{mode:'off'},g5:{mode:'off'},agentPolicy:{mode:'off'}},qualification:{includeAnyTerms:['atividade configurada']},research:{...f.campaign.searchConfiguration?.research,localSearchOrder:'disabled',maxSearchQueriesPerCandidate:1,maxPagesPerCandidate:2}}
  await f.pool.query('UPDATE radar_campaigns SET search_configuration=$2::jsonb WHERE id=$1',[f.campaign.id,JSON.stringify(config)])
  const op=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestedCount:40,requestId:randomUUID()},{availability:available})
  const url=new URL(connectionString!);url.username='yux_worker'
@@ -43,16 +43,17 @@ describe.skipIf(!connectionString)('requested-count scheduling with isolated Pos
    expect(await f.outbox()).toBe(1)
   }finally{await f.close()}
  })
- it('recovers the same 10/40 lot and researches thirty more companies, preserving both uncertain/invalid analyses',async()=>{
-  const f=await fixture()
+ it('recovers the same 10/40 lot through unused cities despite an expired cursor, preserving both uncertain/invalid analyses',async()=>{
+  const cities=['Curitiba','Londrina','Maringá','Cascavel'].map(city=>({city,state:'PR'})),f=await fixture(cities)
   try{
    const taxId=(index:number)=>{let value=`82456891${String(index).padStart(4,'0')}`;for(let digit=0;digit<2;digit++){const sum=[...value].reverse().reduce((sum,char,i)=>sum+Number(char)*(i%8+2),0),rest=sum%11;value+=rest<2?'0':String(11-rest)}return value}
    const prospects=Array.from({length:40},(_,index)=>radarRegistryDiscoveryCandidate({taxId:taxId(index+1),legalName:`Empresa Continuidade ${index+1}`,city:'Curitiba',state:'PR',cnaes:[],websiteStatus:'unknown',rawPayload:{}})!)
    let discoveries=0
-   const adaptiveDiscover=async(input:any)=>{const page=discoveries++;expect(input.continuation).toEqual(page?{token:`page-${page+1}`} : undefined);return{candidates:prospects.slice(page*10,page*10+10),documents:[],exhaustion:'more' as const,continuation:{token:`page-${page+2}`}}}
+   const adaptiveDiscover=async(input:any)=>{const page=discoveries++;expect(input.continuation).toBeUndefined();expect(input.scope.city).toBe(cities[page]?.city);return{candidates:prospects.slice(page*10,page*10+10),documents:[],exhaustion:'more' as const,continuation:{token:`next-${input.scope.city}`}}}
    for(let turn=0;turn<2;turn++)await advanceRadarCaptureDiscovery(f.pool,env,{organizationId,operationId:f.op.operationId},{availability:available,adaptiveDiscover})
    const initial=(await getRadarCaptureOperation(f.pool,admin,organizationId,f.op.operationId)).items
    expect(initial).toHaveLength(10)
+   await f.pool.query("UPDATE radar_discovery_pages SET updated_at=NOW()-INTERVAL '2 hours' WHERE operation_id=$1",[f.op.operationId])
    const held:Array<{id:string;calls:unknown}>=[]
    for(const [index,item]of initial.entries()){
     const calls=index===8?{presence:{status:'received_invalid',error:'radar_presence_unverifiable',requestId:'fixture-invalid'}}:index===9?{presence:{status:'reserved',requestId:'fixture-uncertain'}}:{}
@@ -79,6 +80,7 @@ describe.skipIf(!connectionString)('requested-count scheduling with isolated Pos
    expect(result).toMatchObject({id:f.op.operationId,status:'blocked',discoveryStopped:true,counts:{requested:40,admitted:40,researching:0,blocked:2}})
    expect(result.counts.completed+(result.counts.completedWithGaps??0)).toBe(38)
    expect(discoveries).toBe(4)
+   expect((await f.pool.query('SELECT continuation,extraction FROM radar_discovery_pages WHERE operation_id=$1 ORDER BY created_at,id LIMIT 1',[f.op.operationId])).rows[0]).toMatchObject({continuation:{token:'next-Curitiba'},extraction:{}})
    expect((await f.pool.query('SELECT stage,status FROM radar_candidate_research_runs WHERE campaign_id=$1',[f.campaign.id])).rows).toHaveLength(40)
    expect((await f.pool.query("SELECT COUNT(*)::int AS n FROM radar_candidate_research_runs WHERE campaign_id=$1 AND (stage<>'review' OR status IN('queued','running'))",[f.campaign.id])).rows[0].n).toBe(0)
    for(const saved of held)expect((await f.pool.query('SELECT calls FROM radar_candidate_research_runs WHERE id=$1',[saved.id])).rows[0].calls).toEqual(saved.calls)
@@ -111,7 +113,7 @@ describe.skipIf(!connectionString)('requested-count scheduling with isolated Pos
    await f.pool.query(`CREATE FUNCTION ${name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.id='${bad.id}'::uuid THEN RAISE EXCEPTION 'synthetic_orphan_write_failed'; END IF; RETURN NEW; END $$`)
    await f.pool.query(`CREATE TRIGGER ${name} BEFORE UPDATE ON radar_capture_operations FOR EACH ROW EXECUTE FUNCTION ${name}()`)
    const delivered:string[]=[]
-   const result=await f.scoped(()=>maintainRadar(f.worker,{add:async(_name,data)=>{delivered.push(data.operationId!);return{}}},7),[]).catch(cause=>cause)
+   const result=await f.scoped(()=>maintainRadar(f.worker,{add:async(_name,data)=>{if(typeof data.operationId!=='string')throw Error('unexpected_non_capture_delivery');delivered.push(data.operationId);return{}}},7),[]).catch(cause=>cause)
    expect(delivered).toEqual([f.op.operationId])
    expect(result).toBeInstanceOf(AggregateError)
    expect(result.message).toBe('radar_capture_scheduling_repair_failed')
