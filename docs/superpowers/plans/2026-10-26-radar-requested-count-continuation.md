@@ -50,3 +50,12 @@ Planejador, conciliação e recuperação compartilham o estado existente do lot
 - A mesma reprodução inclui continuação vencida há duas horas na primeira cidade. Antes da correção, permanecia em 10; depois, completa 40 nas outras três cidades, preservando o cursor antigo. Os testes existentes continuam exigindo confirmação se só restarem continuações pendentes ou houver cobrança incerta na descoberta.
 - Revisão do autor em passe separado, sem subagentes conforme preferência do usuário. Encontrou falha de isolamento: um erro na recuperação poderia impedir entregas saudáveis. Teste com trigger de falha no banco reproduziu o problema; após correção, lotes saudáveis continuam na mesma organização e nas outras, enquanto o erro permanece observável.
 - A manutenção normal já executa a cada 20 segundos; não foi criado outro agendador, API, limite de pesquisa ou regra de cobrança. Nenhum DTO cliente foi alterado.
+
+## Follow-up from production verification
+
+The same request advanced from 10 to 38 admissions. At 38, the next Assis cursor received an actual HTTP validation rejection. `adaptive-capture.ts` saved the rejected receipt but threw a global blocker before the next turn could select the still-valid Bauru cursor. This is a distinct post-response path from the already fixed pre-turn expiry guard.
+
+1. Reproduce an actual typed cursor rejection with another usable region, including preservation of the rejected token and no purchase of that cursor again.
+2. Let a confirmed cursor rejection yield to the next normal planning turn. Unknown transport outcomes and non-cursor validation errors continue to block normally.
+3. Recover an already blocked legacy request only when its sole parent blocker is this proven cursor rejection and another unheld, nonexhausted scope remains. Preserve all child statuses, receipts, budgets and grants. Keep generic blocked requests, all-held scopes and any uncertain discovery protected.
+4. Run PostgreSQL recovery/transport regressions, the full backend suite and build; publish normally, verify deployment, and monitor the original request. No fresh restart authorization or individual analysis retry is implied.
