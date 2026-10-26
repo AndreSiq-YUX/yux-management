@@ -31,9 +31,9 @@
 
 **Interfaces:** `resolveRadarMunicipalityCode(city:string,state?:string):number`; `CnpjaPreparationError` com `billingOutcome:'not_billed'`, `requestStarted:false` e mensagem-código segura. HTTP e falhas depois do envio não recebem essa prova.
 
-- [ ] Escrever testes: Bauru/SP→3506003, Marília/SP→3529005 sem acento; homônimos por UF; cidade inválida rejeita sem transporte; continuação não resolve cidade novamente; timeout do fornecedor continua incerto. Observar RED.
-- [ ] Implementar gerador com validação fail-closed e catálogo completo oficial; resolver pelo índice local e integrar ao cliente. Invalidar preparação antes de enviar qualquer credencial/request. Ajustar testes antigos cuja expectativa era a consulta auxiliar.
-- [ ] Executar testes focados, suite backend e build, comparar resultados e commitar o entregável.
+- [x] Escrever testes: Bauru/SP→3506003, Marília/SP→3529005 sem acento; homônimos por UF; cidade inválida rejeita sem transporte; continuação não resolve cidade novamente; timeout do fornecedor continua incerto. Observar RED.
+- [x] Implementar gerador com validação fail-closed e catálogo completo oficial; resolver pelo índice local e integrar ao cliente. Invalidar preparação antes de enviar qualquer credencial/request. Ajustar testes antigos cuja expectativa era a consulta auxiliar.
+- [x] Executar testes focados, suite backend e build, comparar resultados e commitar o entregável.
 
 ### Task 2: Cidades e separação visual da configuração interna
 
@@ -41,9 +41,9 @@
 
 **Interfaces:** `parseRadarCities(value:string,selectedStates:string[])` conserva retorno `{city,state}[]`; formatador de cidades existentes respeita UF única. `canConfigureProviders` continua vinculado apenas a `context.role.key==='yux_admin'` no Workspace.
 
-- [ ] Testar UF única com nomes simples, várias UFs com sufixos, estado não selecionado, mudança de seleção e submit real; controles/custos ausentes com flag administrativa falsa e presentes somente após abrir seção Admin quando verdadeira. Observar RED das melhorias.
-- [ ] Implementar herança segura de UF, labels/ajuda dinâmicos e seções técnicas recolhidas; preservar edição administrativa e padrão YUX.
-- [ ] Executar suite frontend, type-check/build; verificar renderização/submit em navegador local sem rede paga. Commit do entregável.
+- [x] Testar UF única com nomes simples, várias UFs com sufixos, estado não selecionado, mudança de seleção e submit real; controles/custos ausentes com flag administrativa falsa e presentes somente após abrir seção Admin quando verdadeira. Observar RED das melhorias.
+- [x] Implementar herança segura de UF, labels/ajuda dinâmicos e seções técnicas recolhidas; preservar edição administrativa e padrão YUX.
+- [x] Executar suite frontend, type-check/build; verificar renderização/submit em navegador local sem rede paga. Commit do entregável.
 
 ### Task 3: Cobrança, retomada e confidencialidade ponta a ponta
 
@@ -51,11 +51,20 @@
 
 **Interfaces:** prova `billingOutcome:'not_billed'` libera custo/cota uma vez, mantendo histórico. `radarAdaptiveContinuations` e `authorizeRadarAdaptiveContinuations` continuam exigindo confirmação fresca para legado incerto; nenhum restart automático.
 
-- [ ] Reproduzir falha local tipada: página rejeitada com código específico, reserva de cota/custo liberada uma vez; timeout real mantém incerteza. Testar consentimento da mesma operação de 40 e isolamento HTTP dos quatro perfis. Observar RED onde houver defeito.
-- [ ] Implementar somente os pontos que os testes demonstrarem incorretos; conservar campos originais e impedir repetição de efeitos pagos.
-- [ ] Suites completas e builds; testes Postgres isolado; revisão inteira do diff em passe separado, sem subagentes conforme preferência do usuário. Registrar limites da prova local.
+- [x] Reproduzir falha local tipada: página rejeitada com código específico, reserva de cota/custo liberada uma vez; timeout real mantém incerteza. Testar consentimento da mesma operação de 40 e isolamento HTTP dos quatro perfis. Observar RED onde houver defeito.
+- [x] Implementar somente os pontos que os testes demonstrarem incorretos; conservar campos originais e impedir repetição de efeitos pagos.
+- [x] Suites completas e builds; testes Postgres isolado; revisão inteira do diff em passe separado, sem subagentes conforme preferência do usuário. Registrar limites da prova local.
 - [ ] Publicar a correção na main após testes, conforme autorização atual; verificar commit remoto/deploy se acessível. Não executar pesquisa paga ou apagar legado incerto como parte da publicação.
 
 ## Self-review
 
 As três tarefas compartilham apenas o erro tipado de preparação (Task 1→3); a herança de UF é frontend, sem relaxar o schema backend. O catálogo não vai ao bundle cliente. Configurações técnicas já estavam role-gated: o objetivo não é afirmar vazamento inexistente, mas separar visualmente e provar as fronteiras. O orçamento removido não é reintroduzido. Esta especificação detalha o escopo que o usuário acabou de autorizar; não reinicia a fase de aprovação do mesmo desenho.
+
+## Evidência de execução — 26/10/2026
+
+- Catálogo oficial: 5.571 municípios/27 UFs, gerado e validado fora do fluxo pago; a consulta de descoberta usa o código local.
+- Backend: 1.540 testes aprovados/126 opcionais ignorados; frontend: 1.237 aprovados; builds e orçamento de bundle aprovados.
+- Postgres local descartável: 51 testes de integração aprovados, incluindo HTTP com quatro perfis, isolamento de organizações, falha antes do envio, resposta salva, timeout após envio e retomada explícita da mesma operação de 40.
+- Revisão do autor em passe separado, sem revisão independente/subagentes conforme preferência do usuário. Identificou janela entre registro da rejeição e liberação da reserva: teste com falha real de escrita reproduziu o problema, depois passou com ambas as escritas na mesma transação. Nenhuma chamada de rede fica nessa transação.
+- Playwright com Chrome local (Browser plugin not available: skill de Browser ausente): salvamento HTTP e recarga reais, desktop e celular, quatro perfis, sem erro JavaScript ou rolagem horizontal. Dados e serviços de teste isolados; nenhuma chamada paga ou mudança de limite de produção.
+- O teste local de retomada preserva o recibo incerto original. Não autoriza nem executa uma nova tentativa paga no lote real; essa confirmação permanece no fluxo existente.

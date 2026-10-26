@@ -150,10 +150,16 @@ export async function advanceRadarAdaptiveCapture(pool:pg.Pool,env:AppEnv,operat
   const notDispatched=cause instanceof CnpjaPreparationError
   const rejected=cause instanceof CnpjaSearchHttpError&&cause.requestRejected||(cause as {billingOutcome?:string})?.billingOutcome==='not_billed'
   const code=notDispatched?cause.message:rejected&&input.continuation?.token?'radar_discovery_continuation_rejected':rejected?'radar_discovery_parameters_rejected':cause instanceof Error&&/^[a-z][a-z0-9_]+$/.test(cause.message)?cause.message:'radar_discovery_request_uncertain'
-  await pool.query(`UPDATE public.radar_discovery_pages SET status=CASE WHEN response_body IS NOT NULL THEN 'received' WHEN $5 THEN 'rejected' ELSE 'uncertain' END,error_code=$4,updated_at=NOW() WHERE id=$1 AND organization_id=$2 AND lease_id=$3`,[pageId,op.organization_id,owner,code,rejected])
-  // Only the typed local preparation failure proves that no request consumed
-  // a source unit. A non-billed response alone does not prove that.
-  if((cause as {billingOutcome?:string})?.billingOutcome==='not_billed')await pool.query(`WITH original AS(SELECT id,cost_estimate_brl,created_at::date AS usage_date FROM public.radar_discovery_pages WHERE id=$1 AND organization_id=$2 AND cost_estimate_brl>0 AND status='rejected' FOR UPDATE),recorded AS(UPDATE public.radar_discovery_pages page SET cost_estimate_brl=0 FROM original WHERE page.id=original.id RETURNING original.cost_estimate_brl,original.usage_date) UPDATE public.radar_source_usage_counters counter SET units=GREATEST(0,counter.units-CASE WHEN $5 THEN 1 ELSE 0 END),estimated_cost=GREATEST(0,counter.estimated_cost-recorded.cost_estimate_brl),updated_at=NOW() FROM recorded WHERE counter.organization_id=$2 AND counter.campaign_id=$3 AND counter.source_type=$4 AND counter.usage_date=recorded.usage_date`,[pageId,op.organization_id,op.campaign_id,scope.source,notDispatched])
+  const receipt=await pool.connect()
+  try{
+   await receipt.query('BEGIN')
+   await receipt.query(`UPDATE public.radar_discovery_pages SET status=CASE WHEN response_body IS NOT NULL THEN 'received' WHEN $5 THEN 'rejected' ELSE 'uncertain' END,error_code=$4,updated_at=NOW() WHERE id=$1 AND organization_id=$2 AND lease_id=$3`,[pageId,op.organization_id,owner,code,rejected])
+   // Only the typed local preparation failure proves that no request consumed
+   // a source unit. A non-billed response alone does not prove that. Commit
+   // receipt and refund together, including after a worker/process interruption.
+   if((cause as {billingOutcome?:string})?.billingOutcome==='not_billed')await receipt.query(`WITH original AS(SELECT id,cost_estimate_brl,created_at::date AS usage_date FROM public.radar_discovery_pages WHERE id=$1 AND organization_id=$2 AND cost_estimate_brl>0 AND status='rejected' FOR UPDATE),recorded AS(UPDATE public.radar_discovery_pages page SET cost_estimate_brl=0 FROM original WHERE page.id=original.id RETURNING original.cost_estimate_brl,original.usage_date) UPDATE public.radar_source_usage_counters counter SET units=GREATEST(0,counter.units-CASE WHEN $5 THEN 1 ELSE 0 END),estimated_cost=GREATEST(0,counter.estimated_cost-recorded.cost_estimate_brl),updated_at=NOW() FROM recorded WHERE counter.organization_id=$2 AND counter.campaign_id=$3 AND counter.source_type=$4 AND counter.usage_date=recorded.usage_date`,[pageId,op.organization_id,op.campaign_id,scope.source,notDispatched])
+   await receipt.query('COMMIT')
+  }catch(error){await receipt.query('ROLLBACK');throw error}finally{receipt.release()}
   throw Object.assign(failure(code),{cause})
  }
 }

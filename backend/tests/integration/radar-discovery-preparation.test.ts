@@ -29,6 +29,38 @@ describe.skipIf(!connectionString)('discovery preparation and legacy uncertainty
    else expect((await f.pool.query('SELECT output_payload FROM radar_enrichment_runs WHERE campaign_id=$1',[f.campaign.id])).rows[0].output_payload).toMatchObject({discoveryOutcome:'not_dispatched',estimatedCost:0,requestStarted:false})
   }finally{await f.close()}
  })
+ it('rolls back the rejection receipt too if its reservation cannot be released',async()=>{
+  const f=await captureFixture(),suffix=randomUUID().replaceAll('-',''),name=`qa_refund_${suffix}`
+  try{
+   await f.pool.query(`UPDATE radar_campaigns SET search_configuration=search_configuration||'{"discovery":{"enabled":true,"sourceOrder":["cnpja_advanced_search"],"terms":[]},"qualification":{"includeAnyTerms":["atividade configurada"]}}'::jsonb WHERE id=$1`,[f.campaign.id])
+   const start=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestedCount:1,requestId:randomUUID()},{availability:available})
+   // Fault injection in the disposable database: never report a free rejection
+   // while its cost/quota reservation remains unreconciled.
+   await f.pool.query(`CREATE FUNCTION ${name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.campaign_id='${f.campaign.id}'::uuid AND NEW.units<OLD.units THEN RAISE EXCEPTION 'synthetic_refund_interrupted'; END IF; RETURN NEW; END $$`)
+   await f.pool.query(`CREATE TRIGGER ${name} BEFORE UPDATE ON radar_source_usage_counters FOR EACH ROW EXECUTE FUNCTION ${name}()`)
+   await advanceRadarCaptureDiscovery(f.pool,env,{organizationId,operationId:start.operationId},{availability:available,adaptiveDiscover:async()=>{throw new CnpjaPreparationError('cnpja_municipality_not_found')}})
+   expect((await f.pool.query('SELECT status,cost_estimate_brl::float AS cost FROM radar_discovery_pages WHERE operation_id=$1',[start.operationId])).rows[0]).toEqual({status:'reserved',cost:.025})
+   expect((await f.pool.query('SELECT units::int AS units,estimated_cost::float AS cost FROM radar_source_usage_counters WHERE campaign_id=$1',[f.campaign.id])).rows[0]).toEqual({units:1,cost:.025})
+  }finally{
+   await f.pool.query(`DROP TRIGGER IF EXISTS ${name} ON radar_source_usage_counters`)
+   await f.pool.query(`DROP FUNCTION IF EXISTS ${name}()`)
+   await f.close()
+  }
+ })
+ it.each([false,true])('does not refund dispatched units or discard a received reply (responseSaved=%s)',async responseSaved=>{
+  const f=await captureFixture()
+  try{
+   await f.pool.query(`UPDATE radar_campaigns SET search_configuration=search_configuration||'{"discovery":{"enabled":true,"sourceOrder":["cnpja_advanced_search"],"terms":[]},"qualification":{"includeAnyTerms":["atividade configurada"]}}'::jsonb WHERE id=$1`,[f.campaign.id])
+   const start=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestedCount:1,requestId:randomUUID()},{availability:available})
+   await advanceRadarCaptureDiscovery(f.pool,env,{organizationId,operationId:start.operationId},{availability:available,adaptiveDiscover:async input=>{
+    if(responseSaved)await input.onResponse?.({records:[]})
+    throw Object.assign(Error('synthetic_not_billed'),{billingOutcome:'not_billed',requestStarted:true})
+   }})
+   const expectedCost=responseSaved?.025:0
+   expect((await f.pool.query('SELECT status,cost_estimate_brl::float AS cost,response_body FROM radar_discovery_pages WHERE operation_id=$1',[start.operationId])).rows[0]).toMatchObject({status:responseSaved?'received':'rejected',cost:expectedCost,response_body:responseSaved?{records:[]}:null})
+   expect((await f.pool.query('SELECT units::int AS units,estimated_cost::float AS cost FROM radar_source_usage_counters WHERE campaign_id=$1',[f.campaign.id])).rows[0]).toEqual({units:1,cost:expectedCost})
+  }finally{await f.close()}
+ })
  it('keeps a post-send timeout charged and uncertain, then resumes the same forty-company lot only with explicit acknowledgement',async()=>{
   const f=await captureFixture()
   try{
