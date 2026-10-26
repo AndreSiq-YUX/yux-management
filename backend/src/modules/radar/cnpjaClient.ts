@@ -1,4 +1,5 @@
 import {normalizeRadarCnpjIdentifier} from './cnpj-identifier.js'
+import {resolveRadarMunicipalityCode} from './municipalities.js'
 
 export type CnpjaProviderConfig = {
   baseUrl?: string
@@ -71,7 +72,11 @@ const DEFAULT_CONFIG: Required<CnpjaProviderConfig> = {
   defaultResultLimit: 10,
 }
 
-const municipalityCache = new Map<string, { expiresAt: number; items: Array<{ id: number; nome: string }> }>()
+export class CnpjaPreparationError extends Error {
+  readonly billingOutcome='not_billed' as const
+  readonly requestStarted=false
+  readonly statusCode=400
+}
 
 // Only an actual HTTP validation response is proof that discovery was rejected.
 // A timeout or an error while persisting a successful response is not retry-safe.
@@ -89,14 +94,20 @@ export async function searchCnpjaAdvanced(input: CnpjaAdvancedSearchInput) {
 }
 
 export async function searchCnpjaAdvancedPage(input: CnpjaAdvancedSearchInput): Promise<{ candidates: CnpjaCandidate[]; nextToken?: string }> {
-  if (!input.apiKey) throw Object.assign(new Error('cnpja_api_key_missing'), { statusCode: 400 })
-  if (input.token && !/^[\w-]{1,256}$/.test(input.token)) throw Object.assign(new Error('cnpja_invalid_page_token'), { statusCode: 400 })
+  if (!input.apiKey) throw new CnpjaPreparationError('cnpja_api_key_missing')
+  if (input.token && !/^[\w-]{1,256}$/.test(input.token)) throw new CnpjaPreparationError('cnpja_invalid_page_token')
   const config = resolveConfig(input.config)
   const limit = input.limit ?? config.defaultResultLimit
-  if(!Number.isSafeInteger(limit)||limit<1)throw new Error('cnpja_invalid_page_size')
+  if(!Number.isSafeInteger(limit)||limit<1)throw new CnpjaPreparationError('cnpja_invalid_page_size')
   const fetchImpl = input.fetchImpl ?? fetch
-  const municipalityCode = input.city && !input.token ? await resolveMunicipalityCode(input.city, input.state, fetchImpl, !input.fetchImpl) : undefined
-  const url = buildAdvancedSearchUrl(config, input, limit, municipalityCode)
+  let url:string
+  try{
+    const municipalityCode=input.city&&!input.token?resolveRadarMunicipalityCode(input.city,input.state):undefined
+    url=buildAdvancedSearchUrl(config,input,limit,municipalityCode)
+  }catch(cause){
+    const code=cause instanceof Error&&/^cnpja_[a-z_]+$/.test(cause.message)?cause.message:'cnpja_invalid_search_parameters'
+    throw new CnpjaPreparationError(code)
+  }
   const response = await fetchImpl(url, {
     method: 'GET',
     headers: {
@@ -222,35 +233,6 @@ function buildAdvancedSearchUrl(config: Required<CnpjaProviderConfig>, input: Cn
   const cnaes = input.cnaes?.map(value => value.replace(/\D/g, '')).filter(Boolean)
   if (cnaes?.length) url.searchParams.set(input.includeSecondaryActivities ? 'activities.id.in' : 'mainActivity.id.in', cnaes.join(','))
   return url.toString()
-}
-
-async function resolveMunicipalityCode(city: string, state: string | undefined, fetchImpl: typeof fetch, useCache: boolean) {
-  const uf = state?.trim().toUpperCase()
-  if (!uf || !/^[A-Z]{2}$/.test(uf)) throw new Error('cnpja_city_requires_state')
-  let cached = useCache ? municipalityCache.get(uf) : undefined
-  if (!cached || cached.expiresAt < Date.now()) {
-    const response = await fetchImpl(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${uf}/municipios`, {
-      headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(5000),
-    })
-    if (!response.ok) throw new Error('cnpja_municipality_lookup_failed')
-    const body: unknown = await response.json().catch(() => null)
-    if (!Array.isArray(body)) throw new Error('cnpja_municipality_lookup_failed')
-    cached = {
-      expiresAt: Date.now() + 24 * 60 * 60 * 1000,
-      items: body.filter((item): item is { id: number; nome: string } =>
-        isRecord(item) && typeof item.id === 'number' && typeof item.nome === 'string'),
-    }
-    if (useCache) municipalityCache.set(uf, cached)
-  }
-  const normalized = normalizeCity(city)
-  const matches = cached.items.filter(item => normalizeCity(item.nome) === normalized)
-  if (matches.length !== 1) throw new Error('cnpja_municipality_not_found')
-  return matches[0].id
-}
-
-function normalizeCity(value: string) {
-  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase('pt-BR')
 }
 
 function extractCnpjaItems(body: unknown): unknown[] {

@@ -2,6 +2,24 @@ import { describe, expect, it, vi } from 'vitest'
 import { buildCnpjaCandidateSnippet, lookupCnpjaOffice, searchCnpjaAdvanced, searchCnpjaAdvancedPage, testCnpjaProvider } from '../src/modules/radar/cnpjaClient.js'
 
 describe('radar CNPJa client', () => {
+  it('searches Bauru with the official local code when every auxiliary network call would time out',async()=>{
+    const fetchImpl=vi.fn(async(url:string)=>{
+      if(new URL(url).hostname!=='api.cnpja.com')throw new DOMException('Auxiliary service unavailable','TimeoutError')
+      return {ok:true,json:async()=>({records:[]})} as Response
+    }) as unknown as typeof fetch
+    await expect(searchCnpjaAdvancedPage({apiKey:'fixture',city:'Bauru',state:'SP',fetchImpl})).resolves.toEqual({candidates:[],nextToken:undefined})
+    expect(fetchImpl).toHaveBeenCalledExactlyOnceWith('https://api.cnpja.com/office?limit=10&status.id.in=2&address.municipality.in=3506003&address.state.in=SP',expect.objectContaining({method:'GET'}))
+  })
+  it('proves invalid local geography was rejected before sending a paid request',async()=>{
+    const fetchImpl=vi.fn()
+    await expect(searchCnpjaAdvancedPage({apiKey:'fixture',city:'Bauru',state:'RJ',fetchImpl})).rejects.toMatchObject({message:'cnpja_municipality_not_found',requestStarted:false,billingOutcome:'not_billed'})
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+  it('does not claim a provider timeout was a free preparation failure',async()=>{
+    const fetchImpl=vi.fn(async()=>{throw new DOMException('Provider timeout','TimeoutError')})
+    try{await searchCnpjaAdvancedPage({apiKey:'fixture',state:'SP',fetchImpl});expect.fail('provider timeout must reject')}
+    catch(error){expect(error).toBeInstanceOf(DOMException);expect(error).not.toHaveProperty('billingOutcome','not_billed')}
+  })
   it('preserves principal and secondary activity descriptions for later decisions and free backfill',async()=>{
     const records=[{taxId:'12345678000190',mainActivity:{id:5620101,text:'Fornecimento de alimentos preparados'},sideActivities:[{id:5620102,text:'Serviços de alimentação para eventos'}]}]
     const fetchImpl=async()=>({ok:true,json:async()=>({records})}) as Response
@@ -126,9 +144,9 @@ describe('radar CNPJa client', () => {
   })
 
   it('fails closed before charging CNPJa when city cannot be resolved', async () => {
-    const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => [{ id: 4113700, nome: 'Londrina' }] })) as unknown as typeof fetch
+    const fetchImpl = vi.fn() as unknown as typeof fetch
     await expect(searchCnpjaAdvanced({ apiKey: 'fixture', city: 'Cidade Inexistente', state: 'PR', fetchImpl })).rejects.toThrow('cnpja_municipality_not_found')
-    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 
   it('returns a cursor and finds industrial kitchens with CNAE as a secondary activity', async () => {
