@@ -1,7 +1,7 @@
 import { useEffect,useRef,useState, type FormEvent, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { defaultRadarSearchConfiguration, defaultRadarSizePolicy, defaultRadarCompletionPolicy, validateRadarSizePolicy, parseRadarCities, radarBrazilStates, radarExportLabels, splitRadarTerms,
+import { defaultRadarSearchConfiguration, defaultRadarSizePolicy, defaultRadarCompletionPolicy, validateRadarSizePolicy, parseRadarCities, formatRadarCities, radarBrazilStates, radarExportLabels, splitRadarTerms,
   type RadarExportField } from '@/lib/radar/radarSearchConfiguration'
 import type { RadarCampaignInput } from '@/services/radarService'
 import type { RadarCampaign } from '@/types/radar'
@@ -25,20 +25,23 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
   const [destinations,setDestinations]=useState<Awaited<ReturnType<typeof radarService.getCrmDestinations>>>([])
   const [destinationError,setDestinationError]=useState(false)
   useEffect(()=>{if(!canUseCrm)return;let active=true;radarService.getCrmDestinations(organizationId).then(value=>{if(active)setDestinations(value)}).catch(()=>{if(active)setDestinationError(true)});return()=>{active=false}},[organizationId,canUseCrm])
+  const initialStates=local?[initialCampaign.targetState]:initialCampaign?.targetStates??[]
+  const initialCities=local?[{city:initialCampaign.targetCity,state:initialCampaign.targetState}]:initialCampaign?.searchConfiguration?.cities??[]
   const defaults={config:initialCampaign?.searchConfiguration??defaultRadarSearchConfiguration(),name:initialCampaign?.name??'',
-    segment:initialCampaign?.targetSegment??'',states:local?[initialCampaign.targetState]:initialCampaign?.targetStates??[],
-    cities:local?`${initialCampaign.targetCity}/${initialCampaign.targetState}`:(initialCampaign?.searchConfiguration?.cities??[]).map(item=>`${item.city}/${item.state}`).join('\n'),
+    segment:initialCampaign?.targetSegment??'',states:initialStates,
+    cities:formatRadarCities(initialCities,initialStates),
     geographicScope:(local||initialCampaign?.searchConfiguration?.cities.length?'cities':'states') as 'states'|'cities',
     keywords:initialCampaign?.targetKeywords.join(', ')??'',cnaes:initialCampaign?.targetCnaes.join(', ')??'',products:initialCampaign?.productFocus.join(', ')??'',
     excludedNames:initialCampaign?.searchConfiguration?.excludedNameTerms.join(', ')??'',offer:initialCampaign?.offerType??'',
     dailyLimit:initialCampaign?.dailyLimit??10,budget:initialCampaign?.budgetLimit?.toString()??''}
   const original=useRef(JSON.stringify(defaults))
+  const legacyOriginal=JSON.stringify({...defaults,cities:formatRadarCities(initialCities,[])})
   const storageKey=draftKey&&!readOnly?`yux-radar-draft:${draftKey}`:undefined
   const [restored]=useState<typeof defaults|undefined>(()=>{
     if(!storageKey)return
     try{
       const stored=JSON.parse(sessionStorage.getItem(storageKey)??'null')
-      if(stored?.original===original.current&&Date.now()-stored.savedAt<86400000&&stored.value
+      if((stored?.original===original.current||stored?.original===legacyOriginal)&&Date.now()-stored.savedAt<86400000&&stored.value
         &&Object.keys(defaults).every(key=>typeof stored.value[key]===typeof defaults[key as keyof typeof defaults]))return stored.value
     }catch{/* An unavailable/corrupt local draft must not prevent opening the saved configuration. */}
   })
@@ -68,6 +71,12 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
   const completion=research.completion??defaultRadarCompletionPolicy()
   const changeResearch = (patch: Partial<typeof research>) => setConfig(current => ({ ...current, research: { ...defaultRadarSearchConfiguration().research!,...current.research, ...patch } }))
   const changeRules = (patch: Partial<typeof rules>) => setConfig(current => ({ ...current, qualification: { ...current.qualification, ...patch } }))
+  const changeStates=(next:string[])=>{
+    if(geographicScope==='cities'&&states.length===1){
+      try{setCities(formatRadarCities(parseRadarCities(cities,states),next))}catch{/* Preserve unfinished text; submit explains invalid/ambiguous geography. */}
+    }
+    setStates(next)
+  }
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -123,10 +132,10 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
         </select></Field></div>
         <p className="mb-2 text-xs text-slate-500">Selecione as UFs que deseja pesquisar.</p>
         <div className="flex flex-wrap gap-3">{radarBrazilStates.map(state => <label key={state} className="flex items-center gap-1 text-sm">
-          <input type="checkbox" checked={states.includes(state)} onChange={e => setStates(current => e.target.checked ? [...current, state] : current.filter(item => item !== state))} />{state}</label>)}</div>
-        {geographicScope === 'cities' ? <div className="mt-3"><Field label="Cidades — uma Cidade/UF por linha">
-          <textarea className="w-full rounded-md border p-2" rows={3} required value={cities} onChange={e => setCities(e.target.value)} />
-        </Field><p className="text-xs text-slate-500">Pesquisa somente nas cidades listadas, dentro das UFs selecionadas.</p></div>
+          <input type="checkbox" checked={states.includes(state)} onChange={e => changeStates(e.target.checked ? [...states, state] : states.filter(item => item !== state))} />{state}</label>)}</div>
+        {geographicScope === 'cities' ? <div className="mt-3"><Field label={states.length===1?'Cidades — uma por linha':'Cidades — uma Cidade/UF por linha'}>
+          <textarea className="w-full rounded-md border p-2" rows={3} required placeholder={states.length===1?'Bauru\nPresidente Prudente':'Bauru/SP\nCuritiba/PR'} value={cities} onChange={e => setCities(e.target.value)} />
+        </Field><p className="text-xs text-slate-500">{states.length===1?`A UF ${states[0]} será aplicada automaticamente. Informe apenas os nomes; Cidade/UF também é aceito.`:'Como há várias UFs ou nenhuma selecionada, informe Cidade/UF para não confundir municípios homônimos.'} Pesquisa somente nas cidades listadas, dentro das UFs selecionadas.</p></div>
           : <p className="mt-3 text-xs text-slate-500">Pesquisa em todo o território das UFs selecionadas. Não é necessário informar cidade. Os lotes respeitam os limites configurados; um lote não cobre automaticamente todo o estado.</p>}
       </fieldset>
       <details className="rounded-md border p-3"><summary className="cursor-pointer text-sm font-medium">Filtros avançados do público e do cadastro empresarial</summary>
@@ -153,13 +162,13 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
           <p className="text-xs text-slate-500">Use {'{name}'} para o nome da empresa; opcionalmente {'{segment}'} e {'{terms}'}. Cidade e UF são enviadas separadamente.</p></details>
       </fieldset>
       <fieldset className="rounded-md border p-3"><legend className="px-1 text-sm font-semibold">Aprofundamento automático dos candidatos</legend>
-        {canConfigureProviders&&!readOnly&&!local&&<fieldset className="mb-3 space-y-3 rounded-md border p-3"><legend>Admin — descoberta adaptativa</legend>
+        {canConfigureProviders&&!readOnly&&!local&&<details className="mb-3 rounded-md border p-3"><summary className="cursor-pointer text-sm font-medium">Configuração técnica da descoberta — exclusiva do Admin YUX</summary><fieldset className="mt-3 space-y-3"><legend className="sr-only">Admin — descoberta adaptativa</legend>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={config.discovery?.enabled??false} onChange={event=>setConfig(current=>({...current,discovery:{enabled:event.target.checked,sourceOrder:current.discovery?.sourceOrder??['cnpja_advanced_search'],terms:current.discovery?.terms??[]}}))}/>Novos lotes buscam empresas aderentes, não apenas cadastros</label>
           <p className="text-xs text-muted-foreground">Lotes anteriores mantêm sua contagem e continuação. A meta de aderência depende dos critérios comerciais; não significa aprovação para contato. Fontes sem licença, custo ou cobertura não serão utilizadas.</p>
           <Field label="Termos adicionais de descoberta (um por linha)"><textarea className="w-full rounded-md border p-2" rows={3} value={config.discovery?.terms.join('\n')??''} onChange={event=>setConfig(current=>({...current,discovery:{enabled:current.discovery?.enabled??false,sourceOrder:current.discovery?.sourceOrder??['cnpja_advanced_search'],terms:event.target.value.split('\n')}}))}/></Field>
           <Field label="Ordem das fontes de descoberta (uma por linha)"><textarea className="w-full rounded-md border p-2 font-mono text-xs" rows={4} value={(config.discovery?.sourceOrder??['cnpja_advanced_search']).join('\n')} onChange={event=>setConfig(current=>({...current,discovery:{enabled:current.discovery?.enabled??false,terms:current.discovery?.terms??[],sourceOrder:event.target.value.split('\n') as NonNullable<typeof config.discovery>['sourceOrder']}}))}/></Field>
           <p className="text-xs text-muted-foreground">Chaves aceitas: osm_extract, serper_places, brave_place_search, serper_web_search, brave_web_search, cnpja_advanced_search, perplexity_search_fast, perplexity_search_web. Mapas exigem municípios cobertos; uma UF sem cobertura municipal não será declarada esgotada.</p>
-        </fieldset>}
+        </fieldset></details>}
         {canConfigureProviders&&!readOnly&&<details className="mb-3"><summary className="cursor-pointer text-sm">Admin — fonte e fallback da pesquisa web</summary>
           <Field label="Fonte principal da pesquisa web"><select aria-label="Fonte principal da pesquisa web" className={selectClass} value={research.webSearchProviders?.[0]??'brave_web_search'}
             onChange={event=>changeResearch({webSearchProviders:[event.target.value as NonNullable<typeof research.webSearchProviders>[number]]})}>
@@ -168,7 +177,7 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
           <Field label="Fontes complementares em ordem (uma por linha)"><textarea className="w-full rounded-md border p-2 font-mono text-xs" rows={3} value={(research.webSearchProviders??['brave_web_search']).slice(1).join('\n')} onChange={event=>changeResearch({webSearchProviders:[research.webSearchProviders?.[0]??'brave_web_search',...event.target.value.split('\n').filter(Boolean) as NonNullable<typeof research.webSearchProviders>]})}/></Field>
           <p className="mt-2 text-xs text-muted-foreground">A fonte precisa estar liberada em Admin → Integrações. Fallback compartilha o limite total e pode complementar resultados que não ajudam a identificar a empresa. Salvar não pesquisa.</p>
         </details>}
-        <p className="mb-3 text-xs text-slate-500">Descobre presença pública e contatos sem exigir URL manual. Salvar não consulta provedores. Fontes, custos e modelo são liberados separadamente no Admin.</p>
+        <p className="mb-3 text-xs text-slate-500">Descobre presença pública e contatos sem exigir URL manual. Salvar não inicia pesquisas.</p>
         <Field label="Quando complementar com busca local"><select aria-label="Quando complementar com busca local" className={selectClass} value={research.localSearchOrder??'after_web_if_needed'}
           onChange={event=>changeResearch({localSearchOrder:event.target.value as 'before_web'|'after_web_if_needed'|'disabled'})}>
           <option value="before_web">Antes da busca na internet (padrão atual)</option><option value="after_web_if_needed">Depois, somente se necessário</option><option value="disabled">Não usar busca local no aprofundamento</option>
@@ -177,7 +186,7 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
           <input type="checkbox" checked={research[key]??false} onChange={e => changeResearch({ [key]: e.target.checked })} />{['Permitir pesquisa automática nesta campanha','Aprofundar a busca na internet','Identificar site e canais oficiais por IA','Analisar adequação ao objetivo comercial'][index]}</label>)}</div>
         <div className="mt-3 grid gap-3 md:grid-cols-3">{([['maxSearchQueriesPerCandidate','Consultas por empresa, por fonte',caps?.maxSearchQueriesPerCompany],['maxPagesPerCandidate','Páginas públicas por empresa',caps?.maxPublicPagesPerCompany],['freshnessDays','Validade da pesquisa (dias)',caps?.maxResearchFreshnessDays]] as const).map(([key,label,max]) => <Field key={key} label={label}>
           <Input type="number" min={1} max={max} required value={research[key]} onChange={e => changeResearch({ [key]: Number(e.target.value) })} /></Field>)}</div>
-        {canConfigureProviders&&!readOnly&&<fieldset className="mt-3 flex flex-col gap-3"><legend className="text-sm font-semibold">Admin — capacidade por fonte</legend>
+        {canConfigureProviders&&!readOnly&&<details className="mt-3 rounded-md border p-3"><summary className="cursor-pointer text-sm font-medium">Capacidade técnica por fonte — exclusiva do Admin YUX</summary><fieldset className="mt-3 flex flex-col gap-3"><legend className="sr-only">Admin — capacidade por fonte</legend>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={research.deepResearchEnabled??false} onChange={event=>changeResearch({deepResearchEnabled:event.target.checked})}/>Permitir Perplexity Agent para lacunas após a pesquisa normal</label>
           <p className="text-xs text-muted-foreground">Exige rota de investigação, chave, licenças e aceite de orçamento estimado no Admin. Não muda o modelo nem inicia consultas ao salvar.</p>
           <p className="text-xs text-muted-foreground">Cada fonte tem sua própria capacidade. Campo vazio herda o limite acima; zero impede novas consultas dessa fonte. Salvar não inicia pesquisa.</p>
@@ -188,7 +197,7 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
           <Field label="Teto total de consultas por empresa"><Input aria-label="Teto total de consultas por empresa" type="number" min={0} max={2_147_483_647} step={1} placeholder="Sem teto adicional" value={research.maxSearchQueriesTotalPerCandidate??''}
             onChange={event=>changeResearch({maxSearchQueriesTotalPerCandidate:event.target.value===''?null:Number(event.target.value)})}/></Field>
           <p className="text-xs text-muted-foreground">O teto total é opcional. Orçamento e cotas diárias continuam valendo, inclusive quando este campo está vazio.</p>
-        </fieldset>}
+        </fieldset></details>}
         <label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={research.profileEnabled??false} onChange={e=>changeResearch({profileEnabled:e.target.checked})}/>Gerar perfil aprofundado da empresa (incluído na análise por IA)</label>
         <label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={research.inspectLinkedSocialProfiles??false} onChange={e=>changeResearch({inspectLinkedSocialProfiles:e.target.checked})}/>Consultar informações públicas dos perfis vinculados pelo site</label>
         <p className="text-xs text-muted-foreground">Usa o mesmo limite de páginas da empresa. Não acessa contas privadas, não faz login nem envia mensagens.</p>
@@ -220,7 +229,7 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
         </div>
         <label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={rules.requireCnaeMatch} onChange={e => changeRules({ requireCnaeMatch: e.target.checked })} />Exigir correspondência com os CNAEs informados para confirmar o público</label>
       </fieldset>
-      <fieldset className="rounded-md border p-3"><legend className="px-1 text-sm font-semibold">Limites e controle de custo</legend>
+      {canConfigureProviders&&<fieldset className="rounded-md border p-3"><legend className="px-1 text-sm font-semibold">Limites e controle de custo</legend>
         <div className="grid gap-3 md:grid-cols-3">{([
           ['pageSize','Empresas por página de descoberta',caps?.maxDiscoveryPageSize], ['maxPagesPerScope','Páginas por região no lote',caps?.maxPagesPerScope],
           ['maxQueriesPerBatch','Máximo de consultas de descoberta por lote',caps?.maxDiscoveryQueriesPerLot], ['verificationLimit','Empresas por lote de verificação',caps?.maxVerificationBatch],
@@ -229,7 +238,7 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
           <Field label="Limite diário da campanha"><Input type="number" min={1} max={caps?.maxCampaignDailyQueries} required value={dailyLimit} onChange={e => setDailyLimit(Number(e.target.value))} /></Field>
           <Field label="Orçamento máximo (R$), opcional"><Input type="number" min={0} step="0.01" value={budget} onChange={e => setBudget(e.target.value)} /></Field>
         </div>
-      </fieldset>
+      </fieldset>}
       {canUseCrm&&<fieldset className="rounded-md border p-3"><legend className="px-1 text-sm font-semibold">Destino padrão no CRM</legend>
         <p className="mb-3 text-xs text-slate-500">O destino será revisado antes do envio. Salvar a campanha não cria leads nem inicia contatos.</p>
         <Select value={config.crmDestination?.stageId??'none'} onValueChange={value=>{const option=destinations.find(item=>item.stageId===value);setConfig(current=>({...current,crmDestination:option?{crmInstanceId:option.crmInstanceId,pipelineId:option.pipelineId,stageId:option.stageId}:undefined}))}}><SelectTrigger aria-label="Destino padrão no CRM"><SelectValue placeholder="Escolher depois"/></SelectTrigger><SelectContent><SelectGroup><SelectItem value="none">Escolher no momento do envio</SelectItem>{destinations.map(item=><SelectItem key={item.stageId} value={item.stageId}>{item.pipelineName} — {item.stageName}</SelectItem>)}</SelectGroup></SelectContent></Select>

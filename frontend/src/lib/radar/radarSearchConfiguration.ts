@@ -72,11 +72,16 @@ export function splitRadarTerms(value: string) {
   return [...new Set(value.split(/[,;\n]/).map(item => item.trim()).filter(Boolean))]
 }
 export function parseRadarCities(value: string, selectedStates: string[]) {
+  const states=[...new Set(selectedStates.map(state=>state.trim().toUpperCase()))]
   return value.split('\n').map(line => line.trim()).filter(Boolean).map(line => {
-    const match = /^(.+)\/([A-Za-z]{2})$/.exec(line)
-    if (!match) throw new Error('Informe cada cidade no formato Cidade/UF, uma por linha.')
-    const state = match[2].toUpperCase()
-    if (!selectedStates.includes(state)) throw new Error(`Selecione a UF ${state} antes de incluir a cidade.`)
-    return { city: match[1].trim(), state }
+    const match = /^([^/]+?)\s*\/\s*([A-Za-z]{2})$/.exec(line)
+    if(!match&&(line.includes('/')||states.length!==1))throw new Error('Com várias UFs ou nenhuma selecionada, informe cada cidade no formato Cidade/UF, uma por linha.')
+    const city=match?match[1].trim():line,state=match?match[2].toUpperCase():states[0]
+    if(!city)throw new Error('Informe cada cidade no formato Cidade/UF, uma por linha.')
+    if (!states.includes(state)) throw new Error(`Selecione a UF ${state} antes de incluir a cidade.`)
+    return { city, state }
   })
+}
+export function formatRadarCities(cities:Array<{city:string;state:string}>,selectedStates:string[]){
+  return cities.map(item=>selectedStates.length===1&&selectedStates[0]===item.state?item.city:`${item.city}/${item.state}`).join('\n')
 }

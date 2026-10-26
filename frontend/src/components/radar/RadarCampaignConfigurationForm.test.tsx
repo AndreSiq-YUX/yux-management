@@ -16,6 +16,71 @@ function campaignFixture(patch: Partial<RadarCampaign>): RadarCampaign {
 }
 
 describe('Radar campaign configuration panel', () => {
+  it('preserves an unsaved legacy City/UF draft across the new single-UF presentation',async()=>{
+    const host=document.createElement('div'),submit=vi.fn(async()=>undefined),config=defaultRadarSearchConfiguration()
+    config.cities=[{city:'Bauru',state:'SP'}]
+    const campaign=campaignFixture({targetStates:['SP'],searchConfiguration:config}),key='legacy-city-draft'
+    const render=()=> <RadarCampaignConfigurationForm organizationId="org" draftKey={key} initialCampaign={campaign} busy={false} onSubmit={submit} onCancel={vi.fn()}/>
+    let root=createRoot(host)
+    try{
+      await act(async()=>root.render(render()))
+      await act(async()=>{const field=host.querySelector('input')!;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(field,'Alteração ainda não salva');field.dispatchEvent(new Event('input',{bubbles:true}))})
+      act(()=>root.unmount())
+      const stored=JSON.parse(sessionStorage.getItem(`yux-radar-draft:${key}`)!)
+      stored.original=JSON.stringify({...JSON.parse(stored.original),cities:'Bauru/SP'})
+      stored.value.cities='Bauru/SP'
+      sessionStorage.setItem(`yux-radar-draft:${key}`,JSON.stringify(stored))
+      root=createRoot(host);await act(async()=>root.render(render()))
+      expect(host.querySelector('input')!.value).toBe('Alteração ainda não salva')
+      expect(host.querySelector<HTMLTextAreaElement>('textarea[required]')!.value).toBe('Bauru/SP')
+    }finally{act(()=>root.unmount())}
+  })
+  it('shows and submits existing cities without repeating a single selected UF',async()=>{
+    const host=document.createElement('div'),root=createRoot(host),submit=vi.fn(async()=>undefined),config=defaultRadarSearchConfiguration()
+    config.cities=[{city:'Bauru',state:'SP'}]
+    try{
+      await act(async()=>root.render(<RadarCampaignConfigurationForm organizationId="org" initialCampaign={campaignFixture({targetStates:['SP'],searchConfiguration:config})} busy={false} onSubmit={submit} onCancel={vi.fn()}/>))
+      const cities=host.querySelector<HTMLTextAreaElement>('textarea[required]')!
+      expect(cities.value).toBe('Bauru')
+      expect(host.textContent).toContain('será aplicada automaticamente')
+      await act(async()=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!.call(cities,'Bauru\nPresidente Prudente');cities.dispatchEvent(new Event('input',{bubbles:true}))})
+      await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
+      expect(submit).toHaveBeenCalledWith(expect.objectContaining({searchConfiguration:expect.objectContaining({cities:[{city:'Bauru',state:'SP'},{city:'Presidente Prudente',state:'SP'}]})}))
+    }finally{act(()=>root.unmount())}
+  })
+  it('preserves the original UF explicitly when the selected region changes',async()=>{
+    const host=document.createElement('div'),root=createRoot(host),submit=vi.fn(async()=>undefined),config=defaultRadarSearchConfiguration()
+    config.cities=[{city:'Bauru',state:'SP'}]
+    try{
+      await act(async()=>root.render(<RadarCampaignConfigurationForm organizationId="org" initialCampaign={campaignFixture({targetStates:['SP'],searchConfiguration:config})} busy={false} onSubmit={submit} onCancel={vi.fn()}/>))
+      expect(host.querySelector<HTMLTextAreaElement>('textarea[required]')!.value).toBe('Bauru')
+      await act(async()=>[...host.querySelectorAll('label')].find(label=>label.textContent==='RJ')!.querySelector('input')!.click())
+      expect(host.querySelector<HTMLTextAreaElement>('textarea[required]')!.value).toBe('Bauru/SP')
+      await act(async()=>[...host.querySelectorAll('label')].find(label=>label.textContent==='SP')!.querySelector('input')!.click())
+      await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
+      expect(submit).not.toHaveBeenCalled();expect(host.querySelector('[role="alert"]')?.textContent).toContain('Selecione a UF SP')
+    }finally{act(()=>root.unmount())}
+  })
+  it('does not render tool names, order controls or costs without the system Admin capability',async()=>{
+    const host=document.createElement('div'),root=createRoot(host)
+    try{
+      await act(async()=>root.render(<RadarCampaignConfigurationForm organizationId="org" initialCampaign={campaignFixture({targetStates:['SP'],budgetLimit:10})} busy={false} onSubmit={vi.fn(async()=>undefined)} onCancel={vi.fn()}/>))
+      const rendered=[host.textContent,...[...host.querySelectorAll<HTMLInputElement|HTMLSelectElement|HTMLTextAreaElement>('input,select,textarea')].map(field=>field.value)].join(' ')
+      expect(rendered).not.toMatch(/brave|serper|perplexity|cnpj[aá]|Ordem das fontes|Orçamento máximo|controle de custo/i)
+    }finally{act(()=>root.unmount())}
+  })
+  it('keeps system Admin tool configuration functional but collapsed and explicitly internal',async()=>{
+    const host=document.createElement('div'),root=createRoot(host)
+    try{
+      await act(async()=>root.render(<RadarCampaignConfigurationForm organizationId="org" canConfigureProviders initialCampaign={campaignFixture({targetStates:['SP']})} busy={false} onSubmit={vi.fn(async()=>undefined)} onCancel={vi.fn()}/>))
+      const label=[...host.querySelectorAll('label')].find(item=>item.textContent?.startsWith('Ordem das fontes de descoberta'))!
+      const section=label.closest('details')
+      expect(section).not.toBeNull();expect(section!.open).toBe(false)
+      expect(section!.querySelector('summary')?.textContent).toContain('exclusiva do Admin YUX')
+      await act(async()=>section!.querySelector('summary')!.click())
+      expect(section!.open).toBe(true);expect(label.querySelector('textarea')?.value).toContain('serper_web_search')
+    }finally{act(()=>root.unmount())}
+  })
   it('submits every research stage for a new campaign without technical activation',async()=>{
     const host=document.createElement('div'),root=createRoot(host),submit=vi.fn(async()=>undefined)
     try{
@@ -172,7 +237,7 @@ describe('Radar campaign configuration panel', () => {
       productFocus:['automação'],offerType:'Consultoria',dailyLimit:7,searchConfiguration:config } as RadarCampaign
     act(() => root.render(<RadarCampaignConfigurationForm organizationId="org" initialCampaign={campaign} busy={false} onSubmit={submit} onCancel={vi.fn()} />))
     expect(submit).not.toHaveBeenCalled()
-    expect(container.querySelector('textarea')?.value).toBe('Salvador/BA')
+    expect(container.querySelector('textarea')?.value).toBe('Salvador')
     await act(async () => { container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles:true,cancelable:true })) })
     expect(submit).toHaveBeenCalledWith(expect.objectContaining({ targetStates:['BA'],targetCnaes:['6201501'],
       searchConfiguration: expect.objectContaining({cities:[{city:'Salvador',state:'BA'}],
