@@ -108,10 +108,11 @@ export function PortalCompanyProfilePage() {
       {companyProfile ? (
         <CompanyProfileForm
           profile={companyProfile}
+          readOnly={!canConfigure}
           saving={saving}
           onSave={saveProfile}
           logoUrl={brandProfile?.visualIdentity?.logoUrl}
-          beforeSections={websiteCard}
+          beforeSections={canConfigure?websiteCard:undefined}
         />
       ) : null}
 

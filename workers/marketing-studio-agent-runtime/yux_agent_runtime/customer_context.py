@@ -1,4 +1,5 @@
 from __future__ import annotations
+from .portfolio_context import CompanyPortfolioContextService
 
 import json
 import re
@@ -52,17 +53,15 @@ class CustomerContextService:
         if retrieval_audience not in {"internal_operator", "client_user", "external_contact"}:
             raise ValueError("invalid_customer_context_audience")
         strategy = CompanyStrategyContextService(self.store).retrieve(organization_id=organization_id, contract_id=contract_id, profile_key=profile_key, audience=retrieval_audience, query=query)
-        strategy_fields = {'company_strategy_context': strategy['strategy_context'], 'company_strategy_sources': strategy['sources']}
+        portfolio=CompanyPortfolioContextService(self.store).retrieve(organization_id=organization_id,contract_id=contract_id,profile_key=profile_key,audience=retrieval_audience,query=query)
+        strategy_fields = {'company_strategy_context': strategy['strategy_context'], 'company_strategy_sources': strategy['sources'],'portfolio_context':portfolio}
 
         company = _latest(self.store.list("organization_company_profiles", {"organization_id": organization_id}, limit=2))
         brands = self.store.list("marketing_brand_profiles", {"organization_id": organization_id}, limit=20)
         active_brands = [item for item in brands if item.get("status") == "active"]
         contract_brands = [item for item in active_brands if contract_id and str(item.get("contract_id")) == contract_id]
         brand = _latest(contract_brands) or _latest(active_brands)
-        products = [
-            item for item in self.store.list("marketing_products_services", {"organization_id": organization_id}, limit=40)
-            if item.get("status") == "active"
-        ]
+        products=[{**item,'value_proposition':item.get('valueProposition'),'target_audience':item.get('targetAudience'),'proof_points':item.get('proofPoints',[]),'objections':item.get('objections',[]),'cta':item.get('cta')} for item in portfolio['items']]
         authorized_search = getattr(self.store, "retrieve_authorized_knowledge", None)
         if callable(authorized_search):
             query_embedding = self.embedding_service.embed_query(query) if self.embedding_service is not None else None
@@ -109,8 +108,8 @@ class CustomerContextService:
                 "brand_summary": self._brand_summary(brand),
                 "brand_rules": self._brand_rules(brand, safety_rules),
                 "visual_identity": (brand or {}).get("visual_identity") or {},
-                "products": [self._product_summary(item) for item in products[:10]],
-                "product_profiles": [self._safe_product(item) for item in products[:10]],
+                "products": [self._product_summary(item) for item in products],
+                "product_profiles": [self._safe_product(item) for item in products],
                 "knowledge_snippets": snippets,
                 "company_chunks": context_items,
                 "company_context_source_ids": source_ids,
@@ -182,8 +181,8 @@ class CustomerContextService:
             "brand_summary": self._brand_summary(brand),
             "brand_rules": brand_rules,
             "visual_identity": (brand or {}).get("visual_identity") or {},
-            "products": [self._product_summary(item) for item in products[:10]],
-            "product_profiles": [self._safe_product(item) for item in products[:10]],
+            "products": [self._product_summary(item) for item in products],
+            "product_profiles": [self._safe_product(item) for item in products],
             "knowledge_snippets": snippets,
             "company_chunks": context_items,
             "company_context_source_ids": source_ids,
@@ -361,6 +360,7 @@ class CustomerContextService:
                 "name",
                 "description",
                 "value_proposition",
+                "representedBusinessId","representedBusinessName","packaging","storageConditions","commercialAvailability","serviceRegions","brandServiceRegions","authorizedLines",
                 "target_audience",
                 "proof_points",
                 "objections",

@@ -40,6 +40,9 @@ def _with_id(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 class AgentRuntimeStore(Protocol):
+    def retrieve_company_portfolio(self, **kwargs) -> dict[str, Any]:
+        ...
+
     def retrieve_company_strategy_context(self, **kwargs) -> dict[str, Any]:
         ...
 
@@ -64,6 +67,10 @@ class InMemoryAgentRuntimeStore:
     tables: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     _radar_lock: Any = field(default_factory=RLock, repr=False)
     radar_limits: dict[str, int] = field(default_factory=dict)
+
+    def retrieve_company_portfolio(self, **kwargs):
+        from .portfolio_context import project_memory_portfolio
+        return project_memory_portfolio(self.tables, **kwargs)
 
     def retrieve_company_strategy_context(self, **kwargs):
         from .company_strategy_context import project_memory_strategies
@@ -213,6 +220,11 @@ class PostgresAgentRuntimeStore:
         "agent_context_snapshots", "agent_verification_results", "strategy_subagent_runs",
         "agent_outcomes", "agent_learning_signals", "yux_strategy_retrieval_queries",
     }
+
+    def retrieve_company_portfolio(self, *, organization_id, contract_id, profile_key, audience, query, represented_business_ids, offset=0, limit=20):
+        with self._connection() as connection, connection.cursor(row_factory=self._row_factory()) as cursor:
+            cursor.execute('SELECT private.get_company_portfolio_context_v1(%s,%s,%s,%s,%s,%s::uuid[],%s,%s) AS context',[organization_id,contract_id,profile_key,audience,query,represented_business_ids,offset,limit])
+            return cursor.fetchone()['context']
 
     def retrieve_company_strategy_context(self, *, organization_id, contract_id, profile_key, audience, query, strategy_ids, max_chars=6000):
         with self._connection() as connection, connection.cursor(row_factory=self._row_factory()) as cursor:

@@ -150,3 +150,7 @@ internos em contexto de cliente.
 - O preenchimento pelo site lê no máximo 20 páginas do mesmo domínio (10 por
   padrão), priorizando páginas institucionais, produtos, serviços e contato.
   Endereços locais/privados são bloqueados antes da leitura.
+
+## Estratégia persistente e representadas
+
+O procedimento de operação e implantação está em [company-strategy-rollout.md](runbooks/company-strategy-rollout.md). Estratégias publicadas orientam todos os agentes da empresa; rascunhos e propostas são privados de configuração. O portfólio multimarcas mantém marca, embalagem, origem e limites distintos. A página de estratégia não substitui o conhecimento global, a curadoria documental ou as autorizações de execução.

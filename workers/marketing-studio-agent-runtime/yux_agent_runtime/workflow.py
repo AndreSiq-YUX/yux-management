@@ -745,6 +745,7 @@ class StrategyWorkflowEngine:
                 "products": _as_list((retrieval_context or {}).get("products")),
                 "product_profiles": _as_list((retrieval_context or {}).get("product_profiles")),
                 "company_strategy_context": (retrieval_context or {}).get("company_strategy_context") or {},
+                "portfolio_context": (retrieval_context or {}).get("portfolio_context") or {},
                 "knowledge_snippets": _as_list((retrieval_context or {}).get("knowledge_snippets")),
                 "mission_context": (retrieval_context or {}).get("mission_context"),
                 "context_coverage": (retrieval_context or {}).get("context_coverage") or {},

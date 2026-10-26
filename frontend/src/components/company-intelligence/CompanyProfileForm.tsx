@@ -17,6 +17,7 @@ import { TagListField } from './TagListField'
 
 interface CompanyProfileFormProps {
   profile: CompanyProfile
+  readOnly?:boolean
   saving?: boolean
   onSave: (input: CompanyProfileInput) => Promise<void>
   /** Logo cadastrado em "Marca e tom de voz", para pré-visualização. */
@@ -28,7 +29,7 @@ interface CompanyProfileFormProps {
 const DEFAULT_OPEN = '09:00'
 const DEFAULT_CLOSE = '18:00'
 
-export function CompanyProfileForm({ profile, saving = false, onSave, logoUrl, beforeSections }: CompanyProfileFormProps) {
+export function CompanyProfileForm({ profile, readOnly=false, saving = false, onSave, logoUrl, beforeSections }: CompanyProfileFormProps) {
   const initialDraft = editable(profile)
   const [draft, setDraft] = useState<CompanyProfileInput>(initialDraft)
   const [baseline, setBaseline] = useState(() => JSON.stringify(initialDraft))
@@ -76,9 +77,10 @@ export function CompanyProfileForm({ profile, saving = false, onSave, logoUrl, b
         noValidate
         onSubmit={event => {
           event.preventDefault()
-          if (dirty && !saving) void save()
+          if (dirty && !saving && !readOnly) void save()
         }}
       >
+        <fieldset disabled={readOnly} className="space-y-5">
         <SectionCard id="profile-identity" title="Identificação" description="Como a empresa se chama e em que atua.">
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Nome da marca" id="trade-name" value={draft.tradeName} onChange={value => update('tradeName', value)} />
@@ -144,10 +146,11 @@ export function CompanyProfileForm({ profile, saving = false, onSave, logoUrl, b
             hint="Quem vê: a equipe da YUX e os administradores da sua empresa. Os seus clientes não veem."
           />
         </SectionCard>
+        </fieldset>
       </form>
 
       <StickySaveBar
-        dirty={dirty}
+        dirty={dirty&&!readOnly}
         saving={saving}
         onSave={() => void save()}
         onDiscard={() => setDraft(editable(profile))}

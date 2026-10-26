@@ -47,9 +47,6 @@ export async function handleKnowledgeIndexing(pool: pg.Pool, env: AppEnv, data: 
   if (previous.run?.runKind === 'document_curation' && ['running', 'ready_for_review'].includes(previous.run.status)) return { duplicate: true, documentId }
 
   const run = await createKnowledgeIntelligenceRun(pool, documentId)
-  const storedRun=await getWebsiteOnboardingRun(pool,organizationId,runId)
-  const target=websiteTargetSchema.parse(storedRun.run.outputPayload.target??{kind:'own_company'})
-  await assertRepresentedWebsiteTarget(pool,organizationId,target)
   const jina = await resolveEffectiveProviderCredential(pool,env,'jina_ai')
   const effectiveEnv = jina.value ? {...env,JINA_API_KEY:jina.value} : env
 
@@ -224,16 +221,19 @@ function messageOf(error: unknown) {
   return (error instanceof Error ? error.message : String(error)).slice(0, 1_000)
 }
 
-export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: Record<string, unknown>, dependencies: { signal?: AbortSignal } = {}) {
+export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: Record<string, unknown>, dependencies: { signal?: AbortSignal;discover?:typeof discoverCompanyWebsite;extract?:typeof extractCompanyProfileInBatches;index?:typeof handleKnowledgeIndexing } = {}) {
   const runId = typeof data.runId === 'string' ? data.runId : ''
   const organizationId = typeof data.organizationId === 'string' ? data.organizationId : ''
   const websiteUrl = typeof data.websiteUrl === 'string' ? data.websiteUrl : ''
   const maxPages = Math.max(1, Math.min(50, Number(data.maxPages || 30)))
   if (!runId || !organizationId || !websiteUrl) throw new Error('website_onboarding_context_required')
-  const jina = await resolveEffectiveProviderCredential(pool,env,'jina_ai')
+  const storedRun=await getWebsiteOnboardingRun(pool,organizationId,runId)
+  const target=websiteTargetSchema.parse(storedRun.run.outputPayload.target??{kind:'own_company'})
+  await assertRepresentedWebsiteTarget(pool,organizationId,target)
+  const jina = dependencies.discover?{value:undefined}:await resolveEffectiveProviderCredential(pool,env,'jina_ai')
   try {
     await updateKnowledgeIntelligenceRun(pool, runId, { status: 'running', stage: 'discovering', progress: 10 })
-    const discovery = await discoverCompanyWebsite(websiteUrl, {
+    const discovery = await (dependencies.discover??discoverCompanyWebsite)(websiteUrl, {
       maxPages: Math.min(maxPages, env.KNOWLEDGE_WEBSITE_MAX_PAGES || 30),
       readPage: async url => {
         const result = await readJinaUrl(url, { signal: dependencies.signal, timeoutMs: env.JINA_REQUEST_TIMEOUT_MS,apiKey:jina.value })
@@ -252,7 +252,7 @@ export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: 
     const visualSignals = target.kind==='own_company'?await inspectWebsiteVisualIdentity(websiteUrl).catch(() => null):null
     const contractId = typeof data.contractId === 'string' ? data.contractId : undefined
     const clientId = typeof data.clientId === 'string' ? data.clientId : undefined
-    const extraction = await extractCompanyProfileInBatches(env, {
+    const extraction = await (dependencies.extract??extractCompanyProfileInBatches)(env, {
       organizationId, clientId, contractId,target,
       pages: discovery.pages.map((page, index) => ({
         url: page.url,
@@ -306,7 +306,7 @@ export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: 
       },
     })
     try {
-      await handleKnowledgeIndexing(pool, env, { sourceId: shell.sourceId, documentId: shell.documentId })
+      await (dependencies.index??handleKnowledgeIndexing)(pool, env, { sourceId: shell.sourceId, documentId: shell.documentId })
     } catch (error) {
       await updateKnowledgeIntelligenceRun(pool, runId, {
         outputPayload: { knowledgeWarning: messageOf(error) },
