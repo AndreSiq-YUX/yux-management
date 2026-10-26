@@ -99,6 +99,7 @@ const previewQuery = z.object({
 const documentType = z.enum(['brand', 'product', 'service', 'faq', 'case', 'campaign', 'policy', 'other'])
 const visibility = z.enum(['internal', 'external', 'both'])
 const knowledgeBase = z.object({
+  representedBusinessId:z.string().uuid().optional(),
   contractId: z.string().uuid().optional(),
   title: z.string().trim().min(1).max(300),
   documentType: documentType.default('other'),

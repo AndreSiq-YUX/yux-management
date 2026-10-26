@@ -1,3 +1,5 @@
+import type {MarketingProductService} from '@/types/marketingStudio'
+import type {RepresentedProductInput} from '@/types/companyIntelligence'
 import type {RepresentedBusiness,RepresentedBusinessInput} from '@/types/companyIntelligence'
 import { apiRequest } from '@/lib/apiClient'
 import type {
@@ -14,6 +16,8 @@ import type {
 } from '@/types/companyIntelligence'
 
 export const companyIntelligenceService = {
+  listRepresentedProducts:(organizationId:string,brandId:string,{query='',offset=0}:{query?:string;offset?:number}={})=>apiRequest<{items:MarketingProductService[];total:number}>(`/company-intelligence/organizations/${organizationId}/represented-businesses/${brandId}/products?query=${encodeURIComponent(query)}&offset=${offset}`),
+  saveRepresentedProduct:(organizationId:string,brandId:string,current:MarketingProductService|null,input:RepresentedProductInput)=>apiRequest<MarketingProductService>(`/company-intelligence/organizations/${organizationId}/represented-businesses/${brandId}/products${current?`/${current.id}`:''}`,{method:current?'PUT':'POST',body:{...input,...(current?{expectedUpdatedAt:current.updatedAt}:{})}}),
   listRepresentedBusinesses:(organizationId:string)=>apiRequest<RepresentedBusiness[]>(`/company-intelligence/organizations/${organizationId}/represented-businesses`),
   saveRepresentedBusiness:(organizationId:string,current:RepresentedBusiness|null,input:RepresentedBusinessInput)=>apiRequest<RepresentedBusiness>(`/company-intelligence/organizations/${organizationId}/represented-businesses${current?`/${current.id}`:''}`,{method:current?'PUT':'POST',body:{name:input.name,relationshipType:input.relationshipType,websiteUrl:input.websiteUrl,description:input.description,serviceRegions:input.serviceRegions,authorizedLines:input.authorizedLines,commercialConditions:input.commercialConditions,status:input.status,...(current?{expectedVersion:current.version}:{})}}),
   getProfile(organizationId: string) {

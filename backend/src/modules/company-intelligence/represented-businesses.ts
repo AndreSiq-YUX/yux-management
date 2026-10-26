@@ -1,3 +1,4 @@
+import {registerRepresentedProductRoutes} from './represented-products.js'
 import type {FastifyInstance} from 'fastify'
 import {z} from 'zod'
 import {ApiError} from '../../http/errors.js'
@@ -6,10 +7,11 @@ import {assertCompanyStrategyWrite} from '../company-strategy/repository.js'
 import {representedBusinessSchema} from './represented-business-schemas.js'
 const params=z.object({organizationId:z.string().uuid(),id:z.string().uuid().optional()})
 function parse<T>(schema:z.ZodType<T>,value:unknown):T{const result=schema.safeParse(value);if(!result.success)throw new ApiError(400,'invalid_represented_business_payload');return result.data}
-export function mapRepresentedBusiness(row:Record<string,any>){return {id:row.id,organizationId:row.organization_id,version:row.version,name:row.name,relationshipType:row.relationship_type,websiteUrl:row.website_url??undefined,description:row.description,serviceRegions:row.service_regions,authorizedLines:row.authorized_lines,commercialConditions:row.commercial_conditions,status:row.status,createdAt:row.created_at,updatedAt:row.updated_at}}
+export function mapRepresentedBusiness(row:Record<string,any>){return {id:row.id,organizationId:row.organization_id,version:row.version,name:row.name,relationshipType:row.relationship_type,websiteUrl:row.website_url??undefined,description:row.description,serviceRegions:row.service_regions,authorizedLines:row.authorized_lines,commercialConditions:row.commercial_conditions,status:row.status,productCount:Number(row.product_count??0),sourceCount:Number(row.source_count??0),createdAt:row.created_at,updatedAt:row.updated_at}}
 export async function registerRepresentedBusinessRoutes(app:FastifyInstance){
+ await registerRepresentedProductRoutes(app)
  const root='/organizations/:organizationId/represented-businesses'
- app.get(root,async request=>{const route=parse(params,request.params);companyStrategyRequestAccess(request,route.organizationId);return (await app.pg.query('SELECT * FROM public.company_represented_businesses WHERE organization_id=$1 ORDER BY name,id',[route.organizationId])).rows.map(mapRepresentedBusiness)})
+ app.get(root,async request=>{const route=parse(params,request.params);companyStrategyRequestAccess(request,route.organizationId);return (await app.pg.query('SELECT brand.*,(SELECT count(*) FROM public.marketing_products_services WHERE organization_id=brand.organization_id AND represented_business_id=brand.id) AS product_count,(SELECT count(*) FROM public.knowledge_sources WHERE organization_id=brand.organization_id AND represented_business_id=brand.id) AS source_count FROM public.company_represented_businesses brand WHERE organization_id=$1 ORDER BY name,id',[route.organizationId])).rows.map(mapRepresentedBusiness)})
  for(const update of [false,true])app.route({method:update?'PUT':'POST',url:update?`${root}/:id`:root,handler:async request=>{
   const route=parse(params,request.params),access=companyStrategyRequestAccess(request,route.organizationId);assertCompanyStrategyWrite(access)
   const body=parse(update?representedBusinessSchema.extend({expectedVersion:z.number().int().positive()}):representedBusinessSchema,request.body)

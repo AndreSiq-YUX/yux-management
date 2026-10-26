@@ -188,6 +188,7 @@ export interface MarketingBrandProfile {
 }
 
 export interface MarketingProductService {
+  representedBusinessId?:string
   id: string
   organizationId: string
   clientId: string

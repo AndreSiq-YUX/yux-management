@@ -860,6 +860,10 @@ export type Documentids = string[]
  * @maxItems 100
  */
 export type Productids = string[]
+/**
+ * @maxItems 100
+ */
+export type Representedbusinessids = string[]
 export type Schemaversion2 = 1
 export type Agentuse = 'internal' | 'external_guidance'
 export type Body = string
@@ -1184,6 +1188,7 @@ export interface CompanyStrategyContentWire {
 export interface CompanyStrategyReferencesWire {
   documentIds?: Documentids
   productIds?: Productids
+  representedBusinessIds?: Representedbusinessids
 }
 export interface CompanyStrategySectionWire {
   agentUse?: Agentuse

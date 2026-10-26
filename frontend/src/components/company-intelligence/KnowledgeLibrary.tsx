@@ -33,16 +33,19 @@ const FULLSCREEN_ON_MOBILE =
   'sm:left-[50%] sm:top-[50%] sm:h-auto sm:max-h-[90vh] sm:max-w-3xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg'
 
 export function KnowledgeLibrary({ documents, loading = false, onChanged }: KnowledgeLibraryProps) {
+  const [brandFilter,setBrandFilter]=useState('')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<CompanyKnowledgeDocument | null>(null)
   const [usageDocument, setUsageDocument] = useState<CompanyKnowledgeDocument | null>(null)
   const [archiveTarget, setArchiveTarget] = useState<CompanyKnowledgeDocument | null>(null)
-  const filtered = useMemo(() => documents.filter(document => `${document.title} ${document.summary || ''}`.toLowerCase().includes(search.toLowerCase())), [documents, search])
+  const filtered = useMemo(() => documents.filter(document => (!brandFilter||document.representedBusinessId===brandFilter)&&`${document.title} ${document.summary || ''}`.toLowerCase().includes(search.toLowerCase())), [documents, search,brandFilter])
 
+  const representedOptions=new Map(documents.filter(document=>document.representedBusinessId).map(document=>[document.representedBusinessId!,document.representedBusinessName??'Marca vinculada']))
   if (loading) return <div role="status" className="flex items-center gap-2 rounded-[10px] border border-yx-line bg-yx-surface p-5 text-sm text-yx-fg-3"><Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />Carregando biblioteca...</div>
 
   return (
     <section className="space-y-4">
+      {!!representedOptions.size&&<label className="block text-sm">Filtrar por representada<select className="ml-2 rounded border p-2" value={brandFilter} onChange={e=>setBrandFilter(e.target.value)}><option value="">Todas as fontes</option>{[...representedOptions.entries()].map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label>}
       {documents.length > 0 ? (
         <div className="space-y-1.5">
           <Label htmlFor="knowledge-search" className="sr-only">Buscar na base</Label>

@@ -12,7 +12,7 @@ export const companyStrategyContentSchema = z.object({
     id: z.string().uuid(), kind: z.enum(strategySectionKinds), title: z.string().trim().min(1).max(160),
     body: z.string().trim().min(1).max(12000), agentUse: z.enum(['internal', 'external_guidance']).default('internal'),
   }).strict()).max(30).default([]),
-  references: z.object({ productIds: ids, documentIds: ids }).strict().default({ productIds: [], documentIds: [] }),
+  references: z.object({ productIds: ids, documentIds: ids,representedBusinessIds:ids }).strict().default({ productIds: [], documentIds: [],representedBusinessIds:[] }),
 }).strict().superRefine((value, ctx) => {
   if (new Set(value.sections.map(section => section.id)).size !== value.sections.length) ctx.addIssue({ code: 'custom', message: 'duplicate_section_ids', path: ['sections'] })
   if (JSON.stringify(value).length > 100000) ctx.addIssue({ code: 'custom', message: 'strategy_content_too_large' })

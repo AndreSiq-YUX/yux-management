@@ -223,6 +223,7 @@ export async function createKnowledgeShell(pool: pg.Pool, input: {
   organizationId: string
   contractId?: string
   title: string
+  representedBusinessId?:string
   sourceType: 'manual' | 'url' | 'file' | 'faq' | 'integration'
   sourceUrl?: string
   documentType: 'brand' | 'product' | 'service' | 'faq' | 'case' | 'campaign' | 'policy' | 'other'
@@ -235,6 +236,7 @@ export async function createKnowledgeShell(pool: pg.Pool, input: {
   metadata?: Record<string, unknown>
 }) {
   const scope = await resolveMarketingScope(pool, input.organizationId, input.contractId)
+  if(input.representedBusinessId && !(await pool.query("SELECT id FROM public.company_represented_businesses WHERE organization_id=$1 AND id=$2 AND status='active'",[input.organizationId,input.representedBusinessId])).rows[0])throw domainError(404,'represented_business_not_found')
   if (input.checksumSha256) await assertUniqueKnowledgeChecksum(pool, input.organizationId, input.checksumSha256)
   const client = await pool.connect()
   try {
@@ -243,13 +245,13 @@ export async function createKnowledgeShell(pool: pg.Pool, input: {
       `INSERT INTO public.knowledge_sources (
          organization_id, source_type, name, source_url, status, visibility,
          allowed_agent_profile_keys, blocked_agent_profile_keys, mime_type, byte_size,
-         checksum_sha256, metadata
-       ) VALUES ($1,$2,$3,$4,'draft',$5,$6,$7,$8,$9,$10,$11::jsonb)
+         checksum_sha256, metadata,represented_business_id
+       ) VALUES ($1,$2,$3,$4,'draft',$5,$6,$7,$8,$9,$10,$11::jsonb,$12)
        RETURNING id`,
       [
         input.organizationId, input.sourceType, input.title, input.sourceUrl || null, input.visibility,
         input.allowedAgentProfileKeys || [], input.blockedAgentProfileKeys || [], input.mimeType || null,
-        input.byteSize ?? null, input.checksumSha256 || null, JSON.stringify(input.metadata || {}),
+        input.byteSize ?? null, input.checksumSha256 || null, JSON.stringify(input.metadata || {}),input.representedBusinessId??null,
       ],
     )
     const document = await client.query<{ id: string }>(
@@ -280,7 +282,7 @@ export async function findKnowledgeDocumentByChecksum(
   checksumSha256: string,
 ) {
   const result = await pool.query<Row>(
-    `SELECT document.*, source.status AS source_status, source.source_type,
+    `SELECT document.*, source.status AS source_status, source.source_type,source.represented_business_id,(SELECT name FROM public.company_represented_businesses WHERE id=source.represented_business_id AND organization_id=source.organization_id) AS represented_business_name,
             source.visibility, source.allowed_agent_profile_keys,
             source.blocked_agent_profile_keys, source.checksum_sha256,
             source.metadata AS source_metadata, source.mime_type, source.byte_size
@@ -1046,6 +1048,7 @@ function mapKnowledgeDocument(row: Row) {
     title: row.title,
     documentType: row.document_type,
     status: row.status,
+    representedBusinessId:row.represented_business_id??undefined,representedBusinessName:row.represented_business_name??undefined,
     sourceType: row.source_type,
     sourceStatus: row.source_status,
     visibility: row.visibility || 'both',

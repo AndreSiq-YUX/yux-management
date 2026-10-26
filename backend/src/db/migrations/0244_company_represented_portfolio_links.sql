@@ -1,0 +1,6 @@
+ALTER TABLE public.marketing_products_services ADD COLUMN represented_business_id uuid;
+ALTER TABLE public.marketing_products_services ADD CONSTRAINT represented_product_scope FOREIGN KEY(organization_id,represented_business_id) REFERENCES public.company_represented_businesses(organization_id,id);
+CREATE INDEX represented_product_lookup ON public.marketing_products_services(organization_id,represented_business_id,status);
+ALTER TABLE public.knowledge_sources ADD COLUMN represented_business_id uuid;
+ALTER TABLE public.knowledge_sources ADD CONSTRAINT represented_source_scope FOREIGN KEY(organization_id,represented_business_id) REFERENCES public.company_represented_businesses(organization_id,id);
+CREATE INDEX represented_source_lookup ON public.knowledge_sources(organization_id,represented_business_id);

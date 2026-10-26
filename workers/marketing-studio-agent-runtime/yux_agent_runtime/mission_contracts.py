@@ -210,6 +210,7 @@ class CompanyStrategySectionWire(StrictWireModel):
 
 
 class CompanyStrategyReferencesWire(StrictWireModel):
+    representedBusinessIds: list[str] = Field(default_factory=list, max_length=100)
     productIds: list[str] = Field(default_factory=list,max_length=100)
     documentIds: list[str] = Field(default_factory=list,max_length=100)
 

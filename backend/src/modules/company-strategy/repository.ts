@@ -62,9 +62,9 @@ export async function lockCompanyStrategy(db: Queryable, access: CompanyStrategy
   return row
 }
 async function validateReferences(db: Queryable, access: CompanyStrategyAccess, content: CompanyStrategyContentV1) {
-  for (const [ids, table, published] of [[content.references.productIds, 'marketing_products_services', false], [content.references.documentIds, 'marketing_knowledge_documents', true]] as const) {
+  for (const [ids, table, published] of [[content.references.productIds, 'marketing_products_services', false], [content.references.documentIds, 'marketing_knowledge_documents', true],[content.references.representedBusinessIds??[], 'company_represented_businesses', false]] as const) {
     if (!ids.length) continue
-    const result = await db.query<{ id: string }>(`SELECT id FROM public.${table} WHERE organization_id=$1 AND id=ANY($2::uuid[])${published ? " AND status='published'" : ''}`, [access.organizationId, ids])
+    const result = await db.query<{ id: string }>(`SELECT id FROM public.${table} WHERE organization_id=$1 AND id=ANY($2::uuid[])${published ? " AND status='published'" : table==='company_represented_businesses'?" AND status='active'":''}`, [access.organizationId, ids])
     if (result.rows.length !== ids.length) throw new ApiError(404, 'company_strategy_reference_not_found')
   }
 }

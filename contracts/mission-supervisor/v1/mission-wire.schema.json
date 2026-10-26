@@ -323,6 +323,14 @@
           "maxItems": 100,
           "title": "Productids",
           "type": "array"
+        },
+        "representedBusinessIds": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Representedbusinessids",
+          "type": "array"
         }
       },
       "title": "CompanyStrategyReferencesWire",
