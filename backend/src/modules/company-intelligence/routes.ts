@@ -1,3 +1,5 @@
+import {businessModelsSchema} from './represented-business-schemas.js'
+import {registerRepresentedBusinessRoutes} from './represented-businesses.js'
 import type { FastifyInstance } from 'fastify'
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
@@ -57,6 +59,7 @@ const visualIdentitySchema = z.object({
 }).default({ colors: [], typography: [], designStyle: '', imageryStyle: '', graphicElements: [] })
 
 const profileSchema = z.object({
+  businessModels:businessModelsSchema.optional(),
   legalName: text,
   tradeName: text,
   description: text,
@@ -146,6 +149,7 @@ const applyWebsiteSuggestionsSchema = z.object({
 })
 
 export async function registerCompanyIntelligenceRoutes(app: FastifyInstance) {
+  await registerRepresentedBusinessRoutes(app)
   app.post('/knowledge/query', async (request, reply) => {
     const parsed = knowledgeQueryV1Schema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_knowledge_query_v1' })

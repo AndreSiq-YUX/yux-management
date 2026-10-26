@@ -1,3 +1,5 @@
+import {RepresentedBusinessesSection} from '@/components/company-intelligence/RepresentedBusinessesSection'
+import {usePlatformStore} from '@/stores/platformStore'
 import { useCallback, useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { PortalPage } from '@/components/client-portal/PortalPage'
@@ -10,6 +12,7 @@ import { companyIntelligenceService } from '@/services/companyIntelligenceServic
 import type { CompanyProfile, CompanyProfileInput } from '@/types/companyIntelligence'
 
 export function PortalCompanyProfilePage() {
+  const canConfigure=usePlatformStore(state=>state.workspaceContext?.canConfigure??['yux_admin','yux_operator','client_admin'].includes(state.role?.key??''))
   const {
     activeContract,
     organization,
@@ -112,6 +115,7 @@ export function PortalCompanyProfilePage() {
         />
       ) : null}
 
+      {organization && companyProfile && <RepresentedBusinessesSection organizationId={organization.id} canWrite={canConfigure} businessModels={companyProfile.businessModels??[]}/>}
       <SectionCard
         id="profile-offers"
         title="Produtos e serviços ativos"

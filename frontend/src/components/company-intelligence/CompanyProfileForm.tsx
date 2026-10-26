@@ -1,3 +1,4 @@
+import {businessModelLabels,type BusinessModel} from '@/types/companyIntelligence'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ImageOff } from 'lucide-react'
@@ -82,6 +83,7 @@ export function CompanyProfileForm({ profile, saving = false, onSave, logoUrl, b
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Nome da marca" id="trade-name" value={draft.tradeName} onChange={value => update('tradeName', value)} />
             <Field label="Razão social" id="legal-name" value={draft.legalName} onChange={value => update('legalName', value)} />
+            <fieldset className="space-y-2"><legend className="mb-2 text-sm font-medium">Como a empresa atua</legend>{Object.entries(businessModelLabels).map(([key,label])=><label key={key} className="mr-4 inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={(draft.businessModels??[]).includes(key as BusinessModel)} onChange={e=>update('businessModels',e.target.checked?[...(draft.businessModels??[]),key as BusinessModel]:(draft.businessModels??[]).filter(item=>item!==key))}/>{label}</label>)}</fieldset>
             <Field label="Segmento" id="industry" value={draft.industry} onChange={value => update('industry', value)} placeholder="Ex.: consultoria financeira" />
             <LogoPreview logoUrl={logoUrl} />
           </div>
@@ -309,6 +311,7 @@ function formatZip(value: string) {
 
 function editable(profile: CompanyProfile): CompanyProfileInput {
   return {
+    businessModels:profile.businessModels??[],
     legalName: profile.legalName,
     tradeName: profile.tradeName,
     description: profile.description,

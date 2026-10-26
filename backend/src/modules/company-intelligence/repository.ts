@@ -48,8 +48,8 @@ export async function upsertCompanyProfile(
       `INSERT INTO public.organization_company_profiles (
          organization_id, legal_name, trade_name, description, website_url, industry,
          positioning, differentiators, emails, phones, address, business_hours,
-         service_regions, social_links, internal_notes
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14::jsonb,$15)
+         service_regions, social_links, internal_notes,business_models
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14::jsonb,$15,COALESCE($16::text[],'{}'))
        ON CONFLICT (organization_id) DO UPDATE SET
          legal_name = EXCLUDED.legal_name,
          trade_name = EXCLUDED.trade_name,
@@ -65,12 +65,13 @@ export async function upsertCompanyProfile(
          service_regions = EXCLUDED.service_regions,
          social_links = EXCLUDED.social_links,
          internal_notes = EXCLUDED.internal_notes,
+         business_models=COALESCE($16::text[],organization_company_profiles.business_models),
          updated_at = NOW()`,
       [
         organizationId, input.legalName, input.tradeName, input.description,
         input.websiteUrl || null, input.industry, input.positioning, input.differentiators,
         input.emails, input.phones, JSON.stringify(input.address), JSON.stringify(input.businessHours),
-        input.serviceRegions, JSON.stringify(input.socialLinks), input.internalNotes || null,
+        input.serviceRegions, JSON.stringify(input.socialLinks), input.internalNotes || null,input.businessModels??null,
       ],
     )
 
@@ -1176,6 +1177,7 @@ function mapCompanyProfile(row: Row, includeInternal: boolean) {
     tradeName: row.trade_name || row.company_name || row.organization_name || '',
     description: row.description || '',
     websiteUrl: row.website_url || row.client_website || undefined,
+    businessModels:row.business_models??[],
     industry: row.industry || row.sector || '',
     positioning: row.positioning || '',
     differentiators: row.differentiators || [],

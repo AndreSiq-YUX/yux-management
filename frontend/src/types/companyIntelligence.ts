@@ -1,4 +1,9 @@
+export type BusinessModel='service_provider'|'retailer'|'manufacturer'|'commercial_representative'|'distributor'|'other'
+export const businessModelLabels:Record<BusinessModel,string>={service_provider:'Prestador de serviços',retailer:'Comércio',manufacturer:'Fabricante',commercial_representative:'Representante comercial',distributor:'Distribuidor',other:'Outro'}
+export interface RepresentedBusinessInput{name:string;relationshipType:'representation'|'distribution'|'both';websiteUrl?:string;description:string;serviceRegions:string[];authorizedLines:string[];commercialConditions:string;status:'active'|'paused'|'archived'}
+export interface RepresentedBusiness extends RepresentedBusinessInput{id:string;organizationId:string;version:number;createdAt:string;updatedAt:string}
 export interface CompanyProfile {
+  businessModels?:BusinessModel[]
   id?: string
   organizationId: string
   clientId?: string

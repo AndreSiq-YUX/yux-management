@@ -1,3 +1,4 @@
+import type {RepresentedBusiness,RepresentedBusinessInput} from '@/types/companyIntelligence'
 import { apiRequest } from '@/lib/apiClient'
 import type {
   CompanyBrandProfile,
@@ -13,6 +14,8 @@ import type {
 } from '@/types/companyIntelligence'
 
 export const companyIntelligenceService = {
+  listRepresentedBusinesses:(organizationId:string)=>apiRequest<RepresentedBusiness[]>(`/company-intelligence/organizations/${organizationId}/represented-businesses`),
+  saveRepresentedBusiness:(organizationId:string,current:RepresentedBusiness|null,input:RepresentedBusinessInput)=>apiRequest<RepresentedBusiness>(`/company-intelligence/organizations/${organizationId}/represented-businesses${current?`/${current.id}`:''}`,{method:current?'PUT':'POST',body:{name:input.name,relationshipType:input.relationshipType,websiteUrl:input.websiteUrl,description:input.description,serviceRegions:input.serviceRegions,authorizedLines:input.authorizedLines,commercialConditions:input.commercialConditions,status:input.status,...(current?{expectedVersion:current.version}:{})}}),
   getProfile(organizationId: string) {
     return apiRequest<CompanyProfile>(`/company-intelligence/organizations/${organizationId}/profile`)
   },
