@@ -53,6 +53,33 @@ export async function loadRadarAdaptiveItems(db:Db,operationId:string,organizati
  return rows.map(row=>({candidateId:row.candidate_id,isNew:row.is_new,qualification:row.target_status??'review',state:row.status==='queued'?'pending':row.status==='researching'?'running':row.status==='blocked'?'waiting':'completed'}))
 }
 type Page=pg.QueryResultRow&{id:string;scope_key:string;source:string;status:'reserved'|'received'|'admitted'|'uncertain'|'rejected';normalized_page:RadarDiscoveryPage|null;input:RadarDiscoveryTransportInput;response_body:unknown;admitted_offset:number;extraction:Record<string,unknown>;page_number:number;continuation?:Record<string,unknown>;exhaustion:'more'|'exhausted'|'unknown'}
+/** Read-only recovery check for older parents globally paused by a rejected
+ * cursor. It never restarts that cursor or grants research/spending authority. */
+export async function canContinueRadarAdaptiveAfterCursorRejection(db:Db,op:pg.QueryResultRow):Promise<boolean>{
+ if(op.pipeline_version!==2||op.discovery_stopped||op.discovery_pending)return false
+ const stored=op.discovery_plan as StoredPlan,config=resolveRadarSearchConfiguration(op.configuration_snapshot.search_configuration)
+ if(!stored?.plan||stored.plan.pipelineVersion!==2)return false
+ const rows=(await db.query<Page>('SELECT * FROM public.radar_discovery_pages WHERE organization_id=$1 AND campaign_id=$2 AND criteria_revision=$3 ORDER BY created_at,id',[op.organization_id,op.campaign_id,op.configuration_revision])).rows
+ if(!rows.some(page=>page.operation_id===op.id&&page.status==='rejected'&&page.error_code==='radar_discovery_continuation_rejected'))return false
+ const continuations=await radarAdaptiveContinuations(db,{organizationId:op.organization_id,campaignId:op.campaign_id,configurationRevision:op.configuration_revision},await loadRadarOperationalLimits(db))
+ if(continuations.some(state=>state.reason==='uncertain'))return false
+ const pages=rows.map(page=>effectiveRadarAdaptivePage(page) as Page),attemptedHere=rows.filter(page=>page.operation_id===op.id)
+ if(attemptedHere.length>=config.batch.maxQueriesPerBatch)return false
+ const held=new Set(continuations.map(state=>state.scopeKey)),scopes=[]
+ for(const scope of stored.plan.scopes){
+  if(held.has(scope.key)||attemptedHere.filter(page=>page.scope_key===scope.key).length>=config.batch.maxPagesPerScope)continue
+  const source=await findRadarDataSource(db as pg.Pool,op.organization_id,scope.source)
+  const capacity=await evaluateRadarSourceGovernance(db,op.organization_id,op.campaign_id,source,1,scope.source==='cnpja_advanced_search'?Math.ceil(config.batch.pageSize/10):1)
+  if(capacity.allowed)scopes.push(scope)
+ }
+ if(!scopes.length)return false
+ const items=await loadRadarAdaptiveItems(db,op.id,op.organization_id)
+ if(items.some(item=>['pending','running'].includes(item.state)))return false
+ const progress=op.funnel_enabled?await loadRadarFunnelLotProgress(db,op as any):null
+ if(progress?.remaining===0)return false
+ const turn=planRadarAdaptiveDiscoveryTurn({plan:{...stored.plan,scopes},requestedCount:progress?items.length+progress.remaining:Number(op.requested_count),items:progress?items.map(item=>({...item,qualification:'confirmed' as const})):items,pages:pages.map(page=>({id:page.id,scopeKey:page.scope_key,status:page.status,exhaustion:page.exhaustion,continuation:page.continuation}))})
+ return 'action' in turn&&['discover','admit_saved_page','expand_plan_window'].includes(turn.action!)
+}
 export async function advanceRadarAdaptiveCapture(pool:pg.Pool,env:AppEnv,operation:pg.QueryResultRow,user:AuthUser,dependencies:{adaptiveDiscover?:(input:RadarDiscoveryTransportInput)=>Promise<RadarDiscoveryPage>;runtime?:typeof invokeAgentRuntime;collect?:typeof collectRadarSiteEvidence}={}){
  const op=operation,stored=op.discovery_plan as StoredPlan,config=resolveRadarSearchConfiguration(op.configuration_snapshot.search_configuration)
  if(op.pipeline_version!==2||!stored.plan||stored.plan.pipelineVersion!==2)throw failure('radar_capture_pipeline_unknown')
@@ -166,6 +193,10 @@ export async function advanceRadarAdaptiveCapture(pool:pg.Pool,env:AppEnv,operat
    if((cause as {billingOutcome?:string})?.billingOutcome==='not_billed')await receipt.query(`WITH original AS(SELECT id,cost_estimate_brl,created_at::date AS usage_date FROM public.radar_discovery_pages WHERE id=$1 AND organization_id=$2 AND cost_estimate_brl>0 AND status='rejected' FOR UPDATE),recorded AS(UPDATE public.radar_discovery_pages page SET cost_estimate_brl=0 FROM original WHERE page.id=original.id RETURNING original.cost_estimate_brl,original.usage_date) UPDATE public.radar_source_usage_counters counter SET units=GREATEST(0,counter.units-CASE WHEN $5 THEN 1 ELSE 0 END),estimated_cost=GREATEST(0,counter.estimated_cost-recorded.cost_estimate_brl),updated_at=NOW() FROM recorded WHERE counter.organization_id=$2 AND counter.campaign_id=$3 AND counter.source_type=$4 AND counter.usage_date=recorded.usage_date`,[pageId,op.organization_id,op.campaign_id,scope.source,notDispatched])
    await receipt.query('COMMIT')
   }catch(error){await receipt.query('ROLLBACK');throw error}finally{receipt.release()}
+  // The receipt now holds only this region. The next normal turn can select
+  // another valid cursor; if none remains, the existing confirmation guard
+  // pauses truthfully. Unknown outcomes and other validation errors still stop.
+  if(code==='radar_discovery_continuation_rejected')return
   throw Object.assign(failure(code),{cause})
  }
 }

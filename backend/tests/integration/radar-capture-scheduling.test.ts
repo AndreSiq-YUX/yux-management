@@ -13,6 +13,7 @@ import {executeRadarCandidateResearch} from '../../src/modules/radar/research-se
 import {radarRegistryDiscoveryCandidate} from '../../src/modules/radar/discovery-providers.js'
 import {fixtureIds} from './support/fixtures.js'
 import {createRadarCampaign} from '../../src/modules/radar/repository.js'
+import {CnpjaSearchHttpError} from '../../src/modules/radar/cnpjaClient.js'
 
 const modulePath='../../src/modules/radar/capture-scheduling.js'
 const scheduling=await import(modulePath).catch(()=>({})) as {repairRadarCaptureScheduling?:(pool:pg.Pool,organizationId:string)=>Promise<number>}
@@ -29,6 +30,77 @@ async function fixture(cities?:Array<{city:string;state:string}>){
  return{...f,op,worker,scoped,outbox,async close(){await rawWorker.end();await f.close()}}
 }
 describe.skipIf(!connectionString)('requested-count scheduling with isolated PostgreSQL',()=>{
+ it('continues another valid cursor after a provider rejects one region, without buying the rejected cursor again',async()=>{
+  const f=await fixture(['Curitiba','Londrina'].map(city=>({city,state:'PR'})))
+  try{
+   const calls:Array<{city:string;token?:string}>=[]
+   const adaptiveDiscover=async(input:any)=>{
+    calls.push({city:input.scope.city,token:input.continuation?.token})
+    if(calls.length<=2)return{candidates:[],documents:[],exhaustion:'more' as const,continuation:{token:`next-${input.scope.city}`}}
+    if(calls.length===3)throw new CnpjaSearchHttpError('token is invalid or expired',400)
+    expect(calls.length).toBe(4);expect(input.scope.city).toBe('Londrina');expect(input.continuation).toEqual({token:'next-Londrina'})
+    return{candidates:[radarRegistryDiscoveryCandidate({taxId:'37335118000180',legalName:'Empresa alternativa',city:'Londrina',state:'PR',cnaes:[],websiteStatus:'unknown',rawPayload:{}})!],documents:[],exhaustion:'exhausted' as const}
+   }
+   for(let turn=0;turn<5;turn++)await advanceRadarCaptureDiscovery(f.pool,env,{organizationId,operationId:f.op.operationId},{availability:available,adaptiveDiscover})
+   expect(['queued','discovering']).toContain((await getRadarCaptureOperation(f.pool,admin,organizationId,f.op.operationId)).status)
+   expect(await f.outbox()).toBe(1)
+   for(let turn=0;turn<2;turn++)await advanceRadarCaptureDiscovery(f.pool,env,{organizationId,operationId:f.op.operationId},{availability:available,adaptiveDiscover})
+   expect(calls).toEqual([{city:'Curitiba',token:undefined},{city:'Londrina',token:undefined},{city:'Curitiba',token:'next-Curitiba'},{city:'Londrina',token:'next-Londrina'}])
+   expect((await getRadarCaptureOperation(f.pool,admin,organizationId,f.op.operationId)).counts.admitted).toBe(1)
+   expect((await f.pool.query("SELECT status,error_code,input->'continuation' AS input_continuation,extraction FROM radar_discovery_pages WHERE operation_id=$1 AND status='rejected'",[f.op.operationId])).rows).toEqual([{status:'rejected',error_code:'radar_discovery_continuation_rejected',input_continuation:{token:'next-Curitiba'},extraction:{}}])
+  }finally{await f.close()}
+ })
+ it.each(['available','only_region','expired_other','uncertain_other'])('repairs only a rejected-cursor parent with an available alternative: %s',async condition=>{
+  const cities=(condition==='only_region'?['Curitiba']:['Curitiba','Londrina']).map(city=>({city,state:'PR'})),f=await fixture(cities)
+  try{
+   let calls=0
+   const adaptiveDiscover=async(input:any)=>{
+    calls++
+    if(input.continuation?.token)throw new CnpjaSearchHttpError('token is invalid or expired',400)
+    return{candidates:[],documents:[],exhaustion:'more' as const,continuation:{token:`next-${input.scope.city}`}}
+   }
+   for(let turn=0;turn<cities.length*2+1;turn++)await advanceRadarCaptureDiscovery(f.pool,env,{organizationId,operationId:f.op.operationId},{availability:available,adaptiveDiscover})
+   if(condition==='expired_other')await f.pool.query("UPDATE radar_discovery_pages SET updated_at=NOW()-INTERVAL '2 hours' WHERE operation_id=$1 AND input->'scope'->>'city'='Londrina'",[f.op.operationId])
+   if(condition==='uncertain_other')await f.pool.query("UPDATE radar_discovery_pages SET status='uncertain',lease_until=NOW()-INTERVAL '1 hour' WHERE operation_id=$1 AND input->'scope'->>'city'='Londrina'",[f.op.operationId])
+   const candidate=(await f.pool.query(`INSERT INTO radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key) VALUES($1,$2,'manual','Análise individual preservada',$3) RETURNING id`,[organizationId,f.campaign.id,randomUUID()])).rows[0]
+   const oldCalls={presence:{status:'reserved',requestId:randomUUID()}}
+   const run=(await f.pool.query(`INSERT INTO radar_candidate_research_runs(organization_id,campaign_id,candidate_id,configuration_revision,requested_by,status,stage,calls) VALUES($1,$2,$3,1,$4,'partial','review',$5) RETURNING id`,[organizationId,f.campaign.id,candidate.id,admin.id,JSON.stringify(oldCalls)])).rows[0]
+   await f.pool.query(`INSERT INTO radar_capture_items(organization_id,campaign_id,operation_id,candidate_id,run_id,status,blocker,funnel_outcome,initial_gate_status) VALUES($1,$2,$3,$4,$5,'blocked','radar_research_call_uncertain','technical_failure','pass')`,[organizationId,f.campaign.id,f.op.operationId,candidate.id,run.id])
+   await f.pool.query(`UPDATE radar_capture_operations SET status='blocked',blockers='["radar_discovery_continuation_rejected","radar_research_call_uncertain"]',lease_id=NULL,lease_until=NULL WHERE id=$1`,[f.op.operationId])
+   await f.pool.query('DELETE FROM radar_capture_outbox WHERE operation_id=$1',[f.op.operationId])
+   const before=(await f.pool.query('SELECT queries,research_budget_authorizations,analysis_refresh_authorizations FROM radar_capture_operations WHERE id=$1',[f.op.operationId])).rows[0]
+   if(condition==='available'){
+    const delivered:string[]=[]
+    await f.scoped(()=>maintainRadar(f.worker,{add:async(_name,data)=>{if(typeof data.operationId==='string')delivered.push(data.operationId);return{}}},9),[])
+    expect(delivered).toEqual([f.op.operationId])
+   }else expect(await f.scoped(()=>scheduling.repairRadarCaptureScheduling!(f.worker,organizationId))).toBe(0)
+   expect((await getRadarCaptureOperation(f.pool,admin,organizationId,f.op.operationId)).status).toBe(condition==='available'?'discovering':'blocked')
+   expect(await f.outbox()).toBe(condition==='available'?1:0)
+   expect((await f.pool.query('SELECT queries,research_budget_authorizations,analysis_refresh_authorizations FROM radar_capture_operations WHERE id=$1',[f.op.operationId])).rows[0]).toEqual(before)
+   expect((await f.pool.query('SELECT calls FROM radar_candidate_research_runs WHERE id=$1',[run.id])).rows[0].calls).toEqual(oldCalls)
+   expect((await f.pool.query('SELECT status FROM radar_capture_items WHERE operation_id=$1',[f.op.operationId])).rows[0].status).toBe('blocked')
+   expect(calls).toBe(cities.length+1)
+  }finally{await f.close()}
+ })
+ it.each(['uncertain_transport','non_cursor_validation'])('keeps global protection for %s',async condition=>{
+  const f=await fixture(['Curitiba','Londrina'].map(city=>({city,state:'PR'})))
+  try{
+   let calls=0
+   const adaptiveDiscover=async(input:any)=>{
+    calls++
+    if(condition==='non_cursor_validation')throw new CnpjaSearchHttpError('invalid initial parameters',400)
+    if(input.continuation?.token)throw Error('synthetic_transport_unknown')
+    return{candidates:[],documents:[],exhaustion:'more' as const,continuation:{token:`next-${input.scope.city}`}}
+   }
+   for(let turn=0;turn<6;turn++)await advanceRadarCaptureDiscovery(f.pool,env,{organizationId,operationId:f.op.operationId},{availability:available,adaptiveDiscover})
+   const blocker=condition==='non_cursor_validation'?'radar_discovery_parameters_rejected':'synthetic_transport_unknown'
+   expect((await getRadarCaptureOperation(f.pool,admin,organizationId,f.op.operationId))).toMatchObject({status:'blocked',blockers:expect.arrayContaining([blocker])})
+   expect(calls).toBe(condition==='non_cursor_validation'?1:3)
+   const existingDeliveries=await f.outbox()
+   expect(await f.scoped(()=>scheduling.repairRadarCaptureScheduling!(f.worker,organizationId))).toBe(0)
+   expect(await f.outbox()).toBe(existingDeliveries)
+  }finally{await f.close()}
+ })
  it('keeps discovery scheduled when only individual companies are blocked',async()=>{
   const f=await fixture()
   try{
