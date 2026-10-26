@@ -70,4 +70,21 @@ describe('authoritative Mission operational context', () => {
     })
     expect(one.contextHash).not.toBe(two.contextHash)
   })
+
+  it('distinguishes an unverified connection query from a verified account with no connections', async () => {
+    const accountAvailability = { authority: 'server' as const, organizationId: 'org-1', contractId: null,
+      enabledModules: ['crm'], actionAuthorization: 'not_granted_by_snapshot' as const, tools: [] }
+    const input = { organizationId: 'org-1', query: 'Objetivo', requestedModules: ['crm'], capabilityManifest: manifest, accountAvailability }
+    const verified = await buildMissionOperationalContext(database() as never, input)
+    const db = database()
+    const failed = await buildMissionOperationalContext({ query: (sql: string, params?: unknown[]) => {
+      if (sql.includes('channel_connections')) return Promise.reject(new Error('unavailable'))
+      return db.query(sql, params)
+    } } as never, input)
+    expect(verified.accountAvailability?.connections).toContainEqual({ key: 'whatsapp', status: 'connected' })
+    expect(verified.accountAvailability?.connections).toContainEqual({ key: 'email', status: 'not_connected' })
+    expect(failed.accountAvailability?.connections).toContainEqual({ key: 'whatsapp', status: 'unverified' })
+    expect(failed.contextHash).not.toBe(verified.contextHash)
+    await expect(buildMissionOperationalContext(database() as never, { ...input, organizationId: 'org-other' })).rejects.toThrow('mission_account_context_scope_mismatch')
+  })
 })

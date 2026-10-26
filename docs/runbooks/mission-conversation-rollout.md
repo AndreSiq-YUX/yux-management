@@ -73,6 +73,9 @@ Reexecutar é seguro: o runner aplica somente migrations ainda não registradas.
 
 ## Verificações de saúde
 
+- Disponibilidade da conta: cada turno resolve o ator ativo, vínculo com a organização, contrato atual, módulos e permissões pelos mesmos registros do contexto do workspace. O brief e a declaração do usuário não concedem acesso. `operationalContext.accountAvailability` é a evidência do sistema; `tools` distingue módulo habilitado, planejamento elegível e bloqueios da integração. `connections` separa conexão ativa, ausente e consulta não verificada. Capabilities e packs enviados ao Harness são filtrados por esse acesso; a execução continua sujeita aos gates, preflight, consentimento e aprovações existentes. Um pacote só entra quando todas as etapas de sua topologia estão elegíveis.
+- O agente informa fatos de configuração da YUX, em vez de perguntar ao cliente se um recurso está habilitado. Uma falha técnica pede verificação pelo sistema; um “sim” na conversa não habilita recursos. Perguntas de estratégia, horários, oferta e autorizações permanecem com o cliente. O conhecimento estratégico e funcional continua comum, independentemente dos gates operacionais de cada conta.
+
 - Conhecimento estratégico: consultar a mesma publicação governada em duas organizações; livros e guias internos são comuns, enquanto dados `company` permanecem exclusivos da organização e contrato atuais. A configuração por conta habilita execução, não o conhecimento da ferramenta. Ver detalhes em [Radar / conhecimento comum](radar-action-engine-rollout.md#conhecimento-comum-e-contexto-privado).
 
 - Harness `/health` responde e o backend indica `planner.available=true`.

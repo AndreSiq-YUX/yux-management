@@ -1,7 +1,7 @@
 import type { AppEnv } from '../../config/env.js'
 import { runWithDatabaseRequestContext } from '../../db/request-context.js'
 import { RADAR_PROSPECTING_PACK_V1 } from '../../modules/action-engine/packs/radar-prospecting-v1.js'
-import { radarMissionAvailable, ensureRadarProspectingPackVersion } from '../../modules/action-engine/radar-pack-registration.js'
+import { radarMissionAvailable, resolveRadarMissionAvailability, ensureRadarProspectingPackVersion } from '../../modules/action-engine/radar-pack-registration.js'
 import { retrieveRadarMissionKnowledge,RADAR_MISSION_KNOWLEDGE_SCOPE } from '../../modules/action-engine/radar-knowledge-context.js'
 import { createHash } from 'node:crypto'
 import type { AppJobQueue } from '../../server.js'
@@ -37,7 +37,7 @@ import { deliverDecisionNotification, enqueuePendingDecisionNotifications, persi
 import { decideCampaignOptimization } from '../../modules/action-engine/capabilities/campaign-optimization.js'
 import { invokeMissionConversationTurn } from '../../lib/agent-runtime-client.js'
 import { buildMissionOperationalContext } from '../../modules/action-engine/context-builder.js'
-import { buildPlatformToolCatalog } from '../../modules/action-engine/platform-tool-catalog.js'
+import { buildMissionAccountAvailability, resolveMissionAccountAccess } from '../../modules/action-engine/mission-account-availability.js'
 import {
   completeAgentConversationTurn,
   getMissionConversationForMission,
@@ -83,24 +83,30 @@ export async function handleActionEngineProcessMissionConversation(
   const startedAt = Date.now()
   try {
     const registry = createActionEngineCapabilityRegistry()
-    const radarAvailable=await radarMissionAvailable(pool,env,organizationId,conversation.createdBy)
-    const metadata = registry.listMetadata().filter(item=>!item.key.startsWith('radar.')||radarAvailable)
+    const [access, radar] = await Promise.all([
+      resolveMissionAccountAccess(pool, env, { organizationId, actorId: conversation.createdBy, contractId: conversation.contractId }),
+      resolveRadarMissionAvailability(pool, env, organizationId, conversation.createdBy),
+    ])
+    const availability = buildMissionAccountAvailability(registry, access, radar)
+    const metadata = availability.capabilities
     const manifest = createCapabilityManifest(registry, metadata.map((item) => ({ key: item.key, version: item.version })))
-    const allowedModules = stringArray(conversation.currentBrief.allowedModules)
     const operational = await buildMissionOperationalContext(pool, {
       organizationId,
       ...(conversation.contractId ? { contractId: conversation.contractId } : {}),
       query: userMessage.content,
-      requestedModules: allowedModules.length ? allowedModules : ['crm', 'automations', 'campaigns', 'landing_pages',...(radarAvailable?['radar']:[])],
+      requestedModules: access.enabledModules,
       capabilityManifest: manifest.entries,
-      platformToolCatalog: buildPlatformToolCatalog(registry, manifest.entries.map(item => item.key)),
+      platformToolCatalog: availability.catalog,
+      accountAvailability: availability.snapshot,
       packKeys: stringArray(conversation.currentBrief.packKeys),
     })
     const tenant = await pool.query<{ client_id: string | null }>(
       `SELECT client_id FROM public.organizations WHERE id = $1 LIMIT 1`, [organizationId],
     )
     const bounded = boundTranscript(conversation.messages)
-    const packs = [REVENUE_RECOVERY_PACK_V0, FUNNEL_NURTURE_PACK_V1, CAMPAIGN_LAUNCH_PACK_V1, CAMPAIGN_OPTIMIZATION_PACK_V1,...(radarAvailable?[RADAR_PROSPECTING_PACK_V1]:[])]
+    const allowedKeys = new Set(manifest.entries.map(item => item.key))
+    const packs = [REVENUE_RECOVERY_PACK_V0, FUNNEL_NURTURE_PACK_V1, CAMPAIGN_LAUNCH_PACK_V1, CAMPAIGN_OPTIMIZATION_PACK_V1, RADAR_PROSPECTING_PACK_V1]
+      .filter(pack => pack.topologyTemplate.steps.every(step => allowedKeys.has(step.capabilityKey)))
     const request: MissionConversationTurnRequestWire = {
       schemaVersion: 1,
       organization_id: organizationId,

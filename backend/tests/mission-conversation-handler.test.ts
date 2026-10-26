@@ -30,6 +30,12 @@ class Pool {
   calls: string[] = []
   async query<T>(sql: string) {
     this.calls.push(sql)
+    if (sql.includes('FROM public.app_users')) return { rows: [{ role: 'client_admin', is_active: true }] as T[] }
+    if (sql.includes('FROM public.memberships')) return { rows: [{ role_key: 'client_admin' }] as T[] }
+    if (sql.includes('FROM public.role_permissions')) return { rows: ['crm.read', 'crm.write', 'action_engine.write'].map(permission_key => ({ permission_key })) as T[] }
+    if (sql.includes('LEFT JOIN LATERAL')) return { rows: [{ contract_id: 'contract-1', module_key: 'crm' }] as T[] }
+    if (sql.includes('AS allowed') && sql.includes('FROM public.organizations')) return { rows: [{ allowed: false }] as T[] }
+    if (sql.includes('COALESCE(is_internal_growth_workspace')) return { rows: [{ id: organizationId, kind: 'client', client_id: 'client-1', is_internal_growth_workspace: false }] as T[] }
     if (['BEGIN', 'COMMIT', 'ROLLBACK'].includes(sql)) return { rows: [] as T[] }
     if (sql.includes('FROM public.action_mission_conversations') && sql.includes('FOR UPDATE')) {
       return { rows: [conversationRow({ version: this.version, status: this.status })] as T[] }
@@ -94,6 +100,8 @@ describe('Mission conversation job handler', () => {
     })
     expect(request.allowedCapabilityKeys?.some(key => key.startsWith('radar.'))).toBe(false)
     expect(request.allowedActionPacks?.some(pack => pack.key === 'radar_prospecting')).toBe(false)
+    expect(request.operationalContext?.accountAvailability).toMatchObject({ authority: 'server', enabledModules: ['crm'] })
+    expect(request.allowedCapabilityKeys?.some(key => key.startsWith('campaign.'))).toBe(false)
     expect(pool.version).toBe(3)
     expect(pool.status).toBe('awaiting_user')
     expect(pool.messages).toHaveLength(2)

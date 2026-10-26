@@ -13,6 +13,7 @@ from .mission_contracts import (
     validate_mission_conversation_response,
 )
 from .trace import stable_hash
+from .mission_account_availability import enforce_account_availability
 
 if TYPE_CHECKING:
     from .workflow import StrategyWorkflowEngine
@@ -414,6 +415,7 @@ def normalize_mission_conversation_response(
     provider: dict[str, Any],
 ) -> MissionConversationTurnResponseWire:
     parsed = _normalize_provider_shape(parsed, request)
+    parsed = enforce_account_availability(parsed, request.operationalContext, request.organization_id)
     source_catalog = build_mission_source_catalog(retrieval_context, request.audience)
     by_ref = {source.ref: source for source in source_catalog}
     selected_refs: list[str] = []

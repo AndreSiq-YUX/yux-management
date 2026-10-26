@@ -1,6 +1,7 @@
 import type { CapabilityManifestEntry } from './capability-manifest.js'
 import { collectMissionBaseline } from './baselines/index.js'
 import type { PlatformToolCatalog } from './platform-tool-catalog.js'
+import type { MissionAccountAvailability } from './mission-account-availability.js'
 import { hashCanonical, type Queryable } from './repository.js'
 
 export type BuiltMissionOperationalContext = {
@@ -22,6 +23,7 @@ export type BuiltMissionOperationalContext = {
   contextHash: string
   allowedModules: string[]
   platformToolCatalog?: PlatformToolCatalog
+  accountAvailability?: MissionAccountAvailability
   // Compatibility fields for the legacy form-first planner. Knowledge is now
   // selected only by the Harness and therefore remains intentionally empty.
   companyContext: Record<string, never>
@@ -39,9 +41,11 @@ export async function buildMissionOperationalContext(client: Queryable, input: {
   capabilityManifest: CapabilityManifestEntry[]
   packKeys?: string[]
   platformToolCatalog?: PlatformToolCatalog
+  accountAvailability?: MissionAccountAvailability
 }): Promise<BuiltMissionOperationalContext> {
+  if (input.accountAvailability && input.accountAvailability.organizationId !== input.organizationId) throw new Error('mission_account_context_scope_mismatch')
   const [entitlements, learningMemory, channels, advertising] = await Promise.all([
-    input.contractId
+    input.accountAvailability ? Promise.resolve({ rows: input.accountAvailability.enabledModules.map(module_key => ({ module_key })) }) : input.contractId
       ? client.query<{ module_key: string }>(
         `SELECT module.module_key
          FROM public.contract_modules module
@@ -88,11 +92,19 @@ export async function buildMissionOperationalContext(client: Queryable, input: {
     allowedModules,
   })
   const providerHealth = {
-    channels: channels.map((row) => ({ key: row.channel, ready: row.is_active === true }))
+    channels: channels.rows.map((row) => ({ key: row.channel, ready: row.is_active === true }))
       .sort((left, right) => left.key.localeCompare(right.key)),
-    advertising: advertising.map((row) => ({ key: row.provider, ready: row.status === 'connected' }))
+    advertising: advertising.rows.map((row) => ({ key: row.provider, ready: row.status === 'connected' }))
       .sort((left, right) => left.key.localeCompare(right.key)),
   }
+  const accountAvailability: MissionAccountAvailability | undefined = input.accountAvailability ? {
+    ...input.accountAvailability,
+    connections: [
+      ...['email', 'whatsapp'].map(key => ({ key, status: !channels.verified ? 'unverified' as const
+        : providerHealth.channels.some(item => item.key === key && item.ready) ? 'connected' as const : 'not_connected' as const })),
+      { key: 'ads_provider', status: !advertising.verified ? 'unverified' : providerHealth.advertising.some(item => item.ready) ? 'connected' : 'not_connected' },
+    ],
+  } : undefined
   const capabilityManifest = [...input.capabilityManifest]
     .sort((left, right) => `${left.key}@${left.version}`.localeCompare(`${right.key}@${right.version}`))
   const capabilityCatalogHash = hashCanonical(capabilityManifest)
@@ -108,6 +120,7 @@ export async function buildMissionOperationalContext(client: Queryable, input: {
     capabilityCatalogHash,
     allowedModules,
     ...(input.platformToolCatalog ? { platformToolCatalog: input.platformToolCatalog } : {}),
+    ...(accountAvailability ? { accountAvailability } : {}),
   })
   return {
     query,
@@ -123,6 +136,7 @@ export async function buildMissionOperationalContext(client: Queryable, input: {
     knowledgeItems: [],
     sourceIds: [],
     ...(input.platformToolCatalog ? { platformToolCatalog: input.platformToolCatalog } : {}),
+    ...(accountAvailability ? { accountAvailability } : {}),
   }
 }
 
@@ -130,9 +144,9 @@ export async function buildMissionOperationalContext(client: Queryable, input: {
 // company, customer-knowledge or YUX-strategy selection.
 export const buildMissionContext = buildMissionOperationalContext
 
-async function safeRows<T>(query: () => Promise<{ rows: T[] }>): Promise<T[]> {
-  try { return (await query()).rows }
-  catch { return [] }
+async function safeRows<T>(query: () => Promise<{ rows: T[] }>): Promise<{ rows: T[]; verified: boolean }> {
+  try { return { rows: (await query()).rows, verified: true } }
+  catch { return { rows: [], verified: false } }
 }
 
 function normalizeModule(value: string): string {
