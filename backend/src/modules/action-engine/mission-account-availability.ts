@@ -62,8 +62,12 @@ export function buildMissionAccountAvailability(registry: CapabilityRegistry, ac
     enabledModules: access.enabledModules, actionAuthorization: 'not_granted_by_snapshot',
     tools: catalog.tools.map(tool => {
       const candidates = metadata.filter(item => item.key.startsWith(`${tool.key}.`))
-      const enabled = tool.key === 'radar' && radar.moduleEnabled !== undefined ? radar.moduleEnabled : candidates.some(moduleAllowed)
-      const blockers = !enabled ? ['module_not_enabled'] : !candidates.some(item => moduleAllowed(item) && permissionAllowed(item)) ? ['user_not_permitted']
+      // The commercial module name predates the agent integration. Recognizing
+      // it for presentation must never grant the omnichannel capabilities.
+      const commercialModuleEnabled = ['whatsapp', 'omnichannel'].includes(tool.key) && access.enabledModules.includes('whatsapp_ai')
+      const enabled = tool.key === 'radar' && radar.moduleEnabled !== undefined ? radar.moduleEnabled : commercialModuleEnabled || candidates.some(moduleAllowed)
+      const blockers = !enabled ? ['module_not_enabled'] : !candidates.some(moduleAllowed) ? ['integration_not_enabled_for_account']
+        : !candidates.some(item => moduleAllowed(item) && permissionAllowed(item)) ? ['user_not_permitted']
         : tool.key === 'radar' ? radar.blockers : []
       return { key: tool.key, title: tool.title, enabled, planningAvailable: tool.planningAvailable, blockers }
     }),

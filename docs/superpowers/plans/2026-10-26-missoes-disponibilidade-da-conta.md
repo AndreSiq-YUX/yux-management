@@ -50,7 +50,7 @@
 
 - [x] Testar handler com banco real e runtime simulado, incluindo isolamento e troca de conta/contrato; nenhuma chamada externa paga.
 - [x] Executar regressões apropriadas, tipos, contrato e revisão independente; registrar evidências.
-- [ ] Integrar com main sem descartar Projetos, publicar e conferir os serviços e o contexto real da conta sem enviar mensagens pagas.
+- [x] Integrar com main sem descartar Projetos, publicar e conferir os serviços e o contexto real da conta sem enviar mensagens pagas.
 
 ## Ledger
 
@@ -58,3 +58,5 @@
 - Ruling: executar a correção diretamente, conforme pedido do usuário e autorização persistente de integração/publicação; não solicitar novamente aprovação do plano técnico.
 - Backend: 1.517 testes passaram, 126 ignorados; teste adicional de conexões/snapshot passou; build passou. Integração com PostgreSQL 17 isolado e papel yux_worker passou para quatro perfis, HTTP de contexto, mudança de módulos e isolamento de contrato/conta; zero chamadas ao provedor.
 - Runtime: suíte pytest passou (inclui contrato, fluxo com provedor simulado e proteção de resposta). Revisão independente encontrou duas condições, reproduzidas RED→GREEN: horários/ofertas devem permanecer como decisões de negócio; conexão not_connected/unverified deve permanecer como bloqueio técnico, explicado pelo sistema. Revisor confirmou a correção. Proteção cobre também a pendência de configuração sem cartão de pergunta.
+- Publicação `707d1db` concluída. Papel real `yux_worker` resolveu a conta da conversa `0b969532-7daa-4030-a332-cdcff5cc7228`: Radar habilitado, mas integração com Missões não liberada para essa conta. Interno YUX: Radar habilitado e elegível. Banco e API pública responderam; prontidão autenticada do Harness: 200. Módulo de validação de Projetos preservado. A proteção foi executada no runtime instalado e preservou a pergunta de oferta; SHA-256 do arquivo em produção igual ao blob Git: `0db2ab89115c28ca0a53bc2af864073714658a1a4b17dc39fdb67add19badba9`. Nenhuma chamada paga nessa validação.
+- Ruling: reconhecer `whatsapp_ai` na apresentação comercial de WhatsApp/Atendimento, mantendo intocados os requisitos `omnichannel`, manifesto, permissões e elegibilidade de execução. A revisão identificou que confundir os dois nomes gerava uma descrição falsa de módulo desabilitado. Teste RED reproduziu; correção limitada à apresentação da disponibilidade.

@@ -54,4 +54,15 @@ describe('authoritative mission account availability', () => {
     const enabled = await resolveRadarMissionAvailability(db, { RADAR_ACTION_ENGINE_ENABLED: true, RADAR_ACTION_ENGINE_TENANT_ALLOWLIST: 'org-a' }, 'org-a', 'actor')
     expect(buildMissionAccountAvailability(createActionEngineCapabilityRegistry(), access, enabled).snapshot.tools.find(tool => tool.key === 'radar')?.planningAvailable).toBe(true)
   })
+
+  it('recognizes the commercial WhatsApp IA module without granting omnichannel execution', async () => {
+    const db = database('yux_admin'); db.state.modules = ['crm', 'whatsapp_ai']
+    const access = await resolveMissionAccountAccess(db, {}, { organizationId: 'org-a', actorId: 'actor' })
+    const result = buildMissionAccountAvailability(createActionEngineCapabilityRegistry(), access, { available: false, blockers: [] })
+    for (const key of ['whatsapp', 'omnichannel']) {
+      expect(result.snapshot.tools.find(tool => tool.key === key)).toMatchObject({ enabled: true, planningAvailable: false, blockers: ['integration_not_enabled_for_account'] })
+    }
+    expect(access.enabledModules).not.toContain('omnichannel')
+    expect(result.capabilities.some(item => item.key.startsWith('whatsapp.') || item.key.startsWith('omnichannel.'))).toBe(false)
+  })
 })
