@@ -1,3 +1,5 @@
+import {getWebsiteOnboardingRun} from '../../modules/company-intelligence/repository.js'
+import {websiteTargetSchema,assertRepresentedWebsiteTarget} from '../../modules/company-intelligence/represented-website.js'
 import type pg from 'pg'
 import { createHash } from 'node:crypto'
 import type { AppEnv } from '../../config/env.js'
@@ -45,6 +47,9 @@ export async function handleKnowledgeIndexing(pool: pg.Pool, env: AppEnv, data: 
   if (previous.run?.runKind === 'document_curation' && ['running', 'ready_for_review'].includes(previous.run.status)) return { duplicate: true, documentId }
 
   const run = await createKnowledgeIntelligenceRun(pool, documentId)
+  const storedRun=await getWebsiteOnboardingRun(pool,organizationId,runId)
+  const target=websiteTargetSchema.parse(storedRun.run.outputPayload.target??{kind:'own_company'})
+  await assertRepresentedWebsiteTarget(pool,organizationId,target)
   const jina = await resolveEffectiveProviderCredential(pool,env,'jina_ai')
   const effectiveEnv = jina.value ? {...env,JINA_API_KEY:jina.value} : env
 
@@ -244,11 +249,11 @@ export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: 
       metrics: { discoveredPages: discovery.pages.length, failedPages: discovery.failedPages },
       outputPayload: { rootUrl: discovery.rootUrl, pageUrls: discovery.pages.map(page => page.url) },
     })
-    const visualSignals = await inspectWebsiteVisualIdentity(websiteUrl).catch(() => null)
+    const visualSignals = target.kind==='own_company'?await inspectWebsiteVisualIdentity(websiteUrl).catch(() => null):null
     const contractId = typeof data.contractId === 'string' ? data.contractId : undefined
     const clientId = typeof data.clientId === 'string' ? data.clientId : undefined
     const extraction = await extractCompanyProfileInBatches(env, {
-      organizationId, clientId, contractId,
+      organizationId, clientId, contractId,target,
       pages: discovery.pages.map((page, index) => ({
         url: page.url,
         title: page.title,
@@ -272,7 +277,7 @@ export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: 
     const shell = existingKnowledge
       ? { sourceId: existingKnowledge.sourceId, documentId: existingKnowledge.id }
       : await createKnowledgeShell(pool, {
-          organizationId, contractId, title: 'Site institucional', sourceType: 'manual',
+          organizationId, contractId, representedBusinessId:target.kind==='represented_business'?target.representedBusinessId:undefined,title:target.kind==='represented_business'?'Site da representada':'Site institucional', sourceType: 'manual',
           sourceUrl: discovery.rootUrl, documentType: 'other', visibility: 'both',
           checksumSha256,
           metadata: { websiteOnboardingRunId: runId, discoveredUrls: discovery.pages.map(page => page.url) },

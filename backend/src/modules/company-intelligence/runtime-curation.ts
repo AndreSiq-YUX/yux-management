@@ -44,6 +44,7 @@ const websiteExtractionSchema = z.object({
 export type WebsiteIntelligenceExtraction = z.infer<typeof websiteExtractionSchema>
 
 export type WebsiteExtractionInput = {
+  target?:import('./represented-website.js').WebsiteTarget
   organizationId: string
   clientId?: string
   contractId?: string
@@ -76,6 +77,7 @@ export async function extractCompanyProfileWithRuntime(env: AppEnv, input: Websi
     client_id: input.clientId,
     contract_id: input.contractId,
     pages: input.pages,
+    target:input.target,
   })
   return websiteExtractionSchema.parse(result)
 }

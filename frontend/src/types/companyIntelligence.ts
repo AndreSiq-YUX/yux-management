@@ -187,3 +187,5 @@ export interface KnowledgeRetrievalTrace {
 }
 
 export interface RepresentedProductInput{name:string;category?:string;description:string;valueProposition?:string;targetAudience?:string;proofPoints:string[];objections:string[];cta?:string;status:MarketingProductService['status'];details:{sku?:string;packaging?:string;storageConditions?:string;serviceRegions?:string[];commercialAvailability:'confirmed'|'unconfirmed'}}
+
+export type WebsiteOnboardingTarget={kind:'own_company'}|{kind:'represented_business';representedBusinessId:string}

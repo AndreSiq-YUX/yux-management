@@ -114,9 +114,9 @@ export const companyIntelligenceService = {
     return apiRequest(`/company-intelligence/knowledge/${documentId}/chunks/${chunkId}/review`, { method: 'PATCH', body: { status } })
   },
 
-  startWebsiteOnboarding(organizationId: string, websiteUrl: string, contractId?: string, maxPages = 30) {
+  startWebsiteOnboarding(organizationId: string, websiteUrl: string, contractId?: string, maxPages = 30,target?:import('@/types/companyIntelligence').WebsiteOnboardingTarget) {
     return apiRequest<WebsiteOnboardingResult>(`/company-intelligence/organizations/${organizationId}/website-onboarding`, {
-      method: 'POST', body: { websiteUrl, contractId, maxPages },
+      method: 'POST', body: { websiteUrl, contractId, maxPages,target },
     })
   },
 

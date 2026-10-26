@@ -1,3 +1,4 @@
+import {websiteTargetSchema,assertRepresentedWebsiteTarget,scopeRepresentedWebsiteSuggestions,applyRepresentedWebsiteSuggestions,type WebsiteTarget} from './represented-website.js'
 import type pg from 'pg'
 import { createHash } from 'node:crypto'
 import type { BrandProfileInput, CompanyContextPreview, CompanyProfileInput } from './types.js'
@@ -437,17 +438,20 @@ export async function createWebsiteOnboardingRun(pool: pg.Pool, input: {
   organizationId: string
   contractId?: string
   websiteUrl: string
+  target?:WebsiteTarget
   maxPages: number
   createdBy: string
 }) {
   const scope = await resolveMarketingScope(pool, input.organizationId, input.contractId)
+  const target=input.target??{kind:'own_company'}
+  await assertRepresentedWebsiteTarget(pool,input.organizationId,target)
   const result = await pool.query<Row>(
     `INSERT INTO public.knowledge_intelligence_runs (
        organization_id, client_id, contract_id, run_kind, status, stage, progress,
        output_payload, created_by
      ) VALUES ($1,$2,$3,'website_onboarding','queued','queued',0,$4::jsonb,$5)
      RETURNING *`,
-    [input.organizationId, scope.clientId, scope.contractId, JSON.stringify({ websiteUrl: input.websiteUrl, maxPages: input.maxPages }), input.createdBy],
+    [input.organizationId, scope.clientId, scope.contractId, JSON.stringify({ websiteUrl: input.websiteUrl, maxPages: input.maxPages,target }), input.createdBy],
   )
   return mapIntelligenceRun(result.rows[0])
 }
@@ -469,9 +473,16 @@ export async function replaceCompanyIntelligenceSuggestions(pool: pg.Pool, runId
   sourceUrl: string
   confidence: number
 }>) {
-  const runScope = await pool.query<{ organization_id: string }>('SELECT organization_id FROM public.knowledge_intelligence_runs WHERE id = $1', [runId])
+  const runScope = await pool.query<{ organization_id: string;output_payload:Record<string,any> }>('SELECT organization_id,output_payload FROM public.knowledge_intelligence_runs WHERE id = $1', [runId])
   if (!runScope.rows[0]) throw domainError(404, 'website_onboarding_run_not_found')
   const organizationId = runScope.rows[0].organization_id
+  const target=websiteTargetSchema.parse(runScope.rows[0].output_payload?.target??{kind:'own_company'})
+  let represented:Row|null=null
+  if(target.kind==='represented_business') {
+    await assertRepresentedWebsiteTarget(pool,organizationId,target)
+    represented=(await pool.query('SELECT * FROM public.company_represented_businesses WHERE organization_id=$1 AND id=$2',[organizationId,target.representedBusinessId])).rows[0]
+    suggestions=scopeRepresentedWebsiteSuggestions(suggestions)
+  }
   const [profile, brand] = await Promise.all([
     getCompanyProfile(pool, organizationId, true),
     getBrandProfile(pool, organizationId, true),
@@ -492,7 +503,7 @@ export async function replaceCompanyIntelligenceSuggestions(pool: pg.Pool, runId
            suggested_value = EXCLUDED.suggested_value, evidence_excerpt = EXCLUDED.evidence_excerpt,
            confidence = EXCLUDED.confidence, updated_at = NOW()`,
         [runId, run.rows[0].organization_id, suggestion.suggestionKind, suggestion.fieldPath,
-          JSON.stringify(currentSuggestionValue(profile, brand, suggestion.suggestionKind, suggestion.fieldPath)),
+          JSON.stringify(represented && suggestion.fieldPath.startsWith('representedBusiness.')?represented[suggestion.fieldPath.endsWith('description')?'description':'authorized_lines']:currentSuggestionValue(profile, brand, suggestion.suggestionKind, suggestion.fieldPath)),
           JSON.stringify(suggestion.suggestedValue), suggestion.evidenceExcerpt, suggestion.sourceUrl, suggestion.confidence],
       )
     }
@@ -513,6 +524,11 @@ export async function applyCompanyIntelligenceSuggestions(pool: pg.Pool, input: 
   userId: string
 }) {
   const run = await getWebsiteOnboardingRun(pool, input.organizationId, input.runId)
+  const target=websiteTargetSchema.parse(run.run.outputPayload.target??{kind:'own_company'})
+  if(target.kind==='represented_business'){
+    await applyRepresentedWebsiteSuggestions(pool,input)
+    return getWebsiteOnboardingRun(pool,input.organizationId,input.runId)
+  }
   const editedValues = new Map((input.suggestionEdits || []).map(edit => [edit.id, edit.suggestedValue]))
   const selected = selectSuggestionsForApplication(run.suggestions, input.suggestionIds, editedValues)
   if (run.run.status === 'applied' && selected.length && selected.every(item => item.status === 'applied')) return run
@@ -784,7 +800,7 @@ export async function markKnowledgeProcessingState(pool: pg.Pool, documentId: st
 
 export async function listKnowledgeDocuments(pool: pg.Pool, organizationId: string, portalSafeUsageOnly = false) {
   const result = await pool.query<Row>(
-    `SELECT document.*, source.source_type, source.name AS source_name,
+    `SELECT document.*, source.source_type,source.represented_business_id,(SELECT name FROM public.company_represented_businesses WHERE id=source.represented_business_id AND organization_id=source.organization_id) AS represented_business_name, source.name AS source_name,
             source.status AS source_status, source.visibility, source.governance_version,
             source.allowed_agent_profile_keys, source.blocked_agent_profile_keys,
             source.mime_type, source.byte_size, source.checksum_sha256,
@@ -818,7 +834,7 @@ export async function listKnowledgeDocuments(pool: pg.Pool, organizationId: stri
 
 export async function getKnowledgeDocument(pool: pg.Pool, documentId: string) {
   const result = await pool.query<Row>(
-    `SELECT document.*, source.source_type, source.name AS source_name,
+    `SELECT document.*, source.source_type,source.represented_business_id,(SELECT name FROM public.company_represented_businesses WHERE id=source.represented_business_id AND organization_id=source.organization_id) AS represented_business_name, source.name AS source_name,
             source.status AS source_status, source.visibility, source.governance_version,
             source.allowed_agent_profile_keys, source.blocked_agent_profile_keys,
             source.mime_type, source.byte_size, source.checksum_sha256,
