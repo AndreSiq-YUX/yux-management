@@ -14,6 +14,7 @@ from .mission_contracts import (
 )
 from .trace import stable_hash
 from .mission_account_availability import enforce_account_availability
+from .providers import provider_request_budget
 
 if TYPE_CHECKING:
     from .workflow import StrategyWorkflowEngine
@@ -517,20 +518,23 @@ class MissionConversationWorkflow:
             "allowedActionPacks": [item.model_dump() for item in typed.allowedActionPacks],
             "allowedCapabilityKeys": typed.allowedCapabilityKeys,
         }
-        result = self.workflow_engine.execute(
-            message=typed.user_message,
-            profile_key="growth_strategist",
-            source="mission_intake",
-            organization_id=typed.organization_id,
-            client_id=typed.client_id,
-            contract_id=typed.contract_id,
-            conversation_id=typed.conversation_id,
-            mode="mission_intake",
-            workflow_spec=MISSION_INTAKE_WORKFLOW_SPEC,
-            retrieval_context={
-                "audience": typed.audience,
-                "mission_request": typed.model_dump(),
-                "mission_context": mission_context,
-            },
-        )
+        # Includes retrieval and every configured fallback. The caller allows
+        # 150 seconds and its queue job 180; other workflows keep 45 seconds.
+        with provider_request_budget(120):
+            result = self.workflow_engine.execute(
+                message=typed.user_message,
+                profile_key="growth_strategist",
+                source="mission_intake",
+                organization_id=typed.organization_id,
+                client_id=typed.client_id,
+                contract_id=typed.contract_id,
+                conversation_id=typed.conversation_id,
+                mode="mission_intake",
+                workflow_spec=MISSION_INTAKE_WORKFLOW_SPEC,
+                retrieval_context={
+                    "audience": typed.audience,
+                    "mission_request": typed.model_dump(),
+                    "mission_context": mission_context,
+                },
+            )
         return validate_mission_conversation_response(result["synthesis"], typed)

@@ -119,6 +119,10 @@ Rollback imediato se ocorrer qualquer um destes eventos:
 
 ### Resposta do agente incompleta ou fora do contrato
 
+A conversa compartilha uma janela de 120 segundos entre busca, geração e fallbacks, abaixo dos 150 segundos do cliente interno e 180 segundos do job. O prazo é isolado por contexto e restaurado após sucesso ou falha; os demais fluxos conservam 45 segundos por requisição. Ao expirar, não iniciar outro fallback. O timeout de socket usa o tempo restante; o prazo é conferido também após a leitura da resposta, sem aceitar uma resposta que chegou depois da janela.
+
+O teto de saída continua governado em Admin > IA > Action Engine — conversa estratégica. Tokens de processamento interno também consomem esse teto. A homologação com Haiku 5.5 atingiu 8.000 tokens (5.962 de processamento interno); o usuário autorizou elevar para 16.000 e realizar uma tentativa adicional, sem reduzir o processamento interno, alterar o modelo ou executar campanhas. Isso não autoriza retries pagos automáticos.
+
 O formato JSON da conversa é uma instrução confiável do workflow, enviada ao provedor na mensagem de sistema. O catálogo de fontes e o contexto da empresa continuam sendo dados não confiáveis, separados das instruções. O contrato não aumenta o limite configurado de saída: pede uma resposta compacta, sem repetir uma estratégia extensa em `reply`, `understood`, `brief` e `strategyProposal`. Uma proposta grande pode ser desenvolvida em etapas, sem alegar que foi salva.
 
 O leitor aceita somente a primeira raiz JSON completa. Uma explicação ou rascunho repetido após uma raiz completa continua compatível; um objeto interno de uma raiz quebrada não é promovido a resposta. `finish_reason=length` é recusado antes da interpretação. Não há tentativa paga adicional automática nem reparador por LLM.

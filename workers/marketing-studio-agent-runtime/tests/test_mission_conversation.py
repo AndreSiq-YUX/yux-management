@@ -566,6 +566,30 @@ class MissionConversationWorkflowTest(unittest.TestCase):
         self.assertEqual(first.contextHash, second.contextHash)
         self.assertNotEqual(first.retrievalTraceId, second.retrievalTraceId)
 
+    def test_mission_uses_scoped_wait_budget_and_configured_16000_output_without_reasoning_override(self):
+        from unittest.mock import patch
+        from yux_agent_runtime import providers
+
+        captured, wait_budgets = [], []
+        store = self.make_store()
+        next(row for row in store.tables['model_routing_rules'] if row['agent_type'] == 'action_engine_strategist')['max_output_tokens'] = 16000
+        workflow = self.make_workflow(captured, store)
+        client = workflow.workflow_engine.harness.llm_client
+        original = client.transport
+
+        def transport(*args):
+            wait_budgets.append(providers.provider_request_timeout())
+            return original(*args)
+
+        client.transport = transport
+        with patch.object(providers, 'monotonic', return_value=100):
+            response = workflow.respond(request())
+        self.assertEqual(response.kind, 'questions')
+        self.assertEqual(wait_budgets, [120])
+        self.assertEqual(captured[0]['max_completion_tokens'], 16000)
+        self.assertNotIn('reasoning', captured[0])
+        self.assertEqual(providers.provider_request_timeout(), 45)
+
     def test_shared_tool_knowledge_does_not_authorize_disabled_actions(self):
         captured = []
         incoming = request()

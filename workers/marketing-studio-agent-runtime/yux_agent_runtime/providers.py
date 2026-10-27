@@ -5,7 +5,10 @@ import os
 import math
 from hashlib import sha256
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from contextlib import contextmanager
+from contextvars import ContextVar
+from time import monotonic
+from typing import Any, Callable, Iterator
 from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -21,6 +24,37 @@ class ProviderAuthorizationError(ProviderRequestError):
 
 class ProviderAvailabilityError(ProviderRequestError):
     """Unavailable credentials/provider can use an explicitly configured fallback."""
+
+
+class ProviderDeadlineExceededError(ProviderRequestError):
+    """The current workflow has no time left for another provider attempt."""
+
+
+_request_deadline: ContextVar[float | None] = ContextVar("provider_request_deadline", default=None)
+
+
+@contextmanager
+def provider_request_budget(seconds: float) -> Iterator[None]:
+    """Share a deadline within one request; nested scopes cannot extend it."""
+    if isinstance(seconds, bool) or not math.isfinite(seconds) or seconds <= 0:
+        raise ValueError("provider_request_budget_invalid")
+    deadline = monotonic() + seconds
+    parent = _request_deadline.get()
+    token = _request_deadline.set(min(deadline, parent) if parent is not None else deadline)
+    try:
+        yield
+    finally:
+        _request_deadline.reset(token)
+
+
+def provider_request_timeout() -> float:
+    deadline = _request_deadline.get()
+    if deadline is None:
+        return 45
+    remaining = deadline - monotonic()
+    if remaining <= 0:
+        raise ProviderDeadlineExceededError("provider_request_deadline_exceeded")
+    return remaining
 
 
 Transport = Callable[[str, dict[str, str], dict[str, Any] | None, str], dict[str, Any] | str]
@@ -41,13 +75,18 @@ def _is_free_openrouter_model(model: str) -> bool:
 def _default_transport(url: str, headers: dict[str, str], payload: dict[str, Any] | None, method: str) -> dict[str, Any] | str:
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     request = Request(url, data=data, method=method, headers=headers)
+    timeout = provider_request_timeout()
     try:
-        with urlopen(request, timeout=45) as response:  # nosec B310 - URLs are fixed provider endpoints.
+        with urlopen(request, timeout=timeout) as response:  # nosec B310 - URLs are fixed provider endpoints.
             text = response.read().decode("utf-8")
+        provider_request_timeout()
     except HTTPError as error:
         error_class = ProviderAuthorizationError if error.code in {401, 403} else ProviderRequestError
         raise error_class(f"provider_http_{error.code}") from error
+    except ProviderDeadlineExceededError:
+        raise
     except Exception as error:  # pragma: no cover - exercised through mocked transport.
+        provider_request_timeout()
         raise ProviderRequestError("provider_transport_unavailable") from error
 
     try:

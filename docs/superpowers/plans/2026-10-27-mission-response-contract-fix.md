@@ -60,3 +60,18 @@
 Runtime: 430 testes aprovados, 7 ignorados; backend: 1.594 aprovados, 126 ignorados; frontend: 1.263 aprovados. Builds backend e frontend aprovados. Navegador local confirmou falha explicada, uma tentativa explícita, uma mensagem e uma resposta persistidas, sem erro de aplicação. A revisão encontrou mais um caso de array prefixado e um erro de classificação de saída vazia interrompida; ambos foram reproduzidos em RED e corrigidos, com suíte runtime completa novamente aprovada.
 
 - [ ] Prova real com a mensagem já salva: depende de autorização de uma tentativa de consumo nas rotas atuais. Nenhum modelo ou limite será alterado.
+
+### Task 3: Janela de processamento para a saída autorizada de 16.000 tokens
+
+**Spec:** Em 27/10/2026 o usuário autorizou 16.000 tokens, adequação do tempo de espera e uma tentativa com Claude Haiku 5.5. A tentativa anterior consumiu 8.000 tokens, incluindo 5.962 de processamento interno, e terminou por `max_tokens` (OpenRouter, sessão `757b1b32-b882-4b92-9e53-4026f76ebaa4`).
+
+**Files:** `providers.py`, `llm_routing.py`, `mission_conversation.py`, `tests/test_provider_budget.py`, `tests/test_mission_conversation.py`, runbook.
+
+**Interfaces:** `provider_request_budget(seconds)` delimita um prazo por contexto; `provider_request_timeout()` retorna o tempo restante ou o padrão de 45 segundos. `ProviderDeadlineExceededError` encerra fallbacks. `MissionConversationWorkflow.respond` aplica 120 segundos ao workflow, abaixo dos 150 segundos do cliente interno e 180 segundos do job. O teto de saída permanece no roteamento governado, sem alteração do modelo ou de seu processamento interno.
+
+**Review Focus:** Não ampliar espera de Radar/SDR; restaurar contexto após sucesso/falha; não reiniciar prazo em fallback nem em contexto aninhado; não chamar transporte após expiração; não mudar aprovação, fontes, isolamento ou retries; verificar os 16.000 tokens no payload simulado e na configuração efetiva antes da única chamada real.
+
+- [ ] RED: testes de 45 segundos fora de Missões, 120 dentro, prazo compartilhado/não ampliado, expiração sem transporte/fallback, restauração após exceção e payload de 16.000 sem mudança de reasoning.
+- [ ] GREEN: contexto de prazo em transporte e roteamento; escopo aplicado em `respond`, sem mutações globais ou timers de retry.
+- [ ] Verificar suíte runtime completa, revisão independente e publicação/implantação já autorizadas.
+- [ ] Salvar e conferir 16.000 no Admin; reprocessar uma vez a mensagem existente; conferir resposta persistida ou documentar falha sem chamadas adicionais.

@@ -5,7 +5,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from .providers import ProviderAuthorizationError, ProviderRequestError
+from .providers import ProviderAuthorizationError, ProviderDeadlineExceededError, ProviderRequestError, provider_request_timeout
 
 SCOPES = ("organization_id", "client_id", "contract_id", "agent_id")
 PROVIDERS = {"openrouter", "openai_direct", "perplexity"}
@@ -151,6 +151,7 @@ class RoutedLlmClient:
         last_error = None
         kwargs.pop("fallback_models", None)
         for attempt in route["attempts"]:
+            provider_request_timeout()
             client = clients.get(attempt["provider"])
             if client is None:
                 raise ProviderAuthorizationError("llm_provider_not_configured")
@@ -173,6 +174,10 @@ class RoutedLlmClient:
             except ProviderAuthorizationError as error:
                 if recorder:
                     recorder.failed(error, provider_started=False)
+                raise
+            except ProviderDeadlineExceededError as error:
+                if recorder:
+                    recorder.failed(error)
                 raise
             except ProviderRequestError as error:
                 if recorder and recorder.failed(error) == 'uncertain':
