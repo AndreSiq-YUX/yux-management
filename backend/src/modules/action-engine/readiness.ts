@@ -1,4 +1,5 @@
 import { REVENUE_RECOVERY_PACK_V0 } from './packs/revenue-recovery-v0.js'
+import { ACTIVE_MISSION_CHANNELS_SQL } from './channel-readiness-source.js'
 import { FUNNEL_NURTURE_PACK_V1 } from './packs/funnel-nurture-v1.js'
 import { CAMPAIGN_LAUNCH_PACK_V1 } from './packs/campaign-launch-v1.js'
 import { RADAR_PROSPECTING_PACK_V1 } from './packs/radar-prospecting-v1.js'
@@ -227,7 +228,7 @@ export async function evaluateMissionReadiness(
   checks.push(check(validEconomics, 'mission_parameters_valid', 'mission_parameters_invalid', 'Meta, prazo e limites válidos.', 'Defina uma meta válida, um prazo futuro e limites iguais ou maiores que zero.'))
 
   const connections = await client.query<{ channel: string }>(
-    `SELECT channel FROM public.channel_connections WHERE organization_id = $1 AND is_active = TRUE AND channel IN ('email','whatsapp')`,
+    `SELECT channel FROM (${ACTIVE_MISSION_CHANNELS_SQL}) active_channels WHERE channel IN ('email','whatsapp')`,
     [input.organizationId],
   )
   const connected = new Set(connections.rows.map((row) => row.channel))

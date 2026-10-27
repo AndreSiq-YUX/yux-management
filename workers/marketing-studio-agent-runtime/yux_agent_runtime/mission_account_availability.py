@@ -49,7 +49,7 @@ def _connection_status(connection: dict[str, Any]) -> str:
     title = {'whatsapp': 'WhatsApp', 'email': 'E-mail', 'ads_provider': 'Canal de anúncios'}[connection['key']]
     if connection.get('status') == 'connected':
         return f'{title} está conectado.'
-    if connection.get('platformAvailable'):
+    if connection.get('platformConfigured'):
         return (f'O serviço de {title} está configurado na plataforma. Antes de um envio, o sistema '
                 'precisa validar o remetente e as condições de uso da conta.')
     if connection.get('status') == 'not_connected':

@@ -59,9 +59,9 @@
 **Files:** `backend/src/modules/action-engine/context-builder.ts`, `mission-account-availability.ts` e novo resolvedor interno de conexões se necessário; testes unitários/integrados.
 **Interfaces:** Preservar `enabled`/`planningAvailable` e as permissões reais; explicitar seu significado para o Harness. Consultar `email_provider_connections` para e-mail e `channel_connections` para WhatsApp, distinguindo disponibilidade central e conexão própria sem divulgar fornecedores/segredos.
 
-- [ ] RED: e-mail conectado em sua tabela própria, serviço central configurado sem conexão própria, WhatsApp ativo/inativo, falha de consulta e isolamento por organização.
-- [ ] GREEN: snapshot seguro e tipado, consultado a cada turno; nenhum novo direito/capacidade é concedido.
-- [ ] Verificar Admin YUX, operador, admin da conta e membro, HTTP direto e isolamento; não expor detalhes internos do Radar.
+- [x] RED: e-mail conectado em sua tabela própria, serviço central configurado sem conexão própria, WhatsApp ativo/inativo, falha de consulta e isolamento por organização.
+- [x] GREEN: snapshot seguro e tipado, consultado a cada turno; nenhum novo direito/capacidade é concedido.
+- [x] Verificar Admin YUX, operador, admin da conta e membro, HTTP direto e isolamento; não expor detalhes internos do Radar.
 
 ### Task 4: Conversa principal e validação integrada
 

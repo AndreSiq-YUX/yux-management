@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { noEffectRecovery, type CapabilityDefinition } from '../capability-registry.js'
+import { ACTIVE_MISSION_CHANNELS_SQL } from '../channel-readiness-source.js'
 
 const readinessInput = z.object({
   contractId: z.string().uuid().optional(),
@@ -63,8 +64,8 @@ export const systemReadinessCheck: CapabilityDefinition<z.infer<typeof readiness
           [context.organizationId],
         )
         : await context.query<{ id: string }>(
-          `SELECT id FROM public.channel_connections
-           WHERE organization_id = $1 AND channel = $2 AND is_active = TRUE LIMIT 1`,
+          `SELECT channel AS id FROM (${ACTIVE_MISSION_CHANNELS_SQL}) active_channels
+           WHERE channel = $2 LIMIT 1`,
           [context.organizationId, connectionKey],
         )
       checks.push({ key: `connection:${connectionKey}`, status: connection.rows[0] ? 'ready' : 'missing', detail: connection.rows[0] ? 'Conexão ativa.' : 'Conexão ativa não encontrada.' })

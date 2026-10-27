@@ -88,7 +88,7 @@ class MissionAdvisoryResponseTest(unittest.TestCase):
     def test_central_email_availability_is_not_described_as_an_absent_service(self):
         operational = snapshot()
         operational['accountAvailability']['tools'].append({'key': 'email', 'title': 'E-mail', 'enabled': True, 'planningAvailable': True})
-        operational['accountAvailability']['connections'].append({'key': 'email', 'status': 'unverified', 'platformAvailable': True})
+        operational['accountAvailability']['connections'].append({'key': 'email', 'status': 'unverified', 'platformConfigured': True})
         parsed = response('O E-mail está conectado nesta conta? Eu prepararia uma primeira mensagem breve com uma proposta de valor específica.')
         parsed['questions'] = []
         parsed['readiness']['missing'] = []

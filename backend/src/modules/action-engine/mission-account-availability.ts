@@ -20,7 +20,7 @@ export type MissionAccountAvailability = {
   enabledModules: string[]
   actionAuthorization: 'not_granted_by_snapshot'
   tools: Array<{ key: string; title: string; enabled: boolean; planningAvailable: boolean; blockers: string[] }>
-  connections?: Array<{ key: string; status: 'connected' | 'not_connected' | 'unverified' }>
+  connections?: Array<{ key: string; status: 'connected' | 'not_connected' | 'unverified'; platformConfigured?: boolean }>
 }
 
 export async function resolveMissionAccountAccess(pool: Queryable, config: Pick<AppEnv, 'MISSION_CONVERSATIONS_ENABLED' | 'MISSION_CONVERSATIONS_TENANT_ALLOWLIST'>, input: {

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { ACTIVE_MISSION_CHANNELS_SQL } from './channel-readiness-source.js'
 import type { AppJobQueue } from '../../server.js'
 import type { CapabilityContext, CapabilityDefinition, CapabilityRegistry } from './capability-registry.js'
 import { createActionRuns, getMission, recordApproval, recordEvaluation, transitionMission, type Connectable, type Queryable } from './repository.js'
@@ -306,8 +307,8 @@ export async function executeActionRun(
           ? Promise.resolve({ rows: [{ healthy: true }] })
           : client.query<{ healthy: boolean }>(
             `SELECT COUNT(DISTINCT connection_key)::INT >= $2::INT AS healthy FROM (
-               SELECT channel AS connection_key FROM public.channel_connections
-               WHERE organization_id=$1 AND is_active=TRUE AND channel=ANY($3::TEXT[])
+               SELECT channel AS connection_key FROM (${ACTIVE_MISSION_CHANNELS_SQL}) active_channels
+               WHERE channel=ANY($3::TEXT[])
                UNION ALL
                SELECT 'ads_provider' AS connection_key WHERE 'ads_provider'=ANY($3::TEXT[]) AND EXISTS (
                  SELECT 1 FROM public.ad_provider_connections WHERE organization_id=$1 AND status='connected'

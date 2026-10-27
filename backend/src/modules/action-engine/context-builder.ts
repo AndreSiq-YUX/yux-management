@@ -3,6 +3,7 @@ import { collectMissionBaseline } from './baselines/index.js'
 import type { PlatformToolCatalog } from './platform-tool-catalog.js'
 import type { MissionAccountAvailability } from './mission-account-availability.js'
 import { hashCanonical, type Queryable } from './repository.js'
+import { ACTIVE_MISSION_CHANNELS_SQL } from './channel-readiness-source.js'
 
 export type BuiltMissionOperationalContext = {
   query: string
@@ -44,7 +45,7 @@ export async function buildMissionOperationalContext(client: Queryable, input: {
   accountAvailability?: MissionAccountAvailability
 }): Promise<BuiltMissionOperationalContext> {
   if (input.accountAvailability && input.accountAvailability.organizationId !== input.organizationId) throw new Error('mission_account_context_scope_mismatch')
-  const [entitlements, learningMemory, channels, advertising] = await Promise.all([
+  const [entitlements, learningMemory, channels, advertising, platformEmail] = await Promise.all([
     input.accountAvailability ? Promise.resolve({ rows: input.accountAvailability.enabledModules.map(module_key => ({ module_key })) }) : input.contractId
       ? client.query<{ module_key: string }>(
         `SELECT module.module_key
@@ -65,8 +66,7 @@ export async function buildMissionOperationalContext(client: Queryable, input: {
       [input.organizationId, [...new Set(input.packKeys ?? [])].sort()],
     ),
     safeRows(() => client.query<{ channel: string; is_active: boolean }>(
-      `SELECT channel, is_active FROM public.channel_connections
-       WHERE organization_id = $1 ORDER BY channel`,
+      `SELECT channel, TRUE AS is_active FROM (${ACTIVE_MISSION_CHANNELS_SQL}) active_channels ORDER BY channel`,
       [input.organizationId],
     )),
     safeRows(() => client.query<{ provider: string; status: string }>(
@@ -74,6 +74,17 @@ export async function buildMissionOperationalContext(client: Queryable, input: {
        WHERE organization_id = $1 ORDER BY provider`,
       [input.organizationId],
     )),
+    input.accountAvailability ? safeRows(() => client.query<{ configured: boolean }>(
+      `SELECT provider.status = 'active'
+        AND EXISTS (SELECT 1 FROM public.platform_provider_secrets credential
+          WHERE credential.provider_connection_id = provider.id AND credential.secret_kind = 'api_key')
+        AND EXISTS (SELECT 1 FROM jsonb_each(COALESCE(provider.public_config, '{}'::jsonb)) setting
+          WHERE setting.key IN ('invitationFromEmail','defaultFromEmail','senderEmail','fromEmail')
+            AND jsonb_typeof(setting.value) = 'string' AND BTRIM(setting.value #>> '{}') <> '') AS configured
+       FROM public.platform_provider_connections provider
+       WHERE provider.provider_type = 'email' AND provider.provider_key = 'smtp2go' AND provider.environment = 'production'
+       ORDER BY provider.is_default DESC, provider.updated_at DESC LIMIT 1`,
+    )) : Promise.resolve({ rows: [], verified: false }),
   ])
 
   const entitled = new Set(entitlements.rows.map((row) => normalizeModule(row.module_key)))
@@ -100,8 +111,11 @@ export async function buildMissionOperationalContext(client: Queryable, input: {
   const accountAvailability: MissionAccountAvailability | undefined = input.accountAvailability ? {
     ...input.accountAvailability,
     connections: [
-      ...['email', 'whatsapp'].map(key => ({ key, status: !channels.verified ? 'unverified' as const
-        : providerHealth.channels.some(item => item.key === key && item.ready) ? 'connected' as const : 'not_connected' as const })),
+      { key: 'email', status: channels.verified && providerHealth.channels.some(item => item.key === 'email' && item.ready) ? 'connected'
+        : !channels.verified || !platformEmail.verified || platformEmail.rows[0]?.configured === true ? 'unverified' : 'not_connected',
+        ...(platformEmail.rows[0]?.configured === true ? { platformConfigured: true } : {}) },
+      { key: 'whatsapp', status: !channels.verified ? 'unverified'
+        : providerHealth.channels.some(item => item.key === 'whatsapp' && item.ready) ? 'connected' : 'not_connected' },
       { key: 'ads_provider', status: !advertising.verified ? 'unverified' : providerHealth.advertising.some(item => item.ready) ? 'connected' : 'not_connected' },
     ],
   } : undefined

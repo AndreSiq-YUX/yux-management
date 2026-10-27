@@ -16,6 +16,7 @@ function database() {
     }] }
     if (sql.includes('channel_connections')) return { rows: [{ channel: 'whatsapp', is_active: true }] }
     if (sql.includes('ad_provider_connections')) return { rows: [{ provider: 'meta', status: 'disconnected' }] }
+    if (sql.includes('platform_provider_connections')) return { rows: [{ configured: false }] }
     if (sql.includes('crm_pipelines')) return { rows: [{ id: 'pipeline-1', name: 'Principal', is_default: true }] }
     if (sql.includes('FROM public.leads')) return { rows: [{ total: 10, inactive: 4 }] }
     if (sql.includes('automation_flows')) return { rows: [{ id: 'flow-1', status: 'published', is_enabled: true }] }
