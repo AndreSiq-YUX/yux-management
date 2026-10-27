@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { CheckCircle2, ChevronDown, ExternalLink, Loader2, PackagePlus, Pencil, Sparkles, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
@@ -14,14 +14,19 @@ import type { CompanyIntelligenceSuggestion, WebsiteOnboardingResult } from '@/t
 
 const REVIEWABLE_STATUSES = new Set(['ready_for_review', 'degraded', 'failed'])
 
-export function WebsiteOnboardingCard({ organizationId, contractId, initialUrl, onApplied, defaultOpen = true }: {
+export function WebsiteOnboardingCard({ organizationId, contractId, initialUrl, onApplied, target, defaultOpen = true }: {
   organizationId: string
+  target?:import('@/types/companyIntelligence').WebsiteOnboardingTarget
   contractId?: string
   initialUrl?: string
   onApplied: () => Promise<void> | void
   /** Aberto de início (perfil vazio). Depois do primeiro uso, o cartão fica recolhido e pode ser expandido. */
   defaultOpen?: boolean
 }) {
+  const scope=useRef(organizationId);scope.current=organizationId
+  const targetKey=target?.kind==='represented_business'?target.representedBusinessId:'own_company'
+  const initialUrlRef=useRef(initialUrl);initialUrlRef.current=initialUrl
+  useEffect(()=>{setResult(null);setSelected([]);setDrafts({});setStarting(false);setApplying(false);setWebsiteUrl(initialUrlRef.current??'')},[organizationId,targetKey])
   const [websiteUrl, setWebsiteUrl] = useState(initialUrl || '')
   const [maxPages, setMaxPages] = useState(30)
   const [result, setResult] = useState<WebsiteOnboardingResult | null>(null)
@@ -73,7 +78,8 @@ export function WebsiteOnboardingCard({ organizationId, contractId, initialUrl, 
     if (!websiteUrl.trim()) return toast.error('Informe o site da empresa.')
     setStarting(true)
     try {
-      const created = await companyIntelligenceService.startWebsiteOnboarding(organizationId, websiteUrl.trim(), contractId, maxPages)
+      const created = await (target?companyIntelligenceService.startWebsiteOnboarding(organizationId, websiteUrl.trim(), contractId, maxPages,target):companyIntelligenceService.startWebsiteOnboarding(organizationId, websiteUrl.trim(), contractId, maxPages))
+      if(scope.current!==organizationId)return
       setResult(created)
       if (['queued', 'running'].includes(created.run.status)) {
         setSelected([])
@@ -110,6 +116,7 @@ export function WebsiteOnboardingCard({ organizationId, contractId, initialUrl, 
         selected,
         suggestionEdits,
       )
+      if(scope.current!==organizationId)return
       setResult(updated)
       await onApplied()
       toast.success('Informações selecionadas aplicadas à empresa.')
@@ -164,6 +171,9 @@ export function WebsiteOnboardingCard({ organizationId, contractId, initialUrl, 
             <Button onClick={start} disabled={starting || processing}>{starting || processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}{processing ? 'Analisando...' : 'Analisar site'}</Button>
           </div>
           <p id="website-onboarding-max-pages-hint" className="text-xs text-yx-fg-3">Quantas páginas do site serão lidas (de 1 a 50). Com mais páginas a leitura é mais completa e demora mais.</p>
+          {target?.kind==='represented_business'&&<p className="rounded-lg border border-yx-line p-3 text-sm">Esta análise altera apenas a representada selecionada e seu portfólio. Confirme as linhas autorizadas e condições antes de oferecer os produtos.</p>}
+          {Array.isArray(result?.run.outputPayload.productReconciliation)&&result.run.outputPayload.productReconciliation.length>0&&<p role="status" className="text-sm text-yx-warn">Produtos com referência já cadastrada foram preservados. Confira as novas informações no portfólio antes de alterar seus cadastros.</p>}
+          {!!result?.run.outputPayload.possibleDuplicates&&<p role="status" className="text-sm text-yx-warn">Há produtos com nomes semelhantes para conciliar no portfólio. Eles foram mantidos separados.</p>}
           {result && processing ? <div className="space-y-2"><div className="flex justify-between text-xs text-yx-fg-3"><span>{stageLabel(result.run.stage)}</span><span>{result.run.progress}%</span></div><Progress value={result.run.progress} className="h-2" /></div> : null}
           {result?.run.status === 'failed' && result.suggestions.length ? <p className="rounded-lg border border-yx-warn-line bg-yx-warn-soft p-3 text-sm text-yx-warn">A leitura terminou parcialmente, mas as sugestões com evidência foram preservadas e podem ser editadas e aplicadas.</p> : null}
           {result?.run.status === 'failed' && !result.suggestions.length ? <p role="alert" className="rounded-lg border border-yx-crit-line bg-yx-crit-soft p-3 text-sm text-yx-crit">A análise não foi concluída. {friendlyRunError(result.run.errorMessage)}</p> : null}
@@ -174,7 +184,7 @@ export function WebsiteOnboardingCard({ organizationId, contractId, initialUrl, 
 
           {grouped.map(group => (
             <div key={group.kind} className="space-y-2">
-              <h3 className="text-sm font-semibold text-yx-fg">{groupLabel(group.kind)} <span className="font-normal text-yx-fg-3">({group.items.length})</span></h3>
+              <h3 className="text-sm font-semibold text-yx-fg">{target?.kind==='represented_business'&&group.kind==='profile'?'Descrição da representada':groupLabel(group.kind)} <span className="font-normal text-yx-fg-3">({group.items.length})</span></h3>
               {group.items.map(item => (
                 <article key={item.id} className="rounded-lg border border-yx-line bg-yx-surface p-4">
                   <div className="flex items-start gap-3">

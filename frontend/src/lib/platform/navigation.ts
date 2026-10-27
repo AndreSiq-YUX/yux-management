@@ -171,6 +171,7 @@ function buildPortalNavigationGroups(context: PlatformContext, basePath = '/port
       items: [
         { label: 'Perfil da empresa', href: href('/empresa/perfil') },
         { label: 'Marca e tom de voz', href: href('/empresa/marca') },
+        { label: 'Estratégia', href: href('/empresa/estrategia') },
         { label: 'Base de conhecimento', href: href('/empresa/conhecimento') },
         { label: 'Equipe', href: href('/empresa/usuarios') },
         { label: 'Conexões', href: href('/empresa/integracoes') },

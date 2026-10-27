@@ -19,6 +19,9 @@ interface KnowledgeCreateDialogProps {
 }
 
 export function KnowledgeCreateDialog({ open, onOpenChange, organizationId, contractId, onCreated }: KnowledgeCreateDialogProps) {
+  const [brands,setBrands]=useState<import('@/types/companyIntelligence').RepresentedBusiness[]>([])
+  const [brandId,setBrandId]=useState('')
+  useEffect(()=>{let active=true;setBrandId('');if(open)companyIntelligenceService.listRepresentedBusinesses(organizationId).then(items=>{if(active)setBrands(items.filter(item=>item.status==='active'))}).catch(()=>{});return()=>{active=false}},[open,organizationId])
   const [mode, setMode] = useState<'text' | 'url' | 'file'>('text')
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
@@ -34,7 +37,7 @@ export function KnowledgeCreateDialog({ open, onOpenChange, organizationId, cont
   }, [open, organizationId])
 
   const reset = () => { setTitle(''); setBody(''); setSourceUrl(''); setFiles([]); setDocumentType('other'); setVisibility('both'); setMode('text') }
-  const baseInput = { contractId, title: title.trim(), documentType, visibility, allowedAgentProfileKeys: [], blockedAgentProfileKeys: [] }
+  const baseInput = { representedBusinessId:brandId||undefined,contractId, title: title.trim(), documentType, visibility, allowedAgentProfileKeys: [], blockedAgentProfileKeys: [] }
 
   const submit = async () => {
     if (mode !== 'file' && !title.trim()) return toast.error('Informe um título para o conhecimento.')
@@ -72,6 +75,7 @@ export function KnowledgeCreateDialog({ open, onOpenChange, organizationId, cont
           <DialogTitle>Adicionar conhecimento</DialogTitle>
           <DialogDescription>O conteúdo fica em revisão e só alimenta agentes externos depois da publicação.</DialogDescription>
         </DialogHeader>
+        {!!brands.length&&<label className="text-sm">Vincular a uma representada (opcional)<select className="mt-2 block w-full rounded-lg border p-2" value={brandId} onChange={e=>setBrandId(e.target.value)}><option value="">Conhecimento geral da empresa</option>{brands.map(brand=><option value={brand.id} key={brand.id}>{brand.name}</option>)}</select></label>}
         <Tabs value={mode} onValueChange={value => setMode(value as typeof mode)}>
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="text"><PenLine className="mr-2 h-4 w-4" />Escrever</TabsTrigger>

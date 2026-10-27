@@ -249,6 +249,7 @@ class WebsitePageRequest(BaseModel):
 
 
 class ExtractCompanyProfileRequest(BaseModel):
+    target: dict[str, str] | None = None
     organization_id: str
     client_id: str | None = None
     contract_id: str | None = None
@@ -614,7 +615,7 @@ def create_app(
         if total_chars > 400_000:
             raise HTTPException(status_code=413, detail="website_extraction_input_too_large")
         try:
-            return knowledge_curator(request.model_dump()).extract_company_profile([item.model_dump() for item in request.pages])
+            return knowledge_curator(request.model_dump()).extract_company_profile([item.model_dump() for item in request.pages], **({'target': request.target} if request.target and request.target.get('kind') == 'represented_business' else {}))
         except ProviderRequestError as error:
             raise provider_http_exception(error) from error
         except (ValueError, json.JSONDecodeError) as error:

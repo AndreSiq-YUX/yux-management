@@ -1,3 +1,5 @@
+import {getWebsiteOnboardingRun} from '../../modules/company-intelligence/repository.js'
+import {websiteTargetSchema,assertRepresentedWebsiteTarget} from '../../modules/company-intelligence/represented-website.js'
 import type pg from 'pg'
 import { createHash } from 'node:crypto'
 import type { AppEnv } from '../../config/env.js'
@@ -219,16 +221,21 @@ function messageOf(error: unknown) {
   return (error instanceof Error ? error.message : String(error)).slice(0, 1_000)
 }
 
-export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: Record<string, unknown>, dependencies: { signal?: AbortSignal } = {}) {
+export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: Record<string, unknown>, dependencies: { signal?: AbortSignal;discover?:typeof discoverCompanyWebsite;extract?:typeof extractCompanyProfileInBatches;index?:typeof handleKnowledgeIndexing } = {}) {
   const runId = typeof data.runId === 'string' ? data.runId : ''
   const organizationId = typeof data.organizationId === 'string' ? data.organizationId : ''
   const websiteUrl = typeof data.websiteUrl === 'string' ? data.websiteUrl : ''
   const maxPages = Math.max(1, Math.min(50, Number(data.maxPages || 30)))
   if (!runId || !organizationId || !websiteUrl) throw new Error('website_onboarding_context_required')
-  const jina = await resolveEffectiveProviderCredential(pool,env,'jina_ai')
+  const storedRun=await getWebsiteOnboardingRun(pool,organizationId,runId)
+  const target=websiteTargetSchema.parse(storedRun.run.outputPayload.target??{kind:'own_company'})
+  await assertRepresentedWebsiteTarget(pool,organizationId,target)
+  const representedName=target.kind==='represented_business'?(await pool.query('SELECT name FROM public.company_represented_businesses WHERE organization_id=$1 AND id=$2',[organizationId,target.representedBusinessId])).rows[0]?.name:null
+  const sourceTitle=representedName?`Site de ${representedName} — ${new Date(storedRun.run.createdAt).toISOString()}`:'Site institucional'
+  const jina = dependencies.discover?{value:undefined}:await resolveEffectiveProviderCredential(pool,env,'jina_ai')
   try {
     await updateKnowledgeIntelligenceRun(pool, runId, { status: 'running', stage: 'discovering', progress: 10 })
-    const discovery = await discoverCompanyWebsite(websiteUrl, {
+    const discovery = await (dependencies.discover??discoverCompanyWebsite)(websiteUrl, {
       maxPages: Math.min(maxPages, env.KNOWLEDGE_WEBSITE_MAX_PAGES || 30),
       readPage: async url => {
         const result = await readJinaUrl(url, { signal: dependencies.signal, timeoutMs: env.JINA_REQUEST_TIMEOUT_MS,apiKey:jina.value })
@@ -244,11 +251,11 @@ export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: 
       metrics: { discoveredPages: discovery.pages.length, failedPages: discovery.failedPages },
       outputPayload: { rootUrl: discovery.rootUrl, pageUrls: discovery.pages.map(page => page.url) },
     })
-    const visualSignals = await inspectWebsiteVisualIdentity(websiteUrl).catch(() => null)
+    const visualSignals = target.kind==='own_company'?await inspectWebsiteVisualIdentity(websiteUrl).catch(() => null):null
     const contractId = typeof data.contractId === 'string' ? data.contractId : undefined
     const clientId = typeof data.clientId === 'string' ? data.clientId : undefined
-    const extraction = await extractCompanyProfileInBatches(env, {
-      organizationId, clientId, contractId,
+    const extraction = await (dependencies.extract??extractCompanyProfileInBatches)(env, {
+      organizationId, clientId, contractId,target,
       pages: discovery.pages.map((page, index) => ({
         url: page.url,
         title: page.title,
@@ -272,7 +279,7 @@ export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: 
     const shell = existingKnowledge
       ? { sourceId: existingKnowledge.sourceId, documentId: existingKnowledge.id }
       : await createKnowledgeShell(pool, {
-          organizationId, contractId, title: 'Site institucional', sourceType: 'manual',
+          organizationId, contractId, representedBusinessId:target.kind==='represented_business'?target.representedBusinessId:undefined,title:sourceTitle, sourceType: 'manual',
           sourceUrl: discovery.rootUrl, documentType: 'other', visibility: 'both',
           checksumSha256,
           metadata: { websiteOnboardingRunId: runId, discoveredUrls: discovery.pages.map(page => page.url) },
@@ -281,7 +288,7 @@ export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: 
       await completeKnowledgeIngestion(pool, {
         sourceId: shell.sourceId,
         documentId: shell.documentId,
-        extracted: extractManualKnowledge('Site institucional', combined),
+        extracted: extractManualKnowledge(sourceTitle, combined),
       })
     }
     await updateKnowledgeIntelligenceRun(pool, runId, {
@@ -301,7 +308,7 @@ export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: 
       },
     })
     try {
-      await handleKnowledgeIndexing(pool, env, { sourceId: shell.sourceId, documentId: shell.documentId })
+      await (dependencies.index??handleKnowledgeIndexing)(pool, env, { sourceId: shell.sourceId, documentId: shell.documentId })
     } catch (error) {
       await updateKnowledgeIntelligenceRun(pool, runId, {
         outputPayload: { knowledgeWarning: messageOf(error) },

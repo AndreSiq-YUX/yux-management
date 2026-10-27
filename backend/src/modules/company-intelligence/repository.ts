@@ -1,3 +1,4 @@
+import {websiteTargetSchema,assertRepresentedWebsiteTarget,scopeRepresentedWebsiteSuggestions,applyRepresentedWebsiteSuggestions,type WebsiteTarget} from './represented-website.js'
 import type pg from 'pg'
 import { createHash } from 'node:crypto'
 import type { BrandProfileInput, CompanyContextPreview, CompanyProfileInput } from './types.js'
@@ -48,8 +49,8 @@ export async function upsertCompanyProfile(
       `INSERT INTO public.organization_company_profiles (
          organization_id, legal_name, trade_name, description, website_url, industry,
          positioning, differentiators, emails, phones, address, business_hours,
-         service_regions, social_links, internal_notes
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14::jsonb,$15)
+         service_regions, social_links, internal_notes,business_models
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14::jsonb,$15,COALESCE($16::text[],'{}'))
        ON CONFLICT (organization_id) DO UPDATE SET
          legal_name = EXCLUDED.legal_name,
          trade_name = EXCLUDED.trade_name,
@@ -65,12 +66,13 @@ export async function upsertCompanyProfile(
          service_regions = EXCLUDED.service_regions,
          social_links = EXCLUDED.social_links,
          internal_notes = EXCLUDED.internal_notes,
+         business_models=COALESCE($16::text[],organization_company_profiles.business_models),
          updated_at = NOW()`,
       [
         organizationId, input.legalName, input.tradeName, input.description,
         input.websiteUrl || null, input.industry, input.positioning, input.differentiators,
         input.emails, input.phones, JSON.stringify(input.address), JSON.stringify(input.businessHours),
-        input.serviceRegions, JSON.stringify(input.socialLinks), input.internalNotes || null,
+        input.serviceRegions, JSON.stringify(input.socialLinks), input.internalNotes || null,input.businessModels??null,
       ],
     )
 
@@ -222,6 +224,7 @@ export async function createKnowledgeShell(pool: pg.Pool, input: {
   organizationId: string
   contractId?: string
   title: string
+  representedBusinessId?:string
   sourceType: 'manual' | 'url' | 'file' | 'faq' | 'integration'
   sourceUrl?: string
   documentType: 'brand' | 'product' | 'service' | 'faq' | 'case' | 'campaign' | 'policy' | 'other'
@@ -234,6 +237,7 @@ export async function createKnowledgeShell(pool: pg.Pool, input: {
   metadata?: Record<string, unknown>
 }) {
   const scope = await resolveMarketingScope(pool, input.organizationId, input.contractId)
+  if(input.representedBusinessId && !(await pool.query("SELECT id FROM public.company_represented_businesses WHERE organization_id=$1 AND id=$2 AND status='active'",[input.organizationId,input.representedBusinessId])).rows[0])throw domainError(404,'represented_business_not_found')
   if (input.checksumSha256) await assertUniqueKnowledgeChecksum(pool, input.organizationId, input.checksumSha256)
   const client = await pool.connect()
   try {
@@ -242,13 +246,13 @@ export async function createKnowledgeShell(pool: pg.Pool, input: {
       `INSERT INTO public.knowledge_sources (
          organization_id, source_type, name, source_url, status, visibility,
          allowed_agent_profile_keys, blocked_agent_profile_keys, mime_type, byte_size,
-         checksum_sha256, metadata
-       ) VALUES ($1,$2,$3,$4,'draft',$5,$6,$7,$8,$9,$10,$11::jsonb)
+         checksum_sha256, metadata,represented_business_id
+       ) VALUES ($1,$2,$3,$4,'draft',$5,$6,$7,$8,$9,$10,$11::jsonb,$12)
        RETURNING id`,
       [
         input.organizationId, input.sourceType, input.title, input.sourceUrl || null, input.visibility,
         input.allowedAgentProfileKeys || [], input.blockedAgentProfileKeys || [], input.mimeType || null,
-        input.byteSize ?? null, input.checksumSha256 || null, JSON.stringify(input.metadata || {}),
+        input.byteSize ?? null, input.checksumSha256 || null, JSON.stringify(input.metadata || {}),input.representedBusinessId??null,
       ],
     )
     const document = await client.query<{ id: string }>(
@@ -279,7 +283,7 @@ export async function findKnowledgeDocumentByChecksum(
   checksumSha256: string,
 ) {
   const result = await pool.query<Row>(
-    `SELECT document.*, source.status AS source_status, source.source_type,
+    `SELECT document.*, source.status AS source_status, source.source_type,source.represented_business_id,(SELECT name FROM public.company_represented_businesses WHERE id=source.represented_business_id AND organization_id=source.organization_id) AS represented_business_name,
             source.visibility, source.allowed_agent_profile_keys,
             source.blocked_agent_profile_keys, source.checksum_sha256,
             source.metadata AS source_metadata, source.mime_type, source.byte_size
@@ -434,17 +438,20 @@ export async function createWebsiteOnboardingRun(pool: pg.Pool, input: {
   organizationId: string
   contractId?: string
   websiteUrl: string
+  target?:WebsiteTarget
   maxPages: number
   createdBy: string
 }) {
   const scope = await resolveMarketingScope(pool, input.organizationId, input.contractId)
+  const target=input.target??{kind:'own_company'}
+  await assertRepresentedWebsiteTarget(pool,input.organizationId,target)
   const result = await pool.query<Row>(
     `INSERT INTO public.knowledge_intelligence_runs (
        organization_id, client_id, contract_id, run_kind, status, stage, progress,
        output_payload, created_by
      ) VALUES ($1,$2,$3,'website_onboarding','queued','queued',0,$4::jsonb,$5)
      RETURNING *`,
-    [input.organizationId, scope.clientId, scope.contractId, JSON.stringify({ websiteUrl: input.websiteUrl, maxPages: input.maxPages }), input.createdBy],
+    [input.organizationId, scope.clientId, scope.contractId, JSON.stringify({ websiteUrl: input.websiteUrl, maxPages: input.maxPages,target }), input.createdBy],
   )
   return mapIntelligenceRun(result.rows[0])
 }
@@ -466,9 +473,16 @@ export async function replaceCompanyIntelligenceSuggestions(pool: pg.Pool, runId
   sourceUrl: string
   confidence: number
 }>) {
-  const runScope = await pool.query<{ organization_id: string }>('SELECT organization_id FROM public.knowledge_intelligence_runs WHERE id = $1', [runId])
+  const runScope = await pool.query<{ organization_id: string;output_payload:Record<string,any> }>('SELECT organization_id,output_payload FROM public.knowledge_intelligence_runs WHERE id = $1', [runId])
   if (!runScope.rows[0]) throw domainError(404, 'website_onboarding_run_not_found')
   const organizationId = runScope.rows[0].organization_id
+  const target=websiteTargetSchema.parse(runScope.rows[0].output_payload?.target??{kind:'own_company'})
+  let represented:Row|null=null
+  if(target.kind==='represented_business') {
+    await assertRepresentedWebsiteTarget(pool,organizationId,target)
+    represented=(await pool.query('SELECT * FROM public.company_represented_businesses WHERE organization_id=$1 AND id=$2',[organizationId,target.representedBusinessId])).rows[0]
+    suggestions=scopeRepresentedWebsiteSuggestions(suggestions)
+  }
   const [profile, brand] = await Promise.all([
     getCompanyProfile(pool, organizationId, true),
     getBrandProfile(pool, organizationId, true),
@@ -489,7 +503,7 @@ export async function replaceCompanyIntelligenceSuggestions(pool: pg.Pool, runId
            suggested_value = EXCLUDED.suggested_value, evidence_excerpt = EXCLUDED.evidence_excerpt,
            confidence = EXCLUDED.confidence, updated_at = NOW()`,
         [runId, run.rows[0].organization_id, suggestion.suggestionKind, suggestion.fieldPath,
-          JSON.stringify(currentSuggestionValue(profile, brand, suggestion.suggestionKind, suggestion.fieldPath)),
+          JSON.stringify(represented && suggestion.fieldPath.startsWith('representedBusiness.')?represented[suggestion.fieldPath.endsWith('description')?'description':'authorized_lines']:currentSuggestionValue(profile, brand, suggestion.suggestionKind, suggestion.fieldPath)),
           JSON.stringify(suggestion.suggestedValue), suggestion.evidenceExcerpt, suggestion.sourceUrl, suggestion.confidence],
       )
     }
@@ -510,6 +524,11 @@ export async function applyCompanyIntelligenceSuggestions(pool: pg.Pool, input: 
   userId: string
 }) {
   const run = await getWebsiteOnboardingRun(pool, input.organizationId, input.runId)
+  const target=websiteTargetSchema.parse(run.run.outputPayload.target??{kind:'own_company'})
+  if(target.kind==='represented_business'){
+    await applyRepresentedWebsiteSuggestions(pool,input)
+    return getWebsiteOnboardingRun(pool,input.organizationId,input.runId)
+  }
   const editedValues = new Map((input.suggestionEdits || []).map(edit => [edit.id, edit.suggestedValue]))
   const selected = selectSuggestionsForApplication(run.suggestions, input.suggestionIds, editedValues)
   if (run.run.status === 'applied' && selected.length && selected.every(item => item.status === 'applied')) return run
@@ -781,7 +800,7 @@ export async function markKnowledgeProcessingState(pool: pg.Pool, documentId: st
 
 export async function listKnowledgeDocuments(pool: pg.Pool, organizationId: string, portalSafeUsageOnly = false) {
   const result = await pool.query<Row>(
-    `SELECT document.*, source.source_type, source.name AS source_name,
+    `SELECT document.*, source.source_type,source.represented_business_id,(SELECT name FROM public.company_represented_businesses WHERE id=source.represented_business_id AND organization_id=source.organization_id) AS represented_business_name, source.name AS source_name,
             source.status AS source_status, source.visibility, source.governance_version,
             source.allowed_agent_profile_keys, source.blocked_agent_profile_keys,
             source.mime_type, source.byte_size, source.checksum_sha256,
@@ -815,7 +834,7 @@ export async function listKnowledgeDocuments(pool: pg.Pool, organizationId: stri
 
 export async function getKnowledgeDocument(pool: pg.Pool, documentId: string) {
   const result = await pool.query<Row>(
-    `SELECT document.*, source.source_type, source.name AS source_name,
+    `SELECT document.*, source.source_type,source.represented_business_id,(SELECT name FROM public.company_represented_businesses WHERE id=source.represented_business_id AND organization_id=source.organization_id) AS represented_business_name, source.name AS source_name,
             source.status AS source_status, source.visibility, source.governance_version,
             source.allowed_agent_profile_keys, source.blocked_agent_profile_keys,
             source.mime_type, source.byte_size, source.checksum_sha256,
@@ -1045,6 +1064,7 @@ function mapKnowledgeDocument(row: Row) {
     title: row.title,
     documentType: row.document_type,
     status: row.status,
+    representedBusinessId:row.represented_business_id??undefined,representedBusinessName:row.represented_business_name??undefined,
     sourceType: row.source_type,
     sourceStatus: row.source_status,
     visibility: row.visibility || 'both',
@@ -1176,6 +1196,7 @@ function mapCompanyProfile(row: Row, includeInternal: boolean) {
     tradeName: row.trade_name || row.company_name || row.organization_name || '',
     description: row.description || '',
     websiteUrl: row.website_url || row.client_website || undefined,
+    businessModels:row.business_models??[],
     industry: row.industry || row.sector || '',
     positioning: row.positioning || '',
     differentiators: row.differentiators || [],

@@ -176,6 +176,7 @@ export function mapMarketingBrandProfile(row: any): MarketingBrandProfile {
 
 export function mapMarketingProductService(row: any): MarketingProductService {
   return {
+    representedBusinessId:row.represented_business_id||undefined,
     id: row.id,
     organizationId: row.organization_id,
     clientId: row.client_id,

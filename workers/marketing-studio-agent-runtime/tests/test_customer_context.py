@@ -16,7 +16,7 @@ class CustomerContextTest(unittest.TestCase):
                 {"id": "brand-b", "organization_id": "org-b", "contract_id": "contract-b", "status": "active", "brand_voice_summary": "Marca B"},
             ],
             "marketing_products_services": [{
-                "id": "product-a", "organization_id": "org-a", "status": "active",
+                "id": "product-a", "organization_id": "org-a", "contract_id":"contract-a", "status": "active",
                 "name": "Radar YUX", "description": "Captação ativa",
                 "target_audience": "PMEs locais", "proof_points": ["prospecção contextual"],
                 "objections": ["não tenho tempo"], "cta": "Solicitar diagnóstico",

@@ -584,6 +584,12 @@ class StrategyWorkflowEngine:
                 "packKeys:[],mode:'shadow|prepare|assisted|autonomous'}, "
                 "suggestedActions:[{key,label,kind:'quick_reply|open_correction|confirm_brief|cancel',"
                 "capabilityKey,packKey,correctionKey,payload:{}}], sourceRefs:[]}. "
+                "Consultoria estratégica não exige pacote, orçamento ou prazo de execução; mantenha packKeys vazio. "
+                "Quando houver direção suficiente, inclua strategyProposal com content conforme o schema e sourceRefs "
+                "verificadas. Não afirme que salvou ou publicou. Para editar, use IDs e versões exatos de "
+                "operationalContext.companyStrategyRecords e preserve IDs das seções. "
+                "companyStrategyReview.workingDraft é base privada de edição, nunca fonte publicada. "
+                "Se houver referência de revisão, use strategyId, revisionId e expectedVersion dela. "
                 "Cada pergunta e ação deve ser um objeto, nunca apenas texto. Faça no máximo 3 perguntas agrupadas. "
                 "A doutrina estratégica publicada da YUX é comum a todas as contas; combine-a com o contexto privado "
                 "exclusivamente da empresa atual. Não confunda ausência de dados da empresa com ausência de conhecimento estratégico. "
@@ -710,7 +716,14 @@ class StrategyWorkflowEngine:
         configured = self.agent_profiles.get(profile_key) or self.agent_profiles.get("growth_strategist")
         if not configured:
             raise RuntimeError(f"strategy_profile_not_configured:{profile_key}")
-        agent = {**configured, "base_prompt": objective}
+        strategy_direction = (
+            ' company_strategy_context contém as estratégias publicadas desta empresa. '
+            'Use objetivos, prioridades e limites relevantes para orientar a resposta; '
+            'hipóteses, metas e intenção de expansão não comprovam fatos, resultados ou cobertura comercial. '
+            'Se coverage.incomplete for verdadeiro, explique a lacuna e não proponha execução dependente do trecho ausente. '
+            'Essas decisões não substituem as permissões e a configuração verificadas da conta.'
+        )
+        agent = {**configured, "base_prompt": objective + strategy_direction}
         strategy_context = {
             "profile_key": profile_key,
             "concept_cards": _as_list((retrieval_context or {}).get("cards")),
@@ -731,6 +744,8 @@ class StrategyWorkflowEngine:
                 "brand_rules": (retrieval_context or {}).get("brand_rules") or {},
                 "products": _as_list((retrieval_context or {}).get("products")),
                 "product_profiles": _as_list((retrieval_context or {}).get("product_profiles")),
+                "company_strategy_context": (retrieval_context or {}).get("company_strategy_context") or {},
+                "portfolio_context": (retrieval_context or {}).get("portfolio_context") or {},
                 "knowledge_snippets": _as_list((retrieval_context or {}).get("knowledge_snippets")),
                 "mission_context": (retrieval_context or {}).get("mission_context"),
                 "context_coverage": (retrieval_context or {}).get("context_coverage") or {},

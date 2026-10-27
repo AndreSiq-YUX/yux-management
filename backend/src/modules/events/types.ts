@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 
 export const MAX_DOMAIN_EVENT_DEPTH = 12
 
-export type DomainEventAggregateType = 'lead' | 'form_submission' | 'task' | 'sequence_enrollment' | 'sequence_execution' | 'email' | 'campaign' | 'mission' | 'mission_action' | 'action_run' | 'approval' | 'channel_webhook_event' | 'message' | 'strategy_pack' | 'knowledge_document'
+export type DomainEventAggregateType = 'lead' | 'form_submission' | 'task' | 'sequence_enrollment' | 'sequence_execution' | 'email' | 'campaign' | 'mission' | 'mission_action' | 'action_run' | 'approval' | 'channel_webhook_event' | 'message' | 'strategy_pack' | 'knowledge_document' | 'company_strategy'
 
 export type DomainEventActor = {
   type: 'lead' | 'user' | 'system' | 'provider'

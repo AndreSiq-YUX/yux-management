@@ -418,6 +418,7 @@ describe('buildNavigationGroups', () => {
     expect(groups.find(group => group.label === 'Empresa')?.items).toEqual([
       { label: 'Perfil da empresa', href: '/portal/empresa/perfil' },
       { label: 'Marca e tom de voz', href: '/portal/empresa/marca' },
+      { label: 'Estratégia', href: '/portal/empresa/estrategia' },
       { label: 'Base de conhecimento', href: '/portal/empresa/conhecimento' },
       { label: 'Equipe', href: '/portal/empresa/usuarios' },
       { label: 'Conexões', href: '/portal/empresa/integracoes' },

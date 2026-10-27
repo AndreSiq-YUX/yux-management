@@ -1,3 +1,4 @@
+import {businessModelLabels,type BusinessModel} from '@/types/companyIntelligence'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ImageOff } from 'lucide-react'
@@ -16,6 +17,7 @@ import { TagListField } from './TagListField'
 
 interface CompanyProfileFormProps {
   profile: CompanyProfile
+  readOnly?:boolean
   saving?: boolean
   onSave: (input: CompanyProfileInput) => Promise<void>
   /** Logo cadastrado em "Marca e tom de voz", para pré-visualização. */
@@ -27,7 +29,7 @@ interface CompanyProfileFormProps {
 const DEFAULT_OPEN = '09:00'
 const DEFAULT_CLOSE = '18:00'
 
-export function CompanyProfileForm({ profile, saving = false, onSave, logoUrl, beforeSections }: CompanyProfileFormProps) {
+export function CompanyProfileForm({ profile, readOnly=false, saving = false, onSave, logoUrl, beforeSections }: CompanyProfileFormProps) {
   const initialDraft = editable(profile)
   const [draft, setDraft] = useState<CompanyProfileInput>(initialDraft)
   const [baseline, setBaseline] = useState(() => JSON.stringify(initialDraft))
@@ -75,13 +77,15 @@ export function CompanyProfileForm({ profile, saving = false, onSave, logoUrl, b
         noValidate
         onSubmit={event => {
           event.preventDefault()
-          if (dirty && !saving) void save()
+          if (dirty && !saving && !readOnly) void save()
         }}
       >
+        <fieldset disabled={readOnly} className="space-y-5">
         <SectionCard id="profile-identity" title="Identificação" description="Como a empresa se chama e em que atua.">
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Nome da marca" id="trade-name" value={draft.tradeName} onChange={value => update('tradeName', value)} />
             <Field label="Razão social" id="legal-name" value={draft.legalName} onChange={value => update('legalName', value)} />
+            <fieldset className="space-y-2"><legend className="mb-2 text-sm font-medium">Como a empresa atua</legend>{Object.entries(businessModelLabels).map(([key,label])=><label key={key} className="mr-4 inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={(draft.businessModels??[]).includes(key as BusinessModel)} onChange={e=>update('businessModels',e.target.checked?[...(draft.businessModels??[]),key as BusinessModel]:(draft.businessModels??[]).filter(item=>item!==key))}/>{label}</label>)}</fieldset>
             <Field label="Segmento" id="industry" value={draft.industry} onChange={value => update('industry', value)} placeholder="Ex.: consultoria financeira" />
             <LogoPreview logoUrl={logoUrl} />
           </div>
@@ -142,10 +146,11 @@ export function CompanyProfileForm({ profile, saving = false, onSave, logoUrl, b
             hint="Quem vê: a equipe da YUX e os administradores da sua empresa. Os seus clientes não veem."
           />
         </SectionCard>
+        </fieldset>
       </form>
 
       <StickySaveBar
-        dirty={dirty}
+        dirty={dirty&&!readOnly}
         saving={saving}
         onSave={() => void save()}
         onDiscard={() => setDraft(editable(profile))}
@@ -309,6 +314,7 @@ function formatZip(value: string) {
 
 function editable(profile: CompanyProfile): CompanyProfileInput {
   return {
+    businessModels:profile.businessModels??[],
     legalName: profile.legalName,
     tradeName: profile.tradeName,
     description: profile.description,

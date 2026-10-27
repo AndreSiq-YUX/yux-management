@@ -1,4 +1,5 @@
 export type CompanyProfileInput = {
+  businessModels?:Array<"service_provider"|"retailer"|"manufacturer"|"commercial_representative"|"distributor"|"other">
   legalName: string
   tradeName: string
   description: string

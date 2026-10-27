@@ -120,3 +120,9 @@ describe('CompanyProfileForm', () => {
     act(() => root.unmount())
   })
 })
+
+it('keeps business roles read-only for members',()=>{
+ const {container,root}=mount(<CompanyProfileForm profile={profile} readOnly onSave={vi.fn()}/>)
+ expect(container.querySelector('input[type="checkbox"]')?.closest('fieldset[disabled]')).not.toBeNull()
+ act(()=>root.unmount())
+})

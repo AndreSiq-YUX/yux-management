@@ -338,7 +338,7 @@ class MissionConversationWorkflowTest(unittest.TestCase):
                 "vocabulary_dont": ["garantido"],
             }],
             "marketing_products_services": [{
-                "id": "product-a", "organization_id": "org-a", "status": "active",
+                "id": "product-a", "organization_id": "org-a", "contract_id":"contract-a", "status": "active",
                 "name": "Consultoria", "description": "Estratégia comercial",
                 "target_audience": "PMEs locais", "proof_points": ["20 projetos"],
                 "objections": ["falta de tempo"], "cta": "Agendar diagnóstico",

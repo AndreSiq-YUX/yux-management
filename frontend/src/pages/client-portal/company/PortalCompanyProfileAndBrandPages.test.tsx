@@ -1,10 +1,11 @@
 import { act } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { render } from '@/components/portal-ui/__tests__/render'
 import { usePlatformStore } from '@/stores/platformStore'
 
 const service = vi.hoisted(() => ({
   getProfile: vi.fn(),
+  listRepresentedBusinesses:vi.fn().mockResolvedValue([]),
   getBrand: vi.fn(),
   updateProfile: vi.fn(),
   updateBrand: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock('@/hooks/usePortalMarketingContext', () => ({
 import { PortalBrandVoicePage } from './PortalBrandVoicePage'
 import { PortalCompanyProfilePage } from './PortalCompanyProfilePage'
 
+beforeEach(()=>{usePlatformStore.setState({role:{key:'client_admin'} as never,workspaceContext:{canConfigure:true} as never})})
 afterEach(() => { document.body.innerHTML = ''; vi.clearAllMocks() })
 
 describe('Páginas Perfil da empresa e Marca e tom de voz', () => {

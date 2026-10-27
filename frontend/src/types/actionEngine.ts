@@ -15,7 +15,7 @@ export type MissionConversationStatus =
 
 export interface MissionConversationSource {
   ref: string
-  kind: 'strategy_card' | 'strategy_chunk' | 'knowledge_source' | 'knowledge_chunk' | 'mission_memory'
+  kind: 'strategy_card' | 'strategy_chunk' | 'knowledge_source' | 'knowledge_chunk' | 'mission_memory' | 'company_strategy'
   id: string
   version: string
   contentHash: string
@@ -77,6 +77,8 @@ export interface MissionConversationSuggestedAction {
 }
 
 export interface MissionConversationMessagePayload {
+  strategyProposalReference?: {proposalId:string;status:'suggested'|'applied';appliedStrategyId?:string|null}
+
   kind?: 'message' | 'questions' | 'brief_confirmation' | 'plan' | 'blocked'
   understood?: Record<string, unknown>
   questions?: MissionConversationQuestion[]

@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { Bot, ExternalLink, Loader2, RotateCcw, Sparkles, UserRound } from 'lucide-react'
 import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
 import { Message, MessageContent, MessageResponse } from '@/components/ai-elements/message'
@@ -7,6 +8,7 @@ import type { DecisionReasonKey, MissionConversation, MissionConversationMissing
 import type { ResolvedCorrectionTarget } from '@/lib/workspace/correctionTargets'
 
 type Props = {
+  strategyHref?: string
   conversation: MissionConversation
   processing: boolean
   processingError?: string | null
@@ -20,7 +22,7 @@ type Props = {
   onInlineCorrection?: (missing: MissionConversationMissingContext, target: ResolvedCorrectionTarget) => void
 }
 
-export function MissionConversationThread({ conversation, processing, processingError, canWrite, onQuickReply, onConfirmBrief, onRetry, onApprovePlan, onRequestPlanChanges, correctionTarget, onInlineCorrection }: Props) {
+export function MissionConversationThread({ strategyHref, conversation, processing, processingError, canWrite, onQuickReply, onConfirmBrief, onRetry, onApprovePlan, onRequestPlanChanges, correctionTarget, onInlineCorrection }: Props) {
   return (
     <Conversation className="min-h-0 bg-yx-surface-2">
       <ConversationContent className="mx-auto w-full max-w-3xl gap-6 px-4 py-7 sm:px-6">
@@ -39,6 +41,7 @@ export function MissionConversationThread({ conversation, processing, processing
                 <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full ${isUser ? 'bg-yx-blue text-white' : 'bg-yx-blue text-white'}`}>{isUser ? <UserRound className="h-4 w-4" /> : <Bot className="h-4 w-4" />}</span>
                 <MessageContent className={isUser ? 'max-w-[82%] !bg-yx-blue !text-white' : 'max-w-[88%] rounded-xl border border-yx-line bg-yx-surface px-4 py-3 shadow-sm'}>
                   <MessageResponse className={isUser ? '!text-white [&_*]:!text-white' : 'text-yx-fg-2'}>{message.content}</MessageResponse>
+                  {!isUser && payload.strategyProposalReference && strategyHref && canWrite ? <div className="mt-4 rounded-lg border border-yx-line bg-yx-blue-soft p-4"><p className="text-sm">Uma proposta de estratégia está disponível para sua revisão. Nenhuma alteração foi publicada.</p><Link className="mt-2 inline-block text-sm font-semibold text-yx-blue" to={`${strategyHref}?proposalId=${encodeURIComponent(payload.strategyProposalReference.proposalId)}`}>Revisar estratégia</Link></div> : null}
                   {!isUser && payload.questions?.length ? <div className="mt-4 space-y-3">{payload.questions.map(question => <div className="rounded-lg bg-yx-surface-2 p-3" key={question.key}><p className="text-sm font-semibold text-yx-fg">{question.label}</p><p className="mt-1 text-xs leading-5 text-yx-fg-3">{question.whyNeeded}</p>{canWrite && question.choices?.length ? <div className="mt-3 flex flex-wrap gap-2">{question.choices.map(choice => <button className="rounded-full border border-yx-line-strong bg-yx-surface px-3 py-1.5 text-xs font-semibold text-yx-blue hover:bg-yx-blue-soft" key={choice} onClick={() => onQuickReply(choice)} type="button">{choice}</button>)}</div> : null}</div>)}</div> : null}
                   {!isUser && missing.length ? <div className="mt-4 space-y-2">{missing.map(item => <MissingContextCard target={correctionTarget?.(item) ?? null} onInline={() => { const target = correctionTarget?.(item); if (target?.mode === 'inline') onInlineCorrection?.(item, target) }} item={item} key={item.key} />)}</div> : null}
                   {!isUser && actions.length ? <div className="mt-4 flex flex-wrap gap-2">{actions.map(action => action.kind === 'quick_reply' ? <button className="rounded-full border border-yx-line-strong bg-yx-blue-soft px-3 py-1.5 text-xs font-semibold text-yx-blue hover:bg-yx-blue-soft" key={action.key} onClick={() => onQuickReply(action.label)} type="button">{action.label}</button> : null)}</div> : null}

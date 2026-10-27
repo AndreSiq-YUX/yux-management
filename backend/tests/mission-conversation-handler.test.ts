@@ -30,6 +30,7 @@ class Pool {
   calls: string[] = []
   async query<T>(sql: string) {
     this.calls.push(sql)
+    if (sql.includes('FROM public.company_strategies')) return {rows:[] as T[]}
     if (sql.includes('FROM public.app_users')) return { rows: [{ role: 'client_admin', is_active: true }] as T[] }
     if (sql.includes('FROM public.memberships')) return { rows: [{ role_key: 'client_admin' }] as T[] }
     if (sql.includes('FROM public.role_permissions')) return { rows: ['crm.read', 'crm.write', 'action_engine.write'].map(permission_key => ({ permission_key })) as T[] }

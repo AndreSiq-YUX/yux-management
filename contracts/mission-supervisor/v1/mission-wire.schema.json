@@ -258,6 +258,141 @@
       "title": "ClarificationResponseWire",
       "type": "object"
     },
+    "CompanyStrategyContentWire": {
+      "additionalProperties": false,
+      "properties": {
+        "objective": {
+          "maxLength": 2000,
+          "minLength": 10,
+          "title": "Objective",
+          "type": "string"
+        },
+        "references": {
+          "$ref": "#/$defs/CompanyStrategyReferencesWire"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        },
+        "sections": {
+          "items": {
+            "$ref": "#/$defs/CompanyStrategySectionWire"
+          },
+          "maxItems": 30,
+          "title": "Sections",
+          "type": "array"
+        },
+        "summary": {
+          "maxLength": 2000,
+          "minLength": 20,
+          "title": "Summary",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 200,
+          "minLength": 3,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "title",
+        "objective",
+        "summary"
+      ],
+      "title": "CompanyStrategyContentWire",
+      "type": "object"
+    },
+    "CompanyStrategyReferencesWire": {
+      "additionalProperties": false,
+      "properties": {
+        "documentIds": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Documentids",
+          "type": "array"
+        },
+        "productIds": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Productids",
+          "type": "array"
+        },
+        "representedBusinessIds": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Representedbusinessids",
+          "type": "array"
+        }
+      },
+      "title": "CompanyStrategyReferencesWire",
+      "type": "object"
+    },
+    "CompanyStrategySectionWire": {
+      "additionalProperties": false,
+      "properties": {
+        "agentUse": {
+          "default": "internal",
+          "enum": [
+            "internal",
+            "external_guidance"
+          ],
+          "title": "Agentuse",
+          "type": "string"
+        },
+        "body": {
+          "maxLength": 12000,
+          "minLength": 1,
+          "title": "Body",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "diagnosis",
+            "audiences",
+            "offers",
+            "markets",
+            "positioning",
+            "channels",
+            "initiatives",
+            "metrics",
+            "constraints",
+            "assumptions",
+            "next_steps",
+            "custom"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "body"
+      ],
+      "title": "CompanyStrategySectionWire",
+      "type": "object"
+    },
     "EstimatedEconomicsWire": {
       "additionalProperties": false,
       "properties": {
@@ -860,6 +995,17 @@
           "title": "Sources",
           "type": "array"
         },
+        "strategyProposal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MissionStrategyProposalWire"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "suggestedActions": {
           "items": {
             "$ref": "#/$defs/MissionSuggestedActionWire"
@@ -1124,7 +1270,8 @@
             "strategy_chunk",
             "knowledge_source",
             "knowledge_chunk",
-            "mission_memory"
+            "mission_memory",
+            "company_strategy"
           ],
           "title": "Kind",
           "type": "string"
@@ -1210,6 +1357,64 @@
         "displayMode"
       ],
       "title": "MissionSourceRefWire",
+      "type": "object"
+    },
+    "MissionStrategyProposalWire": {
+      "additionalProperties": false,
+      "properties": {
+        "baseRevisionId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baserevisionid"
+        },
+        "baseStrategyVersion": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Basestrategyversion"
+        },
+        "content": {
+          "$ref": "#/$defs/CompanyStrategyContentWire"
+        },
+        "sourceRefs": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Sourcerefs",
+          "type": "array"
+        },
+        "strategyId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Strategyid"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "title": "MissionStrategyProposalWire",
       "type": "object"
     },
     "MissionSuggestedActionWire": {

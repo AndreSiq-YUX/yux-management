@@ -403,6 +403,11 @@ def build_mission_source_catalog(
                     "bindingFingerprint": _text(raw.get("binding_fingerprint")),
                 } if governed else {}),
             ))
+    for raw in context.get('company_strategy_sources') or []:
+        source = MissionSourceRefWire.model_validate(raw)
+        if source.ref not in seen:
+            sources.append(source)
+            seen.add(source.ref)
     return sources
 
 
@@ -416,9 +421,34 @@ def normalize_mission_conversation_response(
 ) -> MissionConversationTurnResponseWire:
     parsed = _normalize_provider_shape(parsed, request)
     parsed = enforce_account_availability(parsed, request.operationalContext, request.organization_id)
+    strategy_coverage = ((retrieval_context or {}).get('company_strategy_context') or {}).get('coverage') or {}
+    if strategy_coverage.get('incomplete'):
+        parsed['readiness']['status'] = 'needs_configuration'
+        parsed['readiness']['missing'].append({'key': 'company_strategy_context', 'category': 'company', 'reason': 'Os limites obrigatórios da estratégia não foram recuperados integralmente.', 'requiredFor': ['mission_planning']})
+        if parsed.get('brief', {}).get('packKeys') or any(action.get('capabilityKey') for action in parsed.get('suggestedActions') or [] if isinstance(action, dict)):
+            parsed.update(kind='blocked', questions=[], suggestedActions=[], reply='Preciso recuperar os limites completos da estratégia da empresa antes de propor uma execução. A estratégia pode continuar sendo revisada em Empresa > Estratégia.')
+            parsed['brief']['packKeys'] = []
     source_catalog = build_mission_source_catalog(retrieval_context, request.audience)
     by_ref = {source.ref: source for source in source_catalog}
+    raw_proposal = parsed.get('strategyProposal')
+    if raw_proposal is not None:
+        from .mission_contracts import MissionStrategyProposalWire
+        try:
+            review = request.operationalContext.get('companyStrategyReview') or {}
+            if review.get('strategyId'):
+                raw_proposal = {**raw_proposal,'strategyId':review['strategyId'],'baseRevisionId':review['revisionId'],'baseStrategyVersion':review['expectedVersion']}
+            proposal = MissionStrategyProposalWire.model_validate(raw_proposal)
+            if any(ref not in by_ref for ref in proposal.sourceRefs):
+                raise ValueError('company_strategy_proposal_unknown_source')
+            if (request.operationalContext.get('companyStrategyAccess') or {}).get('canPropose') is False:
+                raise ValueError('company_strategy_proposal_forbidden')
+            parsed['strategyProposal'] = proposal.model_dump()
+        except (ValueError,TypeError,KeyError):
+            parsed['strategyProposal'] = None
+            parsed['reply'] = str(parsed.get('reply') or '') + '\n\nA proposta ainda está incompleta e não foi salva. Posso reorganizá-la nesta conversa.'
     selected_refs: list[str] = []
+    if parsed.get('strategyProposal'):
+        selected_refs.extend(parsed['strategyProposal']['sourceRefs'])
     for item in parsed.pop("sourceRefs", []) or []:
         selected_refs.append(_text(item.get("ref")) if isinstance(item, dict) else _text(item))
     for item in parsed.pop("sources", []) or []:

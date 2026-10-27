@@ -1,3 +1,6 @@
+import {websiteTargetSchema} from './represented-website.js'
+import {businessModelsSchema} from './represented-business-schemas.js'
+import {registerRepresentedBusinessRoutes} from './represented-businesses.js'
 import type { FastifyInstance } from 'fastify'
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
@@ -57,6 +60,7 @@ const visualIdentitySchema = z.object({
 }).default({ colors: [], typography: [], designStyle: '', imageryStyle: '', graphicElements: [] })
 
 const profileSchema = z.object({
+  businessModels:businessModelsSchema.optional(),
   legalName: text,
   tradeName: text,
   description: text,
@@ -96,6 +100,7 @@ const previewQuery = z.object({
 const documentType = z.enum(['brand', 'product', 'service', 'faq', 'case', 'campaign', 'policy', 'other'])
 const visibility = z.enum(['internal', 'external', 'both'])
 const knowledgeBase = z.object({
+  representedBusinessId:z.string().uuid().optional(),
   contractId: z.string().uuid().optional(),
   title: z.string().trim().min(1).max(300),
   documentType: documentType.default('other'),
@@ -135,6 +140,7 @@ const knowledgePatchSchema = z.object({
   blockedAgentProfileKeys: stringList.optional(),
 })
 const websiteOnboardingSchema = z.object({
+  target:websiteTargetSchema.optional(),
   websiteUrl: z.string().trim().min(3).max(2_000),
   contractId: z.string().uuid().optional(),
   maxPages: z.number().int().min(1).max(50).default(30),
@@ -143,9 +149,10 @@ const websiteRunParams = z.object({ organizationId: z.string().uuid(), runId: z.
 const applyWebsiteSuggestionsSchema = z.object({
   suggestionIds: z.array(z.string().uuid()).min(1).max(100),
   suggestionEdits: z.array(z.object({ id: z.string().uuid(), suggestedValue: z.unknown() })).max(100).default([]),
-})
+}).strict()
 
 export async function registerCompanyIntelligenceRoutes(app: FastifyInstance) {
+  await registerRepresentedBusinessRoutes(app)
   app.post('/knowledge/query', async (request, reply) => {
     const parsed = knowledgeQueryV1Schema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_knowledge_query_v1' })
@@ -264,6 +271,7 @@ export async function registerCompanyIntelligenceRoutes(app: FastifyInstance) {
       contractId: body.data.contractId,
       websiteUrl: body.data.websiteUrl,
       maxPages: body.data.maxPages,
+      target:body.data.target,
       createdBy: ctx.userId,
     })
     const job = await app.jobQueue.add('company-intelligence.discoverWebsite', {

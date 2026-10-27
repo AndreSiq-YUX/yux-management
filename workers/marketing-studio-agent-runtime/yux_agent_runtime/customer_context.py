@@ -1,4 +1,5 @@
 from __future__ import annotations
+from .portfolio_context import CompanyPortfolioContextService
 
 import json
 import re
@@ -7,6 +8,7 @@ from math import sqrt
 from typing import Any
 
 from .runtime_store import AgentRuntimeStore
+from .company_strategy_context import CompanyStrategyContextService
 
 
 def _list(value: Any) -> list[Any]:
@@ -50,16 +52,16 @@ class CustomerContextService:
         retrieval_audience = audience or ("external_contact" if external else "client_user")
         if retrieval_audience not in {"internal_operator", "client_user", "external_contact"}:
             raise ValueError("invalid_customer_context_audience")
+        strategy = CompanyStrategyContextService(self.store).retrieve(organization_id=organization_id, contract_id=contract_id, profile_key=profile_key, audience=retrieval_audience, query=query)
+        portfolio=CompanyPortfolioContextService(self.store).retrieve(organization_id=organization_id,contract_id=contract_id,profile_key=profile_key,audience=retrieval_audience,query=query,represented_business_ids=strategy.get('portfolio_selection',{}).get('representedBusinessIds',[]))
+        strategy_fields = {'company_strategy_context': strategy['strategy_context'], 'company_strategy_sources': strategy['sources'],'portfolio_context':portfolio}
 
         company = _latest(self.store.list("organization_company_profiles", {"organization_id": organization_id}, limit=2))
         brands = self.store.list("marketing_brand_profiles", {"organization_id": organization_id}, limit=20)
         active_brands = [item for item in brands if item.get("status") == "active"]
         contract_brands = [item for item in active_brands if contract_id and str(item.get("contract_id")) == contract_id]
         brand = _latest(contract_brands) or _latest(active_brands)
-        products = [
-            item for item in self.store.list("marketing_products_services", {"organization_id": organization_id}, limit=40)
-            if item.get("status") == "active"
-        ]
+        products=[{**item,'value_proposition':item.get('valueProposition'),'target_audience':item.get('targetAudience'),'proof_points':item.get('proofPoints',[]),'objections':item.get('objections',[]),'cta':item.get('cta')} for item in portfolio['items']]
         authorized_search = getattr(self.store, "retrieve_authorized_knowledge", None)
         if callable(authorized_search):
             query_embedding = self.embedding_service.embed_query(query) if self.embedding_service is not None else None
@@ -100,13 +102,14 @@ class CustomerContextService:
             source_ids = [str(item["document_id"]) for item in context_items if item.get("document_id")]
             safety_rules = self._assistant_safety_rules(assistant_id)
             return {
+                **strategy_fields,
                 "company_profile": self._safe_company(company),
                 "customer_context": self._company_summary(company),
                 "brand_summary": self._brand_summary(brand),
                 "brand_rules": self._brand_rules(brand, safety_rules),
                 "visual_identity": (brand or {}).get("visual_identity") or {},
-                "products": [self._product_summary(item) for item in products[:10]],
-                "product_profiles": [self._safe_product(item) for item in products[:10]],
+                "products": [self._product_summary(item) for item in products],
+                "product_profiles": [self._safe_product(item) for item in products],
                 "knowledge_snippets": snippets,
                 "company_chunks": context_items,
                 "company_context_source_ids": source_ids,
@@ -172,13 +175,14 @@ class CustomerContextService:
         brand_rules = self._brand_rules(brand, safety_rules)
 
         return {
+            **strategy_fields,
             "company_profile": self._safe_company(company),
             "customer_context": self._company_summary(company),
             "brand_summary": self._brand_summary(brand),
             "brand_rules": brand_rules,
             "visual_identity": (brand or {}).get("visual_identity") or {},
-            "products": [self._product_summary(item) for item in products[:10]],
-            "product_profiles": [self._safe_product(item) for item in products[:10]],
+            "products": [self._product_summary(item) for item in products],
+            "product_profiles": [self._safe_product(item) for item in products],
             "knowledge_snippets": snippets,
             "company_chunks": context_items,
             "company_context_source_ids": source_ids,
@@ -295,7 +299,7 @@ class CustomerContextService:
         return {
             key: company.get(key)
             for key in (
-                "legal_name", "trade_name", "description", "website_url", "industry",
+                "legal_name", "trade_name", "description", "website_url", "industry", "business_models",
                 "positioning", "differentiators", "service_regions", "social_links",
             )
             if company.get(key) not in (None, "", [], {})
@@ -305,8 +309,11 @@ class CustomerContextService:
     def _company_summary(company: dict[str, Any] | None) -> str:
         if not company:
             return ""
+        labels={'service_provider':'Prestador de serviços','retailer':'Comércio','manufacturer':'Fabricante','commercial_representative':'Representante comercial','distributor':'Distribuidor','other':'Outro'}
+        business_models=[labels[key] for key in _strings(company.get('business_models')) if key in labels]
         parts = [
             company.get("trade_name") or company.get("legal_name"),
+            'Atuação: '+', '.join(business_models) if business_models else '',
             company.get("industry"), company.get("positioning"), company.get("description"),
         ]
         return " | ".join(str(part).strip() for part in parts if str(part or "").strip())[:1800]
@@ -356,6 +363,7 @@ class CustomerContextService:
                 "name",
                 "description",
                 "value_proposition",
+                "representedBusinessId","representedBusinessName","packaging","storageConditions","commercialAvailability","serviceRegions","brandServiceRegions","authorizedLines",
                 "target_audience",
                 "proof_points",
                 "objections",

@@ -241,7 +241,18 @@ describe.skipIf(!connectionString)('requested-count scheduling with isolated Pos
  it.each([fixtureIds.organizationA,organizationId])('delivers healthy lots even when repairing an earlier lot in %s fails',async badOrganizationId=>{
   const f=await fixture(),name=`qa_orphan_${randomUUID().replaceAll('-','')}`
   let badCampaignId:string|undefined
+  let previousRadarModule:{contract_id:string;enabled:boolean|null}|undefined
   try{
+   // This case exercises fault isolation between authorized fixture workspaces.
+   // Do not depend on another test having enabled the second synthetic workspace.
+   if(badOrganizationId!==organizationId){
+    previousRadarModule=(await f.pool.query(`SELECT contract.id AS contract_id,module.enabled FROM public.contracts contract
+     JOIN public.organizations organization ON organization.client_id=contract.client_id
+     LEFT JOIN public.contract_modules module ON module.contract_id=contract.id AND module.module_key='radar'
+     WHERE organization.id=$1 AND contract.status='active' ORDER BY contract.starts_at DESC,contract.id DESC LIMIT 1`,[badOrganizationId])).rows[0]
+    if(!previousRadarModule)throw Error('fixture_contract_missing')
+    await f.pool.query(`INSERT INTO public.contract_modules(contract_id,module_key,enabled) VALUES($1,'radar',TRUE) ON CONFLICT(contract_id,module_key) DO UPDATE SET enabled=TRUE`,[previousRadarModule.contract_id])
+   }
    const badCampaign=await createRadarCampaign(f.pool,admin,{organizationId:badOrganizationId,name:'Scheduling fault fixture',campaignType:'regional_b2b',targetStates:['SP'],targetSegment:'Empresas',offerType:'Oferta'})
    badCampaignId=badCampaign.id
    const bad=(await f.pool.query(`INSERT INTO radar_capture_operations(organization_id,campaign_id,requested_by,request_id,configuration_revision,requested_count,configuration_snapshot,created_at) VALUES($1,$2,$3,$4,1,1,'{}',NOW()-INTERVAL '1 hour') RETURNING id`,[badOrganizationId,badCampaign.id,admin.id,randomUUID()])).rows[0]
@@ -259,6 +270,10 @@ describe.skipIf(!connectionString)('requested-count scheduling with isolated Pos
    await f.pool.query(`DROP TRIGGER IF EXISTS ${name} ON radar_capture_operations`)
    await f.pool.query(`DROP FUNCTION IF EXISTS ${name}()`)
    if(badCampaignId)await f.pool.query('DELETE FROM radar_campaigns WHERE id=$1',[badCampaignId])
+   if(previousRadarModule){
+    if(previousRadarModule.enabled===null)await f.pool.query("DELETE FROM public.contract_modules WHERE contract_id=$1 AND module_key='radar'",[previousRadarModule.contract_id])
+    else await f.pool.query("UPDATE public.contract_modules SET enabled=$2 WHERE contract_id=$1 AND module_key='radar'",[previousRadarModule.contract_id,previousRadarModule.enabled])
+   }
    await f.close()
   }
  })

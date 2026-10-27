@@ -1,4 +1,10 @@
+import type {MarketingProductService} from './marketingStudio'
+export type BusinessModel='service_provider'|'retailer'|'manufacturer'|'commercial_representative'|'distributor'|'other'
+export const businessModelLabels:Record<BusinessModel,string>={service_provider:'Prestador de serviços',retailer:'Comércio',manufacturer:'Fabricante',commercial_representative:'Representante comercial',distributor:'Distribuidor',other:'Outro'}
+export interface RepresentedBusinessInput{name:string;relationshipType:'representation'|'distribution'|'both';websiteUrl?:string;description:string;serviceRegions:string[];authorizedLines:string[];commercialConditions:string;status:'active'|'paused'|'archived'}
+export interface RepresentedBusiness extends RepresentedBusinessInput{productCount?:number;sourceCount?:number;id:string;organizationId:string;version:number;createdAt:string;updatedAt:string}
 export interface CompanyProfile {
+  businessModels?:BusinessModel[]
   id?: string
   organizationId: string
   clientId?: string
@@ -68,6 +74,8 @@ export type CompanyKnowledgeStatus = 'draft' | 'indexing' | 'indexed' | 'publish
 export type CompanyKnowledgeVisibility = 'internal' | 'external' | 'both'
 
 export interface CompanyKnowledgeDocument {
+  representedBusinessName?:string
+  representedBusinessId?:string
   id: string
   organizationId: string
   clientId: string
@@ -100,6 +108,7 @@ export interface CompanyKnowledgeDocument {
 }
 
 export interface CompanyKnowledgeBaseInput {
+  representedBusinessId?:string
   contractId?: string
   title: string
   documentType: CompanyKnowledgeDocumentType
@@ -176,3 +185,7 @@ export interface KnowledgeRetrievalTrace {
   status: 'succeeded' | 'empty' | 'failed'
   createdAt: string
 }
+
+export interface RepresentedProductInput{name:string;category?:string;description:string;valueProposition?:string;targetAudience?:string;proofPoints:string[];objections:string[];cta?:string;status:MarketingProductService['status'];details:{sku?:string;packaging?:string;storageConditions?:string;serviceRegions?:string[];commercialAvailability:'confirmed'|'unconfirmed'}}
+
+export type WebsiteOnboardingTarget={kind:'own_company'}|{kind:'represented_business';representedBusinessId:string}
