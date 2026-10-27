@@ -23,6 +23,7 @@ type Props = {
 }
 
 export function MissionConversationThread({ strategyHref, conversation, processing, processingError, canWrite, onQuickReply, onConfirmBrief, onRetry, onApprovePlan, onRequestPlanChanges, correctionTarget, onInlineCorrection }: Props) {
+  const preparing = conversation.messages.at(-1)?.structuredPayload.crmPreparation === 'running'
   const latestMessageId = conversation.messages.at(-1)?.id
   return (
     <Conversation className="min-h-0 bg-yx-surface-2">
@@ -61,7 +62,7 @@ export function MissionConversationThread({ strategyHref, conversation, processi
             </Message>
           )
         })}
-        {processing ? <div className="flex items-start gap-3" aria-label="Agente analisando"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-yx-blue text-white"><Bot className="h-4 w-4" /></span><div className="flex items-center gap-2 rounded-xl border border-yx-line-strong bg-yx-surface px-4 py-3 text-sm text-yx-fg-2 shadow-sm"><Loader2 className="h-4 w-4 animate-spin text-yx-blue" />Consultando estratégia YUX e contexto da empresa…</div></div> : null}
+        {processing ? <div className="flex items-start gap-3" aria-label="Agente analisando"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-yx-blue text-white"><Bot className="h-4 w-4" /></span><div className="flex items-center gap-2 rounded-xl border border-yx-line-strong bg-yx-surface px-4 py-3 text-sm text-yx-fg-2 shadow-sm"><Loader2 className="h-4 w-4 animate-spin text-yx-blue" />{preparing ? 'Criando os rascunhos de CRM, funil e e-mails…' : 'Consultando estratégia YUX e contexto da empresa…'}</div></div> : null}
         {processingError && !processing ? <div className="rounded-xl border border-yx-warn-line bg-yx-warn-soft p-4 text-sm text-yx-warn"><p>{processingErrorMessage(processingError)}</p>{canWrite && onRetry ? <button className="mt-3 inline-flex items-center gap-2 font-semibold text-yx-warn hover:underline" onClick={onRetry} type="button"><RotateCcw className="h-4 w-4" />Tentar novamente sem reenviar</button> : null}</div> : null}
       </ConversationContent>
       <ConversationScrollButton />

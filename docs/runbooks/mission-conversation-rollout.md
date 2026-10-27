@@ -165,3 +165,17 @@ O detalhe da missão não consulta em aba oculta nem durante um comando do usuá
 ## Evidências a preservar
 
 Registre horário, tenant, conversation ID, Mission ID, job IDs, hashes de briefing/plano, versão do Harness e métricas agregadas. Não copie conteúdo de cliente para tickets externos; use IDs e traces redigidos.
+
+## Preparação de CRM, funil e e-mails pela conversa
+
+O pacote `crm_preparation@1.0.0` é exclusivo do modo `prepare`. Após confirmar o briefing, o usuário revisa o plano; sua aprovação inicia somente a criação dos rascunhos. A definição não admite extensões, outros pacotes, publicação, ativação, importação, inscrição de leads ou envio. O pacote completo `funnel_nurture` mantém suas exigências de ativação.
+
+Requisitos: Missões, CRM e Automações habilitados, CRM provisionado em `draft` ou `active`, contrato/organização e permissões válidos. Não exige remetente, conexão de WhatsApp/e-mail ou a habilitação de Funil + Nutrição. O perfil operacional informa a capacidade de preparação ao agente; informações de integração não devem ser perguntadas ao cliente quando o sistema pode verificá-las.
+
+O fluxo inicial salva uma versão de funil com estágios configuráveis, três templates e uma sequência desativada. Ele não altera o status da instância CRM nem cria automação ativa. Requisitos de envio futuro ficam nas condições de ativação, sem impedir a preparação. Se faltarem ICP/oferta ou dados necessários ao próprio rascunho, a conversa pede esclarecimento.
+
+A conclusão exige oito ações bem-sucedidas e cinco rascunhos persistidos, vinculados aos recibos dos comandos e à conta/missão. Só então o chat informa a criação e oferece “Revisar rascunhos”. O detalhe mostra os artefatos e suas fontes. Aprovações, confirmações e jobs repetidos preservam os mesmos registros; um bloqueio mantém os rascunhos anteriores e indica revisão na missão.
+
+Para publicação posterior, permanecem obrigatórios conexão própria e saudável, versões publicadas dos templates referenciados, permissões, aprovação e demais políticas. Conhecer a ferramenta ou aprovar rascunhos não concede autorização de envio.
+
+Validação: `tests/integration/mission-crm-preparation.test.ts`, com banco descartável, HTTP real e respostas simuladas. Cobre confirmação/aprovação repetidas, criação efetiva, isolamento entre contas, quatro perfis, CRM pausado e revogação de Automações durante a execução. Não reprocessar mensagens reais como teste sem autorização de consumo. Depois de publicar código e implantar os serviços, verificar o catálogo e os hashes sem criar rascunhos ou chamar provedores pagos em produção.

@@ -953,14 +953,20 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_plan_approval' })
     requireAccess(ctx, 'action_engine.write', { organizationId: body.data.organizationId })
     try {
-      const mission = await approvePlanRevision(app.pg as never, {
+      let mission = await approvePlanRevision(app.pg as never, {
         organizationId: body.data.organizationId, missionId: body.data.missionId, planId: params.data.planId,
         approvalId: body.data.approvalId, expectedMissionVersion: body.data.expectedMissionVersion,
         subjectHash: body.data.subjectHash, decidedBy: ctx.userId, reason: body.data.reason,
       })
+      const preparing = missionPackKey(mission.packSelection) === 'crm_preparation'
+      if (preparing && mission.status === 'ready') {
+        mission = (await startMission(app.pg as never, { organizationId: mission.organizationId, missionId: mission.id,
+          expectedVersion: mission.version, actorId: ctx.userId })).mission
+      }
       try {
         await transaction(app.pg, client => markMissionConversationPlanApproved(client, {
           organizationId: body.data.organizationId, missionId: body.data.missionId, planId: params.data.planId,
+          preparing,
         }))
       } catch (projectionError) {
         request.log.error({ err: projectionError, missionId: body.data.missionId }, 'mission conversation approval projection failed')
@@ -1447,7 +1453,7 @@ function sendDomainError(reply: FastifyReply, error: unknown) {
     plan_or_approval_not_found: 404, plan_not_pending_approval: 409, approval_subject_changed: 409,
     agent_harness_unavailable: 503,
     mission_not_ready: 409, mission_plan_not_approved: 409,
-    crm_preparation_scope_invalid: 409, crm_preparation_crm_unavailable: 409,
+    resource_claim_conflict: 409, crm_preparation_scope_invalid: 409, crm_preparation_crm_unavailable: 409,
     approval_not_found: 404, approval_already_decided: 409, plan_approval_requires_version_context: 409,
     action_not_retryable: 409, action_skip_not_allowed: 409, action_not_human_task: 409,
     actual_minutes_required: 400, human_task_evidence_required: 400, human_cost_rate_missing: 409,

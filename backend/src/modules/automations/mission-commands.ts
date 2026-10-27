@@ -27,7 +27,9 @@ export async function createSequenceDraft(client: MissionCommandQueryable, conte
   const draft = validateSequenceDraft(input)
   const templates = await client.query<{ count: number | string }>(
     `SELECT COUNT(*)::INT AS count FROM public.email_template_versions version JOIN public.email_templates template ON template.id=version.template_id
-      WHERE template.organization_id=$1 AND version.id = ANY($2::UUID[]) AND template.status='published'`, [context.organizationId, draft.steps.map(step => step.templateVersionId)])
+      WHERE template.organization_id=$1 AND version.id = ANY($2::UUID[])
+        AND (template.status='published' OR (template.status='draft' AND template.mission_id=$3 AND version.published_by IS NULL))`,
+    [context.organizationId, draft.steps.map(step => step.templateVersionId), context.missionId])
   if (Number(templates.rows[0]?.count ?? 0) !== draft.steps.length) throw new Error('sequence_template_version_unavailable')
   const contentHash = missionArtifactHash(draft)
   const sequence = await client.query<{ id: string }>(
@@ -71,6 +73,11 @@ export async function publishSequenceDraft(client: MissionCommandQueryable, cont
   if (row.content_hash !== input.expectedContentHash) throw new Error('sequence_draft_hash_changed')
   const provider = await client.query<{ ready: boolean }>(`SELECT EXISTS (SELECT 1 FROM public.email_provider_connections WHERE organization_id=$1 AND status='connected') AS ready`, [context.organizationId])
   if (!provider.rows[0]?.ready) throw new Error('email_provider_unavailable')
+  const templates = await client.query<{ ready: boolean }>(`SELECT COUNT(*)>0 AND BOOL_AND(
+      template.organization_id=$2 AND template.status='published' AND template.published_version_id=step.template_version_id) AS ready
+    FROM public.crm_sequence_steps step LEFT JOIN public.email_templates template ON template.id=step.template_id
+    WHERE step.sequence_id=$1`, [input.sequenceId, context.organizationId])
+  if (!templates.rows[0]?.ready) throw new Error('sequence_templates_not_published')
   await client.query(`UPDATE public.crm_sequence_versions SET status='published',published_by=$2,published_at=NOW() WHERE id=$1`, [input.versionId, context.actorId])
   await client.query(`UPDATE public.crm_sequences SET status='active',is_active=TRUE,active_version_id=$2,updated_at=NOW() WHERE id=$1`, [input.sequenceId, input.versionId])
   await client.query(`UPDATE public.crm_sequence_steps SET is_active=TRUE WHERE sequence_id=$1`, [input.sequenceId])

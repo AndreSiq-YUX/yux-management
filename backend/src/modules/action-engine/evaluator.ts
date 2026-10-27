@@ -4,6 +4,7 @@ import type { MetricValue } from './types.js'
 import { PackMetricCollectorRegistry, type PackMetricCollector, type PackMetricSnapshot } from './metrics/collector.js'
 import { campaignLaunchMetricCollector } from './metrics/campaign-launch.js'
 import { radarProspectingMetricCollector } from './metrics/radar-prospecting.js'
+import { crmPreparationMetricCollector } from './metrics/crm-preparation.js'
 import { aggregateCompositeMetricSnapshots, evaluateCompositeMission } from './metrics/composite.js'
 
 export type EvaluationConclusion = 'continue' | 'pause' | 'block' | 'propose_replan' | 'succeed' | 'fail' | 'expire'
@@ -136,6 +137,7 @@ export function createPackMetricCollectorRegistry(): PackMetricCollectorRegistry
   return new PackMetricCollectorRegistry()
     .register(revenueRecoveryMetricCollector)
     .register(funnelNurtureMetricCollector)
+    .register(crmPreparationMetricCollector)
     .register(campaignLaunchMetricCollector)
     .register(campaignOptimizationMetricCollector)
     .register(radarProspectingMetricCollector)

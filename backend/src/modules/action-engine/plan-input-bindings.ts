@@ -47,7 +47,10 @@ function resolveReference(value: string, context: { resolvedParameters: JsonReco
   const reference = value.slice('binding:'.length)
   const stepKey = Object.keys(context.outputsByStep).sort((left, right) => right.length - left.length).find(key => reference.startsWith(`${key}.`))
   if (stepKey) {
-    const resolved = readPath(context.outputsByStep[stepKey]!, reference.slice(stepKey.length + 1))
+    const output = context.outputsByStep[stepKey]!
+    const path = reference.slice(stepKey.length + 1)
+    const direct = readPath(output, path)
+    const resolved = direct === undefined ? readPath(output.output, path) : direct
     if (resolved !== undefined) return resolved
   }
   if (context.validation) {

@@ -87,3 +87,9 @@ it('keeps current brief confirmation explicit and removes stale confirmation act
   expect(old.element.textContent).toContain('Validar recompra')
   expect([...old.element.querySelectorAll('button')].some(button => button.textContent === 'Confirmar e preparar plano')).toBe(false)
 })
+
+it('distinguishes draft creation from strategic analysis while waiting for persistence', async () => {
+  const { element } = await render([message('1', { crmPreparation: 'running' })], { processing: true })
+  expect(element.textContent).toContain('Criando os rascunhos de CRM, funil e e-mails…')
+  expect(element.textContent).not.toContain('Consultando estratégia YUX e contexto da empresa…')
+})

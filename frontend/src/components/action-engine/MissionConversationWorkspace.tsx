@@ -201,7 +201,8 @@ export function MissionConversationWorkspace({ conversationId, organizationId, c
   const processing = (POLLING_STATUSES.has(conversation.status) && !processingError) || acceptedTurn != null
   const canInteract = canWrite && !['cancelled', 'converted'].includes(conversation.status)
   const writable = canInteract && conversation.status !== 'awaiting_plan_approval'
-  const liveStatus = processing ? 'O agente está consultando a estratégia YUX e o contexto da empresa.' : statusLabel(conversation.status)
+  const preparing = conversation.messages.at(-1)?.structuredPayload.crmPreparation === 'running'
+  const liveStatus = processing ? (preparing ? 'Criando rascunhos para sua revisão.' : 'O agente está consultando a estratégia YUX e o contexto da empresa.') : statusLabel(conversation.status)
 
   return (
     <div className="flex min-h-[calc(100vh-7.5rem)] flex-col overflow-hidden border border-yx-line bg-yx-surface shadow-sm">
@@ -212,7 +213,7 @@ export function MissionConversationWorkspace({ conversationId, organizationId, c
         </div>
         <div className="flex items-center gap-2">
           <button className="inline-flex h-9 items-center gap-2 rounded-lg border border-yx-line px-3 text-xs font-semibold text-yx-fg-2 hover:bg-yx-surface-2" onClick={() => setContextOpen(true)} type="button"><BookOpen className="h-4 w-4" />Contexto usado</button>
-          {conversation.missionId ? <Link className="inline-flex h-9 items-center gap-2 rounded-lg bg-yx-blue px-3 text-xs font-semibold text-white" to={missionHref(conversation.missionId)}>Ver missão <ExternalLink className="h-3.5 w-3.5" /></Link> : null}
+          {conversation.missionId ? <Link className="inline-flex h-9 items-center gap-2 rounded-lg bg-yx-blue px-3 text-xs font-semibold text-white" to={missionHref(conversation.missionId)}>{conversation.messages.at(-1)?.structuredPayload.crmPreparation === 'completed' ? 'Revisar rascunhos' : 'Ver missão'} <ExternalLink className="h-3.5 w-3.5" /></Link> : null}
           {writable && !processing ? <button aria-label="Cancelar conversa" className="rounded-full p-2 text-yx-fg-3 hover:bg-yx-crit-soft hover:text-yx-crit" onClick={() => void cancel()} type="button"><XCircle className="h-4 w-4" /></button> : <MoreHorizontal className="h-4 w-4 text-yx-fg-3" />}
         </div>
       </div>

@@ -19,7 +19,9 @@ export async function createPipelineDraft(client: MissionCommandQueryable, conte
   const commandKey = 'crm.pipeline.create_draft'
   const prior = await loadMissionCommandResult<CommandResult>(client, context, commandKey); if (prior) return prior
   const draft = validateFunnelDraft(input)
-  const instance = await client.query<{ id: string }>(`SELECT id FROM public.crm_instances WHERE organization_id = $1 AND status IN ('draft','active') ORDER BY id LIMIT 1 FOR UPDATE`, [context.organizationId])
+  const instance = await client.query<{ id: string }>(`SELECT id FROM public.crm_instances WHERE organization_id = $1 AND status IN ('draft','active')
+    AND EXISTS(SELECT 1 FROM public.action_missions mission WHERE mission.id=$2 AND mission.organization_id=$1
+      AND (mission.contract_id IS NULL OR mission.contract_id=crm_instances.contract_id)) ORDER BY id LIMIT 1 FOR UPDATE`, [context.organizationId, context.missionId])
   if (!instance.rows[0]) throw new Error('crm_instance_unavailable')
   const contentHash = missionArtifactHash(draft)
   const version = await client.query<{ id: string }>(

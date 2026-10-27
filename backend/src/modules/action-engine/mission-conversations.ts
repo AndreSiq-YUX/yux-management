@@ -536,6 +536,7 @@ export async function markMissionConversationPlanApproved(client: Queryable, inp
   organizationId: string
   missionId: string
   planId: string
+  preparing?: boolean
 }): Promise<void> {
   const conversation = await client.query<ConversationRow>(
     `SELECT ${CONVERSATION_COLUMNS} FROM public.action_mission_conversations
@@ -544,20 +545,44 @@ export async function markMissionConversationPlanApproved(client: Queryable, inp
   )
   const current = conversation.rows[0]
   if (!current || current.status === 'converted') return
+  if (input.preparing) {
+    const prior = await client.query(`SELECT id FROM public.action_mission_conversation_messages
+      WHERE conversation_id=$1 AND organization_id=$2 AND structured_payload->>'projectionKey'=$3`,
+    [current.id, input.organizationId, `plan-approved:${input.planId}`])
+    if (prior.rows[0]) return
+  }
   await insertMessage(client, {
     organizationId: input.organizationId, conversationId: current.id,
     sequence: await nextMessageSequence(client, current.id, input.organizationId),
     actorType: 'agent', messageKind: 'status',
-    content: 'Plano aprovado. A missão está pronta para seguir conforme o modo de autonomia definido.',
-    structuredPayload: { kind: 'message', projectionKey: `plan-approved:${input.planId}`, planId: input.planId, missionId: input.missionId },
+    content: input.preparing ? 'Plano aprovado. Vou salvar o funil, os três e-mails e a sequência como rascunhos para revisão. Nada será ativado ou enviado.'
+      : 'Plano aprovado. A missão está pronta para seguir conforme o modo de autonomia definido.',
+    structuredPayload: { kind: 'message', projectionKey: `plan-approved:${input.planId}`, planId: input.planId, missionId: input.missionId,
+      ...(input.preparing ? { crmPreparation: 'running' } : {}) },
     sourceRefs: [],
   })
   await client.query(
     `UPDATE public.action_mission_conversations
-     SET status = 'converted', completed_at = NOW(), version = version + 1, updated_at = NOW()
+     SET status = $3, completed_at = CASE WHEN $3='converted' THEN NOW() ELSE NULL END, version = version + 1, updated_at = NOW()
      WHERE id = $1 AND organization_id = $2`,
-    [current.id, input.organizationId],
+    [current.id, input.organizationId, input.preparing ? 'planning' : 'converted'],
   )
+}
+
+export async function projectCrmPreparationOutcome(client: Queryable, input: {
+  organizationId: string; missionId: string; succeeded: boolean
+}): Promise<void> {
+  const current = (await client.query<ConversationRow>(`SELECT ${CONVERSATION_COLUMNS} FROM public.action_mission_conversations
+    WHERE mission_id=$1 AND organization_id=$2 FOR UPDATE`, [input.missionId, input.organizationId])).rows[0]
+  if (!current || current.status === 'converted' || current.status === 'blocked') return
+  await insertMessage(client, { organizationId: input.organizationId, conversationId: current.id,
+    sequence: await nextMessageSequence(client, current.id, input.organizationId), actorType: 'agent', messageKind: 'status',
+    content: input.succeeded ? 'Os rascunhos foram criados: um funil de CRM, três e-mails e uma sequência desativada. Abra a missão para revisar o conteúdo e as etapas. Nenhum envio, ativação ou importação de leads foi realizado.'
+      : 'A preparação foi interrompida. Confira na missão quais rascunhos foram salvos e o ponto que precisa de ajuste antes de continuar. Nenhum envio ou ativação foi autorizado por este plano.',
+    structuredPayload: { kind: 'message', projectionKey: `crm-preparation:${input.missionId}`, missionId: input.missionId,
+      crmPreparation: input.succeeded ? 'completed' : 'blocked' }, sourceRefs: [] })
+  await client.query(`UPDATE public.action_mission_conversations SET status=$3,completed_at=NOW(),version=version+1,updated_at=NOW()
+    WHERE id=$1 AND organization_id=$2`, [current.id, input.organizationId, input.succeeded ? 'converted' : 'blocked'])
 }
 
 export async function getMissionConversationForMission(
@@ -724,7 +749,7 @@ async function resolveConversationPacks(
     }
   }
   if (preparation) {
-    const crm = await client.query(`SELECT id FROM public.crm_instances WHERE organization_id=$1 AND contract_id=$2
+    const crm = await client.query(`SELECT id FROM public.crm_instances WHERE organization_id=$1 AND ($2::uuid IS NULL OR contract_id=$2)
       AND status IN ('draft','active') LIMIT 1 FOR SHARE`, [organizationId, contractId])
     if (!crm.rows[0]) throw new Error('crm_preparation_crm_unavailable')
   }

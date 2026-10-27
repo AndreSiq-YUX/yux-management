@@ -46,6 +46,7 @@ import {
   getMissionConversation,
   isMissionConversationRolloutEnabled,
   projectMissionConversationPlanningResult,
+  projectCrmPreparationOutcome,
   recordMissionConversationProcessingError,
 } from '../../modules/action-engine/mission-conversations.js'
 import { composeVerifiedMissionContext, verifyMissionKnowledgeContext } from '../../modules/action-engine/mission-source-verifier.js'
@@ -262,6 +263,7 @@ export async function handleActionEngineExecute(
   if (result.containment) {
     await queue.add('action-engine.collectMetrics', { missionId, organizationId, reason: result.containment.reason })
   }
+  if (result.preparationCheckpoint) await queue.add('action-engine.collectMetrics', { missionId, organizationId })
   if (result.status === 'succeeded' || result.status === 'failed' || result.status === 'skipped') {
     await queue.add('action-engine.scheduleReadyActions', { missionId })
   }
@@ -554,7 +556,7 @@ export async function handleActionEngineEvaluation(pool: Pool, data: Record<stri
     const completedActions = Number(actionCounts.rows[0]?.completed ?? 0)
     const targetRevenue = Number(current.parameters.targetRevenueBrl ?? 0)
     const observedRevenue = signedRevenue.kind === 'known' ? Number(signedRevenue.value) : Number.NaN
-    if (!['campaign_launch','composite'].includes(packSnapshot.packKey)) {
+    if (!['campaign_launch','composite','crm_preparation'].includes(packSnapshot.packKey)) {
       packSnapshot.signals.minimumSampleReached = completedActions >= 20
       packSnapshot.signals.offTrack = completedActions >= 20 && Number.isFinite(observedRevenue)
         && targetRevenue > 0 && observedRevenue / targetRevenue < 0.25
@@ -571,6 +573,9 @@ export async function handleActionEngineEvaluation(pool: Pool, data: Record<stri
       if (['succeeded','failed','expired','cancelled'].includes(nextStatus)) {
         await releaseResourceClaims(client, missionId, organizationId)
       }
+      if (packSnapshot.packKey === 'crm_preparation' && ['succeeded','failed','blocked','expired'].includes(nextStatus)) {
+        await projectCrmPreparationOutcome(client, { organizationId, missionId, succeeded: nextStatus === 'succeeded' })
+      }
       return { evaluation, economics, replanVersion: nextStatus === 'pending_replan_approval' ? transitioned.version : undefined }
     }
     return { evaluation, economics }
@@ -586,6 +591,7 @@ export async function handleActionEnginePlanMission(
   env: AppEnv,
   data: Record<string, unknown>,
   queue?: AppJobQueue,
+  dependencies: { invokePlan?: typeof requestMissionPlan } = {},
 ): Promise<{ planId?: string; skipped?: string }> {
   if (env.MISSION_SUPERVISOR_ENABLED === false) throw new Error('mission_supervisor_disabled')
   const missionId = stringField(data, 'missionId')
@@ -742,7 +748,7 @@ export async function handleActionEnginePlanMission(
       )
       : { rows: [] }
     const planningStartedAt = Date.now()
-    const rawPlan = await requestMissionPlan(env, {
+    const rawPlan = await (dependencies.invokePlan ?? requestMissionPlan)(env, {
       organization_id: organizationId,
       ...(mission.contractId ? { contract_id: mission.contractId } : {}),
       mission: {

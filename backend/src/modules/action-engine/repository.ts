@@ -474,10 +474,13 @@ export async function approvePlanRevision(pool: Connectable, input: {
   expectedMissionVersion: number; subjectHash: string; decidedBy: string; reason: string
 }): Promise<ActionMission> {
   return inTransaction(pool, async (client) => {
-    const locked = await client.query<{ plan_hash: string; approval_subject_hash: string; requested_payload: Record<string, unknown>; plan_status: string; approval_status: string; approval_type: string; mission_status: MissionStatus; mission_version: number }>(
+    const locked = await client.query<{ plan_hash: string; approval_subject_hash: string; requested_payload: Record<string, unknown>; plan_status: string; approval_status: string; approval_type: string; mission_status: MissionStatus; mission_version: number; preparation: boolean }>(
       `SELECT plan.plan_hash, plan.status AS plan_status, approval.status AS approval_status,
               approval.subject_hash AS approval_subject_hash, approval.requested_payload,
-              approval.approval_type, mission.status AS mission_status, mission.version AS mission_version
+              approval.approval_type, mission.status AS mission_status, mission.version AS mission_version,
+              (mission.mode='prepare' AND mission.active_plan_id=plan.id AND EXISTS (
+                SELECT 1 FROM public.action_pack_versions version JOIN public.action_packs pack ON pack.id=version.pack_id
+                WHERE version.id=plan.pack_version_id AND pack.key='crm_preparation')) AS preparation
        FROM public.action_plans plan
        JOIN public.action_missions mission ON mission.id = plan.mission_id
        JOIN public.action_approvals approval ON approval.plan_id = plan.id AND approval.id = $4
@@ -487,13 +490,19 @@ export async function approvePlanRevision(pool: Connectable, input: {
     )
     const row = locked.rows[0]
     if (!row) throw new Error('plan_or_approval_not_found')
-    if (row.plan_status !== 'pending_approval' || row.approval_status !== 'pending') throw new Error('plan_not_pending_approval')
     if (row.approval_subject_hash !== input.subjectHash) throw new Error('approval_subject_changed')
     const summary = row.requested_payload?.decisionSummary
     const proofPlanHash = summary && typeof summary === 'object'
       ? Reflect.get(Reflect.get(summary, 'technicalProof') ?? {}, 'planHash')
       : row.requested_payload?.planHash
     if (proofPlanHash !== row.plan_hash) throw new Error('approval_subject_changed')
+    if (row.preparation && row.approval_status === 'approved' && ['approved','active'].includes(row.plan_status)
+      && ['ready','active','succeeded'].includes(row.mission_status)) {
+      const existing = await getMission(client, input.missionId, input.organizationId)
+      if (!existing) throw new Error('mission_not_found')
+      return existing
+    }
+    if (row.plan_status !== 'pending_approval' || row.approval_status !== 'pending') throw new Error('plan_not_pending_approval')
     if (Number(row.mission_version) !== input.expectedMissionVersion) throw new Error('mission_version_conflict')
     const isReplan = row.approval_type === 'replan'
     const nextMissionStatus: MissionStatus = isReplan ? 'active' : 'ready'

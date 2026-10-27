@@ -37,8 +37,8 @@ export async function acquireMissionOwnership(client: Queryable, input: {
   const existing = await client.query<{ id: string; mission_id: string }>(
     `SELECT id, mission_id FROM public.action_mission_entities
      WHERE organization_id = $1 AND entity_type = $2 AND entity_id = $3 AND active = TRUE
-       AND (ownership_mode = 'exclusive' OR $6 = 'exclusive') FOR UPDATE`,
-    [input.organizationId, input.entityType, input.entityId, input.role, input.missionId, input.mode],
+       AND (ownership_mode = 'exclusive' OR $4::text = 'exclusive') FOR UPDATE`,
+    [input.organizationId, input.entityType, input.entityId, input.mode],
   )
   if (existing.rows[0] && existing.rows[0].mission_id !== input.missionId) throw new Error('mission_entity_ownership_conflict')
   const result = await client.query<{ id: string }>(

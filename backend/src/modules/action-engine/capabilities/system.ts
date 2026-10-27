@@ -41,7 +41,9 @@ export const systemReadinessCheck: CapabilityDefinition<z.infer<typeof readiness
           `SELECT id FROM public.crm_instances WHERE organization_id = $1 AND (status = 'active' OR ($2::boolean AND status = 'draft')) LIMIT 1`,
           [context.organizationId, context.missionMode === 'prepare' && input.preparationOnly === true],
       )
-      checks.push({ key: 'crm', status: crm.rows[0] ? 'ready' : 'missing', detail: crm.rows[0] ? 'CRM ativo.' : 'CRM ativo não encontrado.' })
+      checks.push({ key: 'crm', status: crm.rows[0] ? 'ready' : 'missing', detail: input.preparationOnly && context.missionMode === 'prepare'
+        ? (crm.rows[0] ? 'CRM disponível para preparação.' : 'CRM indisponível para preparação.')
+        : (crm.rows[0] ? 'CRM ativo.' : 'CRM ativo não encontrado.') })
     }
 
     for (const moduleKey of input.requiredModules) {

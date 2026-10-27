@@ -137,6 +137,11 @@ class MissionSupervisor:
                 if any(pack.key == 'crm_preparation' for pack in proposal.selected_packs):
                     artifacts = {key: value for key, value in artifacts.items() if key != 'automation'}
                 proposal.plan = self._inject_funnel_nurture_artifacts(proposal.plan, artifacts)
+                if route.selected_pack_keys == ['crm_preparation']:
+                    templates = {step['stepKey']: step for step in value['action_pack']['topologyTemplate']['steps']}
+                    for step in proposal.plan.get('steps') or []:
+                        if step.get('stepKey') == 'pack.readiness':
+                            step['input'] = dict(templates['pack.readiness']['defaultParameters'])
             if any(pack.key == "campaign_launch" for pack in proposal.selected_packs):
                 try:
                     artifacts = self.campaign_launch.generate(value)

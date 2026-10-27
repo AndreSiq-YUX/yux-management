@@ -58,6 +58,8 @@ export async function startMission(pool: Connectable, input: {
     const compositePacks = Array.isArray(plan.rows[0]?.compiled_payload.packs)
       ? plan.rows[0]!.compiled_payload.packs.map(item => item && typeof item === 'object' ? Reflect.get(item, 'key') : null) : []
     const funnelNurture = plan.rows[0]?.pack_key === 'funnel_nurture' || compositePacks.includes('funnel_nurture')
+    const preparation = plan.rows[0]?.pack_key === 'crm_preparation' || compositePacks.includes('crm_preparation')
+    if (preparation && (mission.mode !== 'prepare' || compositePacks.length > 1)) throw new Error('crm_preparation_scope_invalid')
     const campaignLaunch = ['campaign_launch','campaign_optimization'].includes(plan.rows[0]?.pack_key)
       || compositePacks.includes('campaign_launch') || compositePacks.includes('campaign_optimization')
     const radar=plan.rows[0]?.pack_key==='radar_prospecting'
@@ -70,10 +72,10 @@ export async function startMission(pool: Connectable, input: {
       ? campaignArtifacts.brief as Record<string, unknown> : {}
     const providerConnectionId = typeof campaignBrief.providerConnectionId === 'string' ? campaignBrief.providerConnectionId : 'organization'
     const claimTargets = [
-      ...(funnelNurture ? [{ resourceKey: 'crm.funnel_nurture_configuration', scope: 'organization_funnel_nurture' }] : []),
+      ...(funnelNurture || preparation ? [{ resourceKey: 'crm.funnel_nurture_configuration', scope: 'organization_funnel_nurture' }] : []),
       ...(campaignLaunch ? [{ resourceKey: 'campaign.provider_account', scope: providerConnectionId }] : []),
       ...(radar?[{resourceKey:typeof radarCampaign==='string'?'radar.campaign':'radar.creation',scope:typeof radarCampaign==='string'?radarCampaign:input.missionId}]:[]),
-      ...(!funnelNurture && !campaignLaunch && !radar ? [{ resourceKey: 'crm.lead_population', scope: 'inactive_revenue_recovery' }] : []),
+      ...(!funnelNurture && !preparation && !campaignLaunch && !radar ? [{ resourceKey: 'crm.lead_population', scope: 'inactive_revenue_recovery' }] : []),
     ]
     for (const target of claimTargets) await acquireResourceClaim(client, { organizationId: input.organizationId, missionId: input.missionId, missionLabel: mission.title, ...target, mode: 'exclusive', ttlSeconds: 900 })
     const runCount = await createActionRuns(client, { organizationId: input.organizationId, missionId: input.missionId, planId: mission.activePlanId })
@@ -98,7 +100,7 @@ export async function scheduleReadyActions(pool: Connectable, queue: AppJobQueue
        FROM public.action_runs run
        JOIN public.action_plan_steps step ON step.id = run.plan_step_id
        JOIN public.action_missions mission ON mission.id = run.mission_id
-       WHERE run.status = 'pending' AND mission.status = 'active'
+       WHERE run.status IN ('pending','ready') AND mission.status = 'active'
          AND ($1::UUID IS NULL OR run.mission_id = $1)
          AND NOT EXISTS (
            SELECT 1 FROM unnest(step.depends_on) dependency(step_key)
@@ -159,6 +161,7 @@ export async function executeActionRun(
 ): Promise<{
   status: ActionRunStatus
   duplicate?: boolean
+  preparationCheckpoint?: boolean
   reconciliation?: { effectId: string; organizationId: string }
   containment?: { reason: string }
 }> {
@@ -260,6 +263,13 @@ export async function executeActionRun(
       const currentMission = await getMission(client, claimed.action.mission_id, input.organizationId)
       if (!currentMission) throw new Error('mission_not_found')
       executionMissionMode = currentMission.mode
+      if (claimed.action.pack_key === 'crm_preparation' && (currentMission.mode !== 'prepare' || !['none','draft'].includes(capability.effect))) throw new Error('crm_preparation_scope_invalid')
+      if (claimed.action.pack_key === 'crm_preparation') {
+        const provisioned = await client.query(`SELECT id FROM public.crm_instances WHERE organization_id=$1
+          AND ($2::uuid IS NULL OR contract_id=$2) AND status IN ('draft','active') FOR SHARE`,
+        [input.organizationId, currentMission.contractId ?? null])
+        if (!provisioned.rows[0]) throw new Error('crm_preparation_crm_unavailable')
+      }
       const grounding = readGroundingMetadata(claimed.action.compiled_payload)
       if ((capability.effect === 'external' || capability.effect === 'destructive') && grounding) {
         await revalidateMissionGrounding(client, {
@@ -587,7 +597,8 @@ export async function executeActionRun(
       if(radarBlocked)await client.query("UPDATE public.action_runs SET status='blocked',completed_at=NULL,last_error='radar_operation_needs_action' WHERE id=$1",[input.actionRunId])
     })
     const radarStatus=claimed.action.capability_key==='radar.operation.await'&&result.output&&typeof result.output==='object'?Reflect.get(result.output,'status'):undefined
-    return { status: radarStatus==='blocked'?'blocked':radarStatus==='pending'||claimed.action.capability_key === 'system.signal.wait' || claimed.action.capability_key === 'human.task.create' ? 'running' : 'succeeded' }
+    return { status: radarStatus==='blocked'?'blocked':radarStatus==='pending'||claimed.action.capability_key === 'system.signal.wait' || claimed.action.capability_key === 'human.task.create' ? 'running' : 'succeeded',
+      ...(claimed.action.pack_key === 'crm_preparation' && claimed.action.step_key === 'pack.draft_sequence' ? { preparationCheckpoint: true } : {}) }
   } catch (error) {
     if (externalEffect && isOutcomeUnknown(error)) {
       await markExternalEffectUnknown(pool, {

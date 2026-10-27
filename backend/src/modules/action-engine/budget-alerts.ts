@@ -33,7 +33,7 @@ export function calculateMissionBudgetBurnDown(input: {
   emittedThresholds?: readonly number[]
 }): MissionBudgetBurnDown & { newlyCrossedThresholds: BudgetAlertThreshold[] } {
   const maximum = parseScaledDecimal(input.maximumCostBrl, 6)
-  if (maximum <= 0n) throw new Error('mission_budget_maximum_invalid')
+  if (maximum < 0n) throw new Error('mission_budget_maximum_invalid')
   const byId = new Map(input.entries.map(entry => [entry.id, entry]))
   const reversed = new Set(input.entries.filter(entry => entry.nature === 'reversal' && entry.reversesEntryId).map(entry => entry.reversesEntryId!))
   const actual = input.entries.reduce((sum, entry) => {
@@ -43,7 +43,7 @@ export function calculateMissionBudgetBurnDown(input: {
   }, 0n)
   const reserved = input.entries.reduce((sum, entry) => entry.nature === 'reserved' && !reversed.has(entry.id) ? sum + parseScaledDecimal(entry.amountBrl, 6) : sum, 0n)
   const consumed = actual + reserved
-  const percentage = consumed <= 0n ? 0n : (consumed * 10_000n + maximum / 2n) / maximum
+  const percentage = consumed <= 0n ? 0n : maximum === 0n ? 10_000n : (consumed * 10_000n + maximum / 2n) / maximum
   const crossed = BUDGET_ALERT_THRESHOLDS.filter(threshold => percentage >= BigInt(threshold * 100))
   const emitted = new Set(input.emittedThresholds ?? [])
   const newlyCrossedThresholds = crossed.filter(threshold => !emitted.has(threshold))
@@ -54,7 +54,7 @@ export function calculateMissionBudgetBurnDown(input: {
     actualCostBrl: formatScaledDecimal(actual, 6), reservedCostBrl: formatScaledDecimal(reserved, 6),
     consumedCostBrl: formatScaledDecimal(consumed, 6), remainingCostBrl: formatScaledDecimal(maximum > consumed ? maximum - consumed : 0n, 6),
     maximumCostBrl: formatScaledDecimal(maximum, 6), consumedPercent: formatScaledDecimal(percentage, 2),
-    alertThresholds, ...(nextAlertThreshold ? { nextAlertThreshold } : {}), exhausted: consumed >= maximum,
+    alertThresholds, ...(nextAlertThreshold ? { nextAlertThreshold } : {}), exhausted: maximum === 0n ? consumed > 0n : consumed >= maximum,
     newlyCrossedThresholds,
   }
 }

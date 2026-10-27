@@ -63,9 +63,9 @@
 
 **Interfaces:** aprovação do plano `crm_preparation` inicia apenas suas ações draft; executor mantém manifesto/leases/idempotência. Métrica determinística comprova rascunhos persistidos, conclui sem observação de 30 dias e projeta resultado/IDs seguros na conversa. O usuário revisa artefatos pelo detalhe da missão. Não inventar status salvo nem deixar polling eterno.
 
-- [ ] RED: aprovação inicia somente preparação; retries não duplicam; resultado só aparece após criação comprovada; artefatos não incluem automação fantasma nem status publicado.
-- [ ] GREEN: execução restrita, conclusão idempotente e mensagem legível com acesso aos rascunhos; aprovação de publicação permanece separada.
-- [ ] Verificar suites focadas, interface e registrar commit.
+- [x] RED: aprovação inicia somente preparação; retries não duplicam; resultado só aparece após criação comprovada; artefatos não incluem automação fantasma nem status publicado.
+- [x] GREEN: execução restrita, conclusão idempotente e mensagem legível com acesso aos rascunhos; aprovação de publicação permanece separada.
+- [x] Verificar suites focadas, interface e registrar commit. Banco local: oito ações e cinco rascunhos; frontend 1.283 passed; runtime 461 passed/7 skipped.
 
 ### Task 5: Fluxo integrado, regressões e entrega
 
@@ -73,7 +73,8 @@
 
 **Interfaces:** HTTP real + banco local + geração simulada: criar conversa → briefing → plano → aprovação → worker → rascunhos → refresh, com e-mail desconectado e CRM draft; provar nenhuma publicação, contato ou inscrição. Quatro perfis, isolamento e revogação durante a execução.
 
-- [ ] RED/GREEN de integração completa, HTTP direto, retorno ao chat, duplicatas e gates de publicação intactos.
-- [ ] Suítes adequadas, builds, lint dos arquivos alterados e conferência no navegador sem provedor pago.
+- [x] RED/GREEN de integração completa, HTTP direto, retorno ao chat, duplicatas e gates de publicação intactos.
+- [x] Suítes adequadas, builds, lint dos arquivos alterados e conferência no navegador sem provedor pago. Chromium desktop/mobile, fluxo real com banco descartável.
 - [ ] Revisão independente única de todo o diff; corrigir achados relevantes com testes.
 - [ ] Integrar main preservando concorrência e preparar/implantar a correção sob a autorização existente; verificar código/serviços sem executar criações reais nem inferência paga.
+

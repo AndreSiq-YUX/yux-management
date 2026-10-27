@@ -1,4 +1,7 @@
 import { missionArtifactHash } from './mission-command.js'
+import { validateFunnelDraft, type FunnelDraft } from '../crm/mission-commands.js'
+import { validateEmailTemplateDraft, type EmailTemplateDraft } from '../emailTemplates/mission-commands.js'
+import { validateSequenceDraft, type SequenceDraft } from '../automations/mission-commands.js'
 
 type RecordValue = Record<string, unknown>
 
@@ -177,6 +180,18 @@ function project(config: {
 }
 
 function artifactHash(kind: MissionArtifactProjection['kind'], data: RecordValue): string {
+  // Compare the same canonical content persisted by the domain commands; defaults and trimming are not edits.
+  try {
+    if (kind === 'funnel') {
+      const { reuseExistingFunnelId: _reuse, ...funnel } = data
+      return missionArtifactHash(validateFunnelDraft(funnel as FunnelDraft))
+    }
+    if (kind === 'sequence') return missionArtifactHash(validateSequenceDraft(data as SequenceDraft))
+    if (kind === 'email') {
+      const { key: _key, previewText, forbiddenTerms: _forbidden, ...copy } = data
+      return missionArtifactHash(validateEmailTemplateDraft({ ...copy, preheader: previewText } as EmailTemplateDraft))
+    }
+  } catch { /* Incomplete proposals have no persisted counterpart; retain their original fingerprint. */ }
   if (kind === 'funnel') {
     const { reuseExistingFunnelId: _reuse, ...funnel } = data
     return missionArtifactHash(funnel)
