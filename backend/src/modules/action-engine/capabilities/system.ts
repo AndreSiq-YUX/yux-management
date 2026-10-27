@@ -1,12 +1,11 @@
 import { z } from 'zod'
-import { noEffectRecovery, type CapabilityDefinition } from '../capability-registry.js'
+import { noEffectRecovery, type CapabilityContext, type CapabilityDefinition } from '../capability-registry.js'
 import { ACTIVE_MISSION_CHANNELS_SQL } from '../channel-readiness-source.js'
 
 const readinessInput = z.object({
   contractId: z.string().uuid().optional(),
   requiredModules: z.array(z.string().min(1)).default([]),
   requiredConnections: z.array(z.string().min(1)).default([]),
-  preparationOnly: z.boolean().optional(),
 })
 
 const readinessOutput = z.object({
@@ -28,7 +27,16 @@ export const systemReadinessCheck: CapabilityDefinition<z.infer<typeof readiness
   requiredModules: [],
   requiredConnections: [],
   recovery: noEffectRecovery(),
-  async execute(context, input) {
+  execute(context, input) { return executeReadiness(context, input, false) },
+}
+
+const preparationReadinessInput = readinessInput.extend({ preparationOnly: z.literal(true) })
+export const systemPreparationReadinessCheck: CapabilityDefinition<z.infer<typeof preparationReadinessInput>, z.infer<typeof readinessOutput>> = {
+  ...systemReadinessCheck, version: 2, inputSchema: preparationReadinessInput, supportsModes: ['prepare'],
+  execute(context, input) { return executeReadiness(context, input, input.preparationOnly) },
+}
+
+async function executeReadiness(context: CapabilityContext, input: z.infer<typeof readinessInput>, preparationOnly: boolean) {
     const checks: z.infer<typeof readinessOutput>['checks'] = []
     const organization = await context.query<{ id: string }>(
       `SELECT id FROM public.organizations WHERE id = $1 LIMIT 1`,
@@ -39,9 +47,9 @@ export const systemReadinessCheck: CapabilityDefinition<z.infer<typeof readiness
     if (input.requiredModules.some((moduleKey) => ['crm','automations','funnel_nurture_agent'].includes(moduleKey))) {
       const crm = await context.query<{ id: string }>(
           `SELECT id FROM public.crm_instances WHERE organization_id = $1 AND (status = 'active' OR ($2::boolean AND status = 'draft')) LIMIT 1`,
-          [context.organizationId, context.missionMode === 'prepare' && input.preparationOnly === true],
+          [context.organizationId, context.missionMode === 'prepare' && preparationOnly === true],
       )
-      checks.push({ key: 'crm', status: crm.rows[0] ? 'ready' : 'missing', detail: input.preparationOnly && context.missionMode === 'prepare'
+      checks.push({ key: 'crm', status: crm.rows[0] ? 'ready' : 'missing', detail: preparationOnly && context.missionMode === 'prepare'
         ? (crm.rows[0] ? 'CRM disponível para preparação.' : 'CRM indisponível para preparação.')
         : (crm.rows[0] ? 'CRM ativo.' : 'CRM ativo não encontrado.') })
     }
@@ -74,7 +82,6 @@ export const systemReadinessCheck: CapabilityDefinition<z.infer<typeof readiness
       checks.push({ key: `connection:${connectionKey}`, status: connection.rows[0] ? 'ready' : 'missing', detail: connection.rows[0] ? 'Conexão ativa.' : 'Conexão ativa não encontrada.' })
     }
     return { output: { ready: checks.every((check) => check.status === 'ready'), checks }, effectProduced: false }
-  },
 }
 
 const approvalInput = z.object({ approvalType: z.enum(['plan', 'population', 'canary', 'external_effect', 'replan']), subject: z.record(z.string(), z.unknown()).default({}) })

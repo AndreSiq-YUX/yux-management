@@ -266,7 +266,11 @@ export async function executeActionRun(
       if (claimed.action.pack_key === 'crm_preparation' && (currentMission.mode !== 'prepare' || !['none','draft'].includes(capability.effect))) throw new Error('crm_preparation_scope_invalid')
       if (claimed.action.pack_key === 'crm_preparation') {
         const provisioned = await client.query(`SELECT id FROM public.crm_instances WHERE organization_id=$1
-          AND ($2::uuid IS NULL OR contract_id=$2) AND status IN ('draft','active') FOR SHARE`,
+          AND ($2::uuid IS NULL OR contract_id=$2) AND status IN ('draft','active')
+          AND EXISTS(SELECT 1 FROM public.organizations organization WHERE organization.id=$1 AND (organization.kind='yux' OR EXISTS(
+            SELECT 1 FROM public.contracts contract WHERE contract.id=crm_instances.contract_id AND contract.client_id=organization.client_id
+              AND contract.status='active' AND (SELECT COUNT(DISTINCT module_key) FROM public.contract_modules module
+                WHERE module.contract_id=contract.id AND module.enabled=TRUE AND module.module_key IN('action_engine','crm','automations'))=3))) FOR SHARE`,
         [input.organizationId, currentMission.contractId ?? null])
         if (!provisioned.rows[0]) throw new Error('crm_preparation_crm_unavailable')
       }

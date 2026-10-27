@@ -574,12 +574,12 @@ export async function projectCrmPreparationOutcome(client: Queryable, input: {
 }): Promise<void> {
   const current = (await client.query<ConversationRow>(`SELECT ${CONVERSATION_COLUMNS} FROM public.action_mission_conversations
     WHERE mission_id=$1 AND organization_id=$2 FOR UPDATE`, [input.missionId, input.organizationId])).rows[0]
-  if (!current || current.status === 'converted' || current.status === 'blocked') return
+  if (!current || current.status === 'converted' || current.status === 'blocked' && !input.succeeded) return
   await insertMessage(client, { organizationId: input.organizationId, conversationId: current.id,
     sequence: await nextMessageSequence(client, current.id, input.organizationId), actorType: 'agent', messageKind: 'status',
     content: input.succeeded ? 'Os rascunhos foram criados: um funil de CRM, três e-mails e uma sequência desativada. Abra a missão para revisar o conteúdo e as etapas. Nenhum envio, ativação ou importação de leads foi realizado.'
       : 'A preparação foi interrompida. Confira na missão quais rascunhos foram salvos e o ponto que precisa de ajuste antes de continuar. Nenhum envio ou ativação foi autorizado por este plano.',
-    structuredPayload: { kind: 'message', projectionKey: `crm-preparation:${input.missionId}`, missionId: input.missionId,
+    structuredPayload: { kind: 'message', projectionKey: `crm-preparation:${input.missionId}:${input.succeeded ? 'completed' : 'blocked'}`, missionId: input.missionId,
       crmPreparation: input.succeeded ? 'completed' : 'blocked' }, sourceRefs: [] })
   await client.query(`UPDATE public.action_mission_conversations SET status=$3,completed_at=NOW(),version=version+1,updated_at=NOW()
     WHERE id=$1 AND organization_id=$2`, [current.id, input.organizationId, input.succeeded ? 'converted' : 'blocked'])

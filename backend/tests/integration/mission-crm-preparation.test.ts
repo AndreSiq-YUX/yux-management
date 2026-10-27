@@ -9,8 +9,7 @@ import type { MissionConversationTurnResponseWire } from '../../src/modules/acti
 import type { AppEnv } from '../../src/config/env.js'
 import { handleActionEngineProcessMissionConversation, handleActionEnginePlanMission, handleActionEngineSchedule,
   handleActionEngineExecute, handleActionEngineCollectMetrics, handleActionEngineEvaluation } from '../../src/jobs/handlers/action-engine.js'
-import { CRM_PREPARATION_PACK_V1 as pack } from '../../src/modules/action-engine/packs/crm-preparation-v1.js'
-import { createActionEngineCapabilityRegistry } from '../../src/modules/action-engine/capabilities/index.js'
+import { crmPreparationProposal } from '../support/crm-preparation-fixture.js'
 import { createSequenceDraft, publishSequenceDraft } from '../../src/modules/automations/mission-commands.js'
 
 it('creates and reviews real drafts through conversation without a sender, with retries, tenant isolation and activation gates', async () => {
@@ -72,7 +71,7 @@ it('creates and reviews real drafts through conversation without a sender, with 
     const planJob = jobs.find(job=>job.name==='action-engine.planMission')!
     const planResult = await within(() => handleActionEnginePlanMission(pool as never,env,planJob.data,queue,{invokePlan:async(_env,input)=>{
       expect(input.allowed_source_ids).toContain(sourceId)
-      return proposal(missionId,sourceId)
+      return crmPreparationProposal(missionId,sourceId)
     }}))
     expect(planResult.planId).toBeTruthy()
     const awaiting = (await getChat()).body
@@ -95,14 +94,22 @@ it('creates and reviews real drafts through conversation without a sender, with 
       expect(jobIndex,`action index ${index}`).toBeGreaterThanOrEqual(0)
       const actionJob = jobs.splice(jobIndex,1)[0]
       expect(actionJob,`action ${index}`).toBeDefined()
-      if (index===3 || index===4) {
+      if (index===3 || index===4 || index===5) {
         if (index===3) await rig.sql("UPDATE public.crm_instances SET status='paused' WHERE organization_id=$1",[org])
-        else await rig.sql("UPDATE public.contract_modules SET enabled=FALSE WHERE contract_id=$1 AND module_key='automations'",[rig.ids.contractA])
+        else await rig.sql('UPDATE public.contract_modules SET enabled=FALSE WHERE contract_id=$1 AND module_key=$2',[rig.ids.contractA,index===4?'automations':'action_engine'])
         expect((await execute(actionJob)).status).toBe('blocked')
         const written = await rig.sql('SELECT COUNT(*)::int AS count FROM public.action_mission_command_results WHERE action_run_id=$1',[actionJob.data.actionRunId])
         expect(written.rows[0].count).toBe(0)
+        if (index===3) {
+          await within(() => handleActionEngineEvaluation(pool as never,{missionId,organizationId:org,checkpointKey:'blocked-before-recovery'},queue))
+          expect((await getChat()).body.status).toBe('blocked')
+          const state = (await rig.sql('SELECT version FROM public.action_missions WHERE id=$1',[missionId])).rows[0]
+          const resumed = await rig.request('yux_admin','POST',`/api/action-engine/missions/${missionId}/resume`,{
+            organizationId:org,expectedVersion:state.version,reason:'Retomar após conferir o bloqueio.'})
+          expect(resumed.statusCode,JSON.stringify(resumed.body)).toBe(200)
+        }
         if (index===3) await rig.sql("UPDATE public.crm_instances SET status='draft' WHERE organization_id=$1",[org])
-        else await rig.sql("UPDATE public.contract_modules SET enabled=TRUE WHERE contract_id=$1 AND module_key='automations'",[rig.ids.contractA])
+        else await rig.sql('UPDATE public.contract_modules SET enabled=TRUE WHERE contract_id=$1 AND module_key=$2',[rig.ids.contractA,index===4?'automations':'action_engine'])
         const retry = await rig.request('yux_admin','POST',`/api/action-engine/actions/${actionJob.data.actionRunId}/retry`,{organizationId:org,reason:'Condição corrigida no teste local.'})
         expect(retry.statusCode,JSON.stringify(retry.body)).toBe(200)
         // The same durable action is retried; discard its duplicate queue message in this deterministic harness.
@@ -147,35 +154,5 @@ it('creates and reviews real drafts through conversation without a sender, with 
     expect(await rig.providerCalls()).toHaveLength(0)
   } finally { await pool.end(); await rig.close() }
 },120_000)
-
-function proposal(missionId: string, sourceId: string) {
-  const funnel = {name:'Comercial de alimentos',description:'Prospecção consultiva',stages:[
-    {key:'contact',name:'Contato inicial',exitCriteria:['Qualificação recebida'],isWon:false,isLost:false},
-    {key:'won',name:'Pedido confirmado',exitCriteria:['Pedido confirmado'],isWon:true,isLost:false},
-    {key:'lost',name:'Sem aderência',exitCriteria:['Recusa confirmada'],isWon:false,isLost:true}]}
-  const emails = [1,2,3].map(index=>({name:`Apresentação ${index}`,subject:`Massas para sua cozinha ${index}`,
-    previewText:'Conheça a oferta',bodyHtml:'<p>Podemos ajudar sua operação.</p><a href="{{unsubscribe_url}}">Sair</a>',bodyText:'Podemos ajudar. Sair: {{unsubscribe_url}}',
-    sourceIds:[sourceId],complianceNotes:['Oferta conforme portfólio aprovado.']}))
-  const sequence = {name:`Pré-venda consultiva ${missionId.slice(0,8)}`,description:'Rascunho para revisão',conversionGoal:'Resposta qualificada',
-    steps:emails.map((_,i)=>({templateVersionId:`binding:pack.draft_email_${i+1}.versionId`,delayMinutes:i*1440,exitConditions:['replied','unsubscribed']}))}
-  const registry = createActionEngineCapabilityRegistry()
-  return {kind:'plan',interpretation:{objective:'Preparar rascunhos'},questions:[],sourceIds:[sourceId],
-    selectedPacks:[{key:pack.key,version:pack.semanticVersion,contentHash:pack.contentHash}],
-    plan:{schemaVersion:1,missionId,actionPack:{key:pack.key,version:pack.semanticVersion,templateHash:pack.contentHash},
-      resolvedParameters:{icp:'Cozinhas industriais',offer:'Massas congeladas',funnelNurtureArtifacts:{funnel,emails,sequence,sourceIds:[sourceId]}},
-      deviations:[],rationale:'Preparação fundamentada na estratégia aprovada.',assumptions:[],risks:[],
-      estimatedEconomics:{currency:'BRL',aiAndProviderCost:'0',mediaCost:'0',humanHours:'0',humanCost:'0',totalExecutionCost:'0'},
-      steps:pack.topologyTemplate.steps.map(step=>({stepKey:step.stepKey,dependsOn:step.dependsOn,capabilityKey:step.capabilityKey,capabilityVersion:1,
-        input:step.stepKey==='pack.simulate_funnel'||step.stepKey==='pack.draft_funnel'?funnel:
-          step.stepKey.startsWith('pack.draft_email_')?emails[Number(step.stepKey.at(-1))-1]:step.stepKey==='pack.draft_sequence'?sequence:step.defaultParameters,
-        timeoutSeconds:300,maxAttempts:1,approvalRequired:false,effect:registry.get(step.capabilityKey,1).effect,outputBindings:{}}))}}
-}
-
-
-
-
-
-
-
 
 

@@ -218,8 +218,26 @@ def validate_mission_plan(value: dict[str, Any], planning_input: dict[str, Any])
     for protected_key in protected:
         if protected_key not in keys:
             raise AgentContractError("mission_plan_protected_step_missing")
-    # Radar has a commercial-result checkpoint; revenue packs also collect economics.
-    required_checkpoints = ("pack.evaluate",) if requested_pack.get("key") == "radar_prospecting" else ("pack.collect_metrics_and_costs", "pack.evaluate")
+    # Draft preparation is finalized by the server after persisted receipts, without a revenue observation period.
+    if requested_pack.get('key') == 'crm_preparation':
+        templates = (requested_pack.get('topologyTemplate') or {}).get('steps') or []
+        mission = planning_input.get('mission') or {}
+        mode = mission.get('mode') or (mission.get('autonomyEnvelope') or {}).get('mode')
+        if mode != 'prepare' or len(templates) != 8 or len(steps) != len(templates):
+            raise AgentContractError('crm_preparation_topology_invalid')
+        for step, template in zip(steps, templates):
+            if (step.get('stepKey') != template.get('stepKey')
+                or step.get('capabilityKey') != template.get('capabilityKey')
+                or step.get('capabilityVersion') != template.get('capabilityVersion')
+                or step.get('dependsOn', []) != template.get('dependsOn', [])
+                or step.get('extensionPoint') is not None
+                or step.get('effect') not in ('none', 'draft')):
+                raise AgentContractError('crm_preparation_topology_invalid')
+            if step['stepKey'] == 'pack.readiness' and step.get('input') != template.get('defaultParameters'):
+                raise AgentContractError('crm_preparation_topology_invalid')
+        required_checkpoints = ()
+    else:
+        required_checkpoints = ("pack.evaluate",) if requested_pack.get("key") == "radar_prospecting" else ("pack.collect_metrics_and_costs", "pack.evaluate")
     if any(checkpoint not in keys for checkpoint in required_checkpoints):
         raise AgentContractError("mission_plan_economics_checkpoint_missing")
 

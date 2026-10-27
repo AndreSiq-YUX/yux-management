@@ -280,6 +280,17 @@ export function compileMissionPlan(input: {
   if (!parsed.success) throw new Error('mission_plan_contract_invalid')
   const raw = parsed.data
   if (raw.missionId !== input.missionId) throw new Error('mission_plan_mission_mismatch')
+  if (input.pack.key === 'crm_preparation') {
+    const templates = input.pack.topologyTemplate.steps
+    if (raw.steps.length !== templates.length || raw.steps.some((step, index) => {
+      const template = templates[index]!
+      return step.stepKey !== template.stepKey || step.capabilityKey !== template.capabilityKey
+        || step.capabilityVersion !== template.capabilityVersion || step.extensionPoint !== undefined
+        || stableSerialize(step.dependsOn) !== stableSerialize(template.dependsOn)
+        || step.approvalRequired !== template.approvalRequired
+        || step.stepKey === 'pack.readiness' && stableSerialize(step.input) !== stableSerialize(template.defaultParameters)
+    })) throw new Error('crm_preparation_topology_invalid')
+  }
 
   const internal: ProposedMissionPlan = {
     schemaVersion: 1, packKey: raw.actionPack.key, packVersion: raw.actionPack.version,

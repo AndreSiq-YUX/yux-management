@@ -4,7 +4,7 @@ import { crmLeadAssignOwner, crmLeadTimelineRead, crmPipelineSnapshot, crmRecove
 import { growthSegmentPreview } from './growth.js'
 import { humanTaskCreate } from './human.js'
 import { reportsRecoveredRevenueSnapshot } from './reports.js'
-import { systemApprovalAwait, systemEvaluationCheckpoint, systemReadinessCheck, systemSignalWait } from './system.js'
+import { systemApprovalAwait, systemEvaluationCheckpoint, systemReadinessCheck, systemPreparationReadinessCheck, systemSignalWait } from './system.js'
 import { crmSequenceEnroll, emailMessageQueue, omnichannelMessageDraft, whatsappTemplateQueue } from './communications.js'
 import { automationFlowExecute } from './automation.js'
 import { crmPipelineCreateDraft, crmPipelineInspect, crmPipelinePublish, crmPipelineSimulate } from './crm-funnel.js'
@@ -23,6 +23,7 @@ import {
 export function createActionEngineCapabilityRegistry(): CapabilityRegistry {
   const registry=new CapabilityRegistry()
     .register(systemReadinessCheck)
+    .register(systemPreparationReadinessCheck)
     .register(systemApprovalAwait)
     .register(systemSignalWait)
     .register(systemEvaluationCheckpoint)

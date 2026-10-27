@@ -214,13 +214,28 @@ def test_retrieved_prompt_injection_is_marked_untrusted_and_cannot_expand_author
         supervisor.propose(request)
 
 
-def test_preparation_uses_specialists_without_projecting_an_unused_automation() -> None:
+def test_preparation_uses_the_real_eight_step_topology_and_specialist_artifacts() -> None:
     request = _request()
     request['mission']['mode'] = 'prepare'
-    request['action_pack']['key'] = 'crm_preparation'
+    keys = ['pack.readiness', 'pack.inspect', 'pack.simulate_funnel', 'pack.draft_funnel',
+            'pack.draft_email_1', 'pack.draft_email_2', 'pack.draft_email_3', 'pack.draft_sequence']
+    capabilities = ['system.readiness.check', 'crm.pipeline.inspect', 'crm.pipeline.simulate',
+                    'crm.pipeline.create_draft', *(['email.template.create_draft'] * 3), 'crm.sequence.create_draft']
+    request['action_pack'].update(key='crm_preparation', protectedStepKeys=keys, topologyTemplate={'steps': [
+        {'stepKey': key, 'capabilityKey': capability, 'capabilityVersion': 2 if index == 0 else 1,
+         'dependsOn': keys[index-1:index] if index else [], 'defaultParameters':
+             {'requiredModules': ['crm','automations'], 'requiredConnections': [], 'preparationOnly': True} if index == 0 else {}}
+        for index, (key, capability) in enumerate(zip(keys, capabilities))]})
+    request['capabilities'] = [{'key': capability, 'version': 2 if index == 0 else 1,
+        'effect': 'draft' if index >= 3 else 'none'} for index, capability in enumerate(capabilities)]
     response = _plan_response()
     response['selectedPacks'][0]['key'] = 'crm_preparation'
     response['plan']['actionPack']['key'] = 'crm_preparation'
+    response['plan']['steps'] = []
+    for index, (key, capability) in enumerate(zip(keys, capabilities)):
+        step = _step(key, capability, 'draft' if index >= 3 else 'none', keys[index-1:index] if index else [])
+        step['capabilityVersion'] = 2 if index == 0 else 1
+        response['plan']['steps'].append(step)
     supervisor = _supervisor(response)
     class DraftSpecialist:
         traces = []
@@ -231,6 +246,9 @@ def test_preparation_uses_specialists_without_projecting_an_unused_automation() 
     supervisor.funnel_nurture = DraftSpecialist()
     result = supervisor.propose(request)
     artifacts = result['plan']['resolvedParameters']['funnelNurtureArtifacts']
+    assert len(result['plan']['steps']) == 8
+    assert [step['stepKey'] for step in result['plan']['steps']] == keys
+    assert result['plan']['steps'][0]['input']['preparationOnly'] is True
     assert artifacts['funnel']['name'] == 'Comercial'
     assert len(artifacts['emails']) == 3
     assert 'automation' not in artifacts
