@@ -60,6 +60,18 @@ it('groups technical prerequisites under execution with a configuration link, ne
   expect(element.textContent).not.toContain('Preencher esta informação')
 })
 
+it('keeps additional business metadata collapsed instead of turning two questions into a form', async () => {
+  const { element } = await render([message('1', { questions: [question], readiness: { status: 'needs_information', missing: [
+    { key: 'segment', category: 'audience', reason: 'DUPLICATE' },
+    { key: 'delivery', category: 'company', reason: 'Detalhar a cobertura de entrega.' },
+    { key: 'minimum_order', category: 'offer', reason: 'Validar o pedido mínimo.' },
+  ] } })])
+  const details = [...element.querySelectorAll('details')].find(item => item.querySelector('summary')?.textContent?.includes('Pontos para aprofundar'))
+  expect(details).toBeDefined(); expect(details?.open).toBe(false)
+  expect(details?.textContent).toContain('Detalhar a cobertura de entrega.')
+  expect(element.textContent).not.toContain('DUPLICATE')
+})
+
 it.each([{ canWrite: false }, { processing: true }])('does not offer quick replies without an editable current turn: %j', async options => {
   const { element } = await render([message('1', { questions: [question], suggestedActions: [{ key: 'next', label: 'Continuar', kind: 'quick_reply' }] })], options)
   expect([...element.querySelectorAll('button')].some(button => ['Padarias', 'Continuar'].includes(button.textContent ?? ''))).toBe(false)

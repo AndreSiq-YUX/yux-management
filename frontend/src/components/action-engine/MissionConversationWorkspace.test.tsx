@@ -137,6 +137,7 @@ describe('MissionConversationWorkspace', () => {
     vi.spyOn(actionEngineService, 'getMissionConversation').mockResolvedValue(data)
     vi.spyOn(actionEngineService, 'appendMissionConversationMessage').mockRejectedValue(new Error('Envio indisponível'))
     const { root } = await renderWorkspace(() => ({ mode: 'inline', path: null, fields: [{ key: 'targetAudience', label: 'Público-alvo' }] }))
+    await act(async () => { document.body.querySelector('summary')?.click(); await flush() })
     await click('Preencher nesta conversa')
     const input = document.body.querySelector('input') as HTMLInputElement
     await changeInput(input, 'Empresas recém-abertas')
@@ -153,6 +154,7 @@ describe('MissionConversationWorkspace', () => {
     vi.spyOn(actionEngineService, 'getMissionConversation').mockResolvedValue(data)
     const append = vi.spyOn(actionEngineService, 'appendMissionConversationMessage').mockResolvedValue({ conversation: { ...data, status: 'collecting_context', version: 3 }, jobId: 'job-correction' })
     const { root } = await renderWorkspace(() => ({ mode: 'inline', path: null, fields: [{ key: 'targetAudience', label: 'Público-alvo' }] }))
+    await act(async () => { document.body.querySelector('summary')?.click(); await flush() })
     await click('Preencher nesta conversa')
     expect(document.body.textContent).toContain('A resposta será salva somente nesta missão')
     const input = document.body.querySelector('input') as HTMLInputElement
