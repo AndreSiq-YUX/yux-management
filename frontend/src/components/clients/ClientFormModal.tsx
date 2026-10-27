@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { ClientUsersManager } from './ClientUsersManager';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -58,6 +59,8 @@ interface ClientFormModalProps {
 export function ClientFormModal({ isOpen, onClose, onSuccess, client }: ClientFormModalProps) {
   const [loading, setLoading] = useState(false);
   const [sendingAccessEmail, setSendingAccessEmail] = useState(false);
+  const [showUsersManager, setShowUsersManager] = useState(false);
+  useEffect(() => { setShowUsersManager(false) }, [client?.id, isOpen]);
   const [showAddressFields, setShowAddressFields] = useState(false);
   const [users, setUsers] = useState<Array<{ id: string; name: string; email: string }>>([]);
 
@@ -282,7 +285,7 @@ export function ClientFormModal({ isOpen, onClose, onSuccess, client }: ClientFo
             </h2>
           </div>
           <div className="flex items-center gap-2">
-            {client && (
+            {client && !showUsersManager && (
               <button
                 type="button"
                 onClick={handleSendAccessEmail}
@@ -307,7 +310,12 @@ export function ClientFormModal({ isOpen, onClose, onSuccess, client }: ClientFo
           </div>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-6">
+        {client && <div className="flex gap-2 border-b px-6 py-3" aria-label="Seções do cliente">
+          <button type="button" onClick={() => setShowUsersManager(false)} className={`rounded-md px-3 py-2 text-sm font-medium ${!showUsersManager ? 'bg-yux-50 text-yux-700' : 'text-gray-600'}`}>Dados do cliente</button>
+          <button type="button" onClick={() => setShowUsersManager(true)} className={`rounded-md px-3 py-2 text-sm font-medium ${showUsersManager ? 'bg-yux-50 text-yux-700' : 'text-gray-600'}`}>Usuários</button>
+        </div>}
+        {showUsersManager && client && <div className="p-6"><ClientUsersManager clientId={client.id} /></div>}
+        {!showUsersManager && <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-6">
           {/* Informações Básicas */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
@@ -648,7 +656,7 @@ export function ClientFormModal({ isOpen, onClose, onSuccess, client }: ClientFo
               <span>{client ? 'Atualizar' : 'Criar'} Cliente</span>
             </button>
           </div>
-        </form>
+        </form>}
       </div>
     </div>
   );

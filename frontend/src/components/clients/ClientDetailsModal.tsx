@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { ClientUsersManager } from './ClientUsersManager';
 import { 
   X, 
   Building2, 
@@ -37,7 +38,7 @@ export function ClientDetailsModal({
 }: ClientDetailsModalProps) {
   const [loading, setLoading] = useState(false);
   const [projects, setProjects] = useState<ClientProject[]>([]);
-  const [activeTab, setActiveTab] = useState<'info' | 'projects' | 'interactions'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'projects' | 'interactions' | 'users'>('info');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Carregar dados do cliente
@@ -167,9 +168,10 @@ export function ClientDetailsModal({
 
         {/* Tabs */}
         <div className="border-b">
-          <nav className="flex space-x-8 px-6">
+          <nav className="flex gap-4 overflow-x-auto px-6 sm:gap-8">
             {[
               { id: 'info', label: 'Informações', icon: FileText },
+              { id: 'users', label: 'Usuários', icon: User },
               { id: 'projects', label: 'Projetos', icon: TrendingUp },
               { id: 'interactions', label: 'Interações', icon: Calendar }
             ].map(tab => {
@@ -194,6 +196,7 @@ export function ClientDetailsModal({
 
         {/* Content */}
         <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
+          {activeTab === 'users' && <ClientUsersManager clientId={client.id} />}
           {activeTab === 'info' && (
             <div className="space-y-6">
               {/* Status e Métricas */}
