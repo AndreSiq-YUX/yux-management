@@ -119,7 +119,7 @@ Rollback imediato se ocorrer qualquer um destes eventos:
 
 ### Resposta do agente incompleta ou fora do contrato
 
-A conversa compartilha uma janela de 120 segundos entre busca, geração e fallbacks, abaixo dos 150 segundos do cliente interno e 180 segundos do job. O prazo é isolado por contexto e restaurado após sucesso ou falha; os demais fluxos conservam 45 segundos por requisição. Ao expirar, não iniciar outro fallback. O timeout de socket usa o tempo restante; o prazo é conferido também após a leitura da resposta, sem aceitar uma resposta que chegou depois da janela.
+A conversa compartilha uma janela de 120 segundos entre busca, geração e fallbacks, abaixo dos 150 segundos do cliente interno e 180 segundos do job. O prazo é isolado por contexto e restaurado após sucesso ou falha; os demais fluxos conservam 45 segundos por requisição. Ao expirar, o transporte interrompe sockets ativos e não inicia outro fallback; isso também encerra cabeçalhos/corpos enviados lentamente. HTTPS preserva a validação de certificados. Uma resolução DNS pendente pode terminar posteriormente, mas sua conexão será fechada antes de transmitir HTTP. O prazo é conferido também após a leitura, sem aceitar uma resposta que chegou depois da janela.
 
 O teto de saída continua governado em Admin > IA > Action Engine — conversa estratégica. Tokens de processamento interno também consomem esse teto. A homologação com Haiku 5.5 atingiu 8.000 tokens (5.962 de processamento interno); o usuário autorizou elevar para 16.000 e realizar uma tentativa adicional, sem reduzir o processamento interno, alterar o modelo ou executar campanhas. Isso não autoriza retries pagos automáticos.
 

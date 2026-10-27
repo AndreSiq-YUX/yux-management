@@ -14,6 +14,7 @@
 
 - Preservar mensagem salva, histórico, fontes verificadas, isolamento por conta e aprovações.
 - Não alterar modelo, credenciais, limites de saída ou orçamento; não realizar chamadas pagas nem retries automáticos adicionais.
+- Exceção expressa posterior: Task 3 permite 16.000 tokens e uma tentativa adicional com o Haiku 5.5 escolhido pelo usuário; preservar seu processamento interno e a ausência de execução de campanhas.
 - Não aceitar um objeto interno de JSON incompleto como resposta raiz.
 - Não descartar campos desconhecidos nem inventar um texto de resposta para fazer validação passar.
 - Preservar interfaces públicas; não modificar Radar, Projetos ou migrations.
@@ -65,13 +66,15 @@ Runtime: 430 testes aprovados, 7 ignorados; backend: 1.594 aprovados, 126 ignora
 
 **Spec:** Em 27/10/2026 o usuário autorizou 16.000 tokens, adequação do tempo de espera e uma tentativa com Claude Haiku 5.5. A tentativa anterior consumiu 8.000 tokens, incluindo 5.962 de processamento interno, e terminou por `max_tokens` (OpenRouter, sessão `757b1b32-b882-4b92-9e53-4026f76ebaa4`).
 
-**Files:** `providers.py`, `llm_routing.py`, `mission_conversation.py`, `tests/test_provider_budget.py`, `tests/test_mission_conversation.py`, runbook.
+**Files:** `providers.py`, `provider_http_deadline.py`, `llm_routing.py`, `mission_conversation.py`, `tests/test_provider_budget.py`, `tests/test_provider_deadline_network.py`, `tests/test_mission_conversation.py`, runbook.
 
 **Interfaces:** `provider_request_budget(seconds)` delimita um prazo por contexto; `provider_request_timeout()` retorna o tempo restante ou o padrão de 45 segundos. `ProviderDeadlineExceededError` encerra fallbacks. `MissionConversationWorkflow.respond` aplica 120 segundos ao workflow, abaixo dos 150 segundos do cliente interno e 180 segundos do job. O teto de saída permanece no roteamento governado, sem alteração do modelo ou de seu processamento interno.
 
 **Review Focus:** Não ampliar espera de Radar/SDR; restaurar contexto após sucesso/falha; não reiniciar prazo em fallback nem em contexto aninhado; não chamar transporte após expiração; não mudar aprovação, fontes, isolamento ou retries; verificar os 16.000 tokens no payload simulado e na configuração efetiva antes da única chamada real.
 
-- [ ] RED: testes de 45 segundos fora de Missões, 120 dentro, prazo compartilhado/não ampliado, expiração sem transporte/fallback, restauração após exceção e payload de 16.000 sem mudança de reasoning.
-- [ ] GREEN: contexto de prazo em transporte e roteamento; escopo aplicado em `respond`, sem mutações globais ou timers de retry.
+- [x] RED: testes de 45 segundos fora de Missões, 120 dentro, prazo compartilhado/não ampliado, expiração sem transporte/fallback, restauração após exceção e payload de 16.000 sem mudança de reasoning.
+- [x] GREEN: contexto de prazo em transporte e roteamento; escopo aplicado em `respond`, sem mutações globais ou timers de retry.
 - [ ] Verificar suíte runtime completa, revisão independente e publicação/implantação já autorizadas.
 - [ ] Salvar e conferir 16.000 no Admin; reprocessar uma vez a mensagem existente; conferir resposta persistida ou documentar falha sem chamadas adicionais.
+
+Revisão independente: um achado importante — timeout por operação de socket não interrompia cabeçalho/corpo enviados aos poucos — foi reproduzido em dois testes RED locais e corrigido em uma passagem. O transporte com prazo usa isolamento por requisição, interrupção de sockets ativos e bloqueio de envio após conexão tardia. HTTPS mantém verificação de certificado/hostname; teste local confirma resposta válida e rejeição de certificado não confiável. DNS pendente pode terminar em thread daemon; uma conexão obtida depois da expiração é fechada antes de enviar HTTP. Suíte final: 443 aprovados, 7 ignorados. Nenhuma inferência paga adicional foi feita durante desenvolvimento/revisão.

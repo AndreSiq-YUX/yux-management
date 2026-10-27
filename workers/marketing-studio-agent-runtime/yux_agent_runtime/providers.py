@@ -11,7 +11,9 @@ from time import monotonic
 from typing import Any, Callable, Iterator
 from urllib.error import HTTPError
 from urllib.parse import quote
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from .provider_http_deadline import HttpDeadlineExceeded, open_url as urlopen, run_with_deadline
 
 
 class ProviderRequestError(Exception):
@@ -76,15 +78,21 @@ def _default_transport(url: str, headers: dict[str, str], payload: dict[str, Any
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     request = Request(url, data=data, method=method, headers=headers)
     timeout = provider_request_timeout()
+
+    def read_response():
+        with urlopen(request, timeout=provider_request_timeout()) as response:  # nosec B310 - URLs are fixed provider endpoints.
+            return response.read().decode("utf-8")
+
     try:
-        with urlopen(request, timeout=timeout) as response:  # nosec B310 - URLs are fixed provider endpoints.
-            text = response.read().decode("utf-8")
+        text = run_with_deadline(read_response, timeout) if _request_deadline.get() is not None else read_response()
         provider_request_timeout()
     except HTTPError as error:
         error_class = ProviderAuthorizationError if error.code in {401, 403} else ProviderRequestError
         raise error_class(f"provider_http_{error.code}") from error
     except ProviderDeadlineExceededError:
         raise
+    except HttpDeadlineExceeded as error:
+        raise ProviderDeadlineExceededError("provider_request_deadline_exceeded") from error
     except Exception as error:  # pragma: no cover - exercised through mocked transport.
         provider_request_timeout()
         raise ProviderRequestError("provider_transport_unavailable") from error
