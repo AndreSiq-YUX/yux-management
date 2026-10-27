@@ -770,8 +770,8 @@ function conversationMissionParameters(
   if (packKeys.includes('campaign_launch')) {
     return {
       ...common,
-      icp: requiredBriefString(constraints.icp ?? constraints.audience, 'mission_conversation_icp_required'),
-      offer: requiredBriefString(constraints.offer, 'mission_conversation_offer_required'),
+      icp: requiredBriefDescription(constraints.icp ?? constraints.audience, 'mission_conversation_icp_required'),
+      offer: requiredBriefDescription(constraints.offer, 'mission_conversation_offer_required'),
       platform: requiredBriefString(constraints.platform, 'mission_conversation_platform_required'),
       providerConnectionId: requiredBriefString(constraints.providerConnectionId, 'mission_conversation_provider_required'),
       dailyBudgetBrl: positiveDecimal(constraints.dailyBudgetBrl, '50'),
@@ -784,8 +784,8 @@ function conversationMissionParameters(
   if (packKeys.includes('funnel_nurture') || packKeys.includes('crm_preparation')) {
     return {
       ...common,
-      icp: requiredBriefString(constraints.icp ?? constraints.audience, 'mission_conversation_icp_required'),
-      offer: requiredBriefString(constraints.offer, 'mission_conversation_offer_required'),
+      icp: requiredBriefDescription(constraints.icp ?? constraints.audience, 'mission_conversation_icp_required'),
+      offer: requiredBriefDescription(constraints.offer, 'mission_conversation_offer_required'),
       targetOutcome: optionalBriefString(constraints.targetOutcome) ?? 'qualified_lead',
       observationDays: positiveInteger(constraints.observationDays) ?? 30,
       expectedReplyRate: Number(constraints.expectedReplyRate ?? 0.05), maximumOptOutRate: Number(constraints.maximumOptOutRate ?? 0.02),
@@ -819,6 +819,22 @@ function requiredBriefString(value: unknown, error: string): string {
   const result = optionalBriefString(value)
   if (!result) throw new Error(error)
   return result
+}
+
+function requiredBriefDescription(value: unknown, error: string): string {
+  // Constraints are governed JSON, while pack parameters require text. Keep the original
+  // signed brief intact and derive a description without dropping qualifiers or uncertainty.
+  const describe = (item: unknown, depth = 0): string => {
+    if (typeof item === 'string') return item.trim()
+    if (depth > 8 || item == null) return ''
+    if (Array.isArray(item)) return item.map(part => describe(part, depth + 1)).filter(Boolean).join(', ')
+    if (typeof item === 'object') return Object.entries(item).flatMap(([key, part]) => {
+      const text = describe(part, depth + 1)
+      return text ? [`${key}: ${text}`] : []
+    }).join('; ')
+    return typeof item === 'boolean' || typeof item === 'number' && Number.isFinite(item) ? String(item) : ''
+  }
+  return requiredBriefString(describe(value), error)
 }
 
 function optionalBriefString(value: unknown): string | undefined {

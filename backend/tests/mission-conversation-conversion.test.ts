@@ -34,6 +34,31 @@ function scriptedPool(steps: Step[]) {
 }
 
 describe('Mission conversation conversion', () => {
+  it.each(['icp', 'offer'])('still rejects an empty structured %s instead of inventing business context', async key => {
+    const prep = { ...brief, packKeys: ['crm_preparation'], mode: 'prepare', deadlineAt: null,
+      constraints: { icp: 'Cozinhas industriais', offer: 'Linha de alimentos', [key]: {} } }
+    const fake = conversionPool(prep)
+    await expect(confirmMissionConversationBrief(fake.pool, { organizationId: orgId, conversationId, expectedVersion: 3,
+      briefHash: hashCanonical(prep), confirmedBy: userId })).rejects.toThrow(`mission_conversation_${key}_required`)
+    expect(fake.calls.some(call => call.sql.includes('INSERT INTO public.action_missions'))).toBe(false)
+  })
+  it('confirms the saved representative brief when ICP and offer contain structured business facts', async () => {
+    const constraints = { icp: { region: 'São Paulo', segment: 'cozinhas industriais', priority: 'volume e recorrência' },
+      offer: { productLine: ['pão de queijo congelado', 'massa de pastel (a confirmar)', 'bolos'],
+        claimPolicy: 'usar referência anônima de Londrina', deliveryAuthorization: 'não registrada no cadastro' } }
+    const prep = { ...brief, packKeys: ['crm_preparation'], mode: 'prepare', deadlineAt: null,
+      maxTotalCostBrl: null, maxHumanHours: null, maxExternalContacts: null, constraints }
+    const fake = conversionPool(prep)
+    await confirmMissionConversationBrief(fake.pool, { organizationId: orgId, conversationId, expectedVersion: 3,
+      briefHash: hashCanonical(prep), confirmedBy: userId })
+    const insert = fake.calls.find(call => call.sql.includes('INSERT INTO public.action_missions'))!
+    expect(insert.params?.[6]).toMatchObject({ constraints })
+    expect(insert.params?.[9]).toMatchObject({
+      icp: 'region: São Paulo; segment: cozinhas industriais; priority: volume e recorrência',
+      offer: 'productLine: pão de queijo congelado, massa de pastel (a confirmar), bolos; claimPolicy: usar referência anônima de Londrina; deliveryAuthorization: não registrada no cadastro',
+    })
+    expect(insert.params?.[7]).toMatchObject({ mode: 'prepare', maxExternalContacts: 0 })
+  })
   it('converts a preparation brief without sender, activation entitlement, spending or a commercial deadline', async () => {
     const prep = { ...brief, packKeys: ['crm_preparation'], mode: 'prepare', deadlineAt: null, maxTotalCostBrl: null, maxHumanHours: null,
       maxExternalContacts: 0, constraints: { icp: 'Cozinhas industriais', offer: 'Linha de alimentos' } }
