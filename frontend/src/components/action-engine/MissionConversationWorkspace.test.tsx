@@ -133,6 +133,7 @@ describe('MissionConversationWorkspace', () => {
 
   it('keeps an inline correction and its values open when the message is rejected', async () => {
     const data = conversation({ status: 'awaiting_user', withAgent: true })
+    data.messages[1].structuredPayload.questions = [] // Exercise a missing field without a duplicate question.
     vi.spyOn(actionEngineService, 'getMissionConversation').mockResolvedValue(data)
     vi.spyOn(actionEngineService, 'appendMissionConversationMessage').mockRejectedValue(new Error('Envio indisponível'))
     const { root } = await renderWorkspace(() => ({ mode: 'inline', path: null, fields: [{ key: 'targetAudience', label: 'Público-alvo' }] }))
@@ -148,6 +149,7 @@ describe('MissionConversationWorkspace', () => {
 
   it('saves a missing audience in the mission brief and revalidates in the same conversation', async () => {
     const data = conversation({ status: 'awaiting_user', withAgent: true })
+    data.messages[1].structuredPayload.questions = []
     vi.spyOn(actionEngineService, 'getMissionConversation').mockResolvedValue(data)
     const append = vi.spyOn(actionEngineService, 'appendMissionConversationMessage').mockResolvedValue({ conversation: { ...data, status: 'collecting_context', version: 3 }, jobId: 'job-correction' })
     const { root } = await renderWorkspace(() => ({ mode: 'inline', path: null, fields: [{ key: 'targetAudience', label: 'Público-alvo' }] }))

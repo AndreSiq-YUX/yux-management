@@ -68,7 +68,7 @@
 **Files:** `MissionConversationThread.tsx`, testes da interface e runbook de Missões.
 **Interfaces:** Preservar callbacks de resposta/aprovação; perguntas atuais em apresentação leve, histórico não acionável, lacunas duplicadas removidas da apresentação e pendências técnicas com ação de configuração adequada, sem pergunta de habilitação ao cliente.
 
-- [ ] RED/GREEN: conteúdo estratégico permanece principal; perguntas/lacunas não duplicam; etapas antigas não apresentam ações ativas; brief/planos mantêm aprovação.
+- [x] RED/GREEN: conteúdo estratégico permanece principal; perguntas/lacunas não duplicam; etapas antigas não apresentam ações ativas; brief/planos mantêm aprovação.
 - [ ] Executar testes/builds apropriados, replay local completo sem provedor pago e revisão independente única.
 - [ ] Integrar/preservar main, implantar a correção autorizada e verificar saúde/contexto sem inferência paga.
 - [ ] Preparar uma demonstração real somente depois de código pronto, mediante autorização específica de consumo; não alterar histórico da conversa original silenciosamente.
