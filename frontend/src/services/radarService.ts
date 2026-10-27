@@ -33,6 +33,9 @@ const buildQuery = (params: Record<string, string | undefined>) => {
 }
 
 export const radarService = {
+  excludeCampaignCandidates(organizationId:string,campaignId:string,candidateIds:string[],requestId:string){return apiRequest<{items:Array<{candidateId:string;status:'excluded'}>}>(`/radar/campaigns/${campaignId}/exclusions`,{method:'POST',body:{organizationId,candidateIds,requestId}})},
+  getCampaignExclusions(organizationId:string,campaignId:string){return apiRequest<Array<{id:string;candidateId:string|null;title:string;createdAt:string}>>(`/radar/campaigns/${campaignId}/exclusions${buildQuery({organizationId})}`)},
+  restoreCampaignExclusion(organizationId:string,campaignId:string,exclusionId:string){return apiRequest(`/radar/campaigns/${campaignId}/exclusions/${exclusionId}/restore`,{method:'POST',body:{organizationId}})},
   searchCnaeCatalog(organizationId:string,q:string){return apiRequest<Array<{code:string;description:string}>>(`/radar/cnae-catalog${buildQuery({organizationId,q})}`)},
   saveCommercialCriteria(campaignId:string,input:{organizationId:string;configurationRevision:number;targetCnaes:string[];targets:Array<{key:string;label:string;definition:string;priority:'primary'|'secondary';cnaes:string[]}>;outOfScopeExamples:string[];excludedNameTerms:string[];registry:{mainActivityRule:'any'|'target_main_required'|'target_secondary_needs_review';blockedMainCnaes:string[];blockedNameTerms:string[]};contactPurpose:'general'|'suppliers'|'sales'|'finance'|'recruitment';minPassRatio:number;closePendingLots:boolean}){return apiRequest<{campaign:RadarCommercialCampaign;criteriaChanged:boolean}>(`/radar/campaigns/${campaignId}/criteria`,{method:'PATCH',body:input})},
   getEmailDomainPolicy(){return apiRequest<RadarEmailPolicy>('/radar/admin/email-domain-policy')},

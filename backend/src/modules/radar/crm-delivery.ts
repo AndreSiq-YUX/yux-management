@@ -1,3 +1,5 @@
+import {isRadarCampaignExcluded} from './campaign-exclusions.js'
+import {isRadarSemanticallyOutside} from './semantic-eligibility.js'
 import type pg from 'pg'
 import {z} from 'zod'
 import type {AuthUser} from '../../auth/routes.js'
@@ -85,6 +87,7 @@ export async function deliverRadarCompaniesToCrm(pool:pg.Pool,user:AuthUser,inpu
         WHERE candidate.id=$1 AND candidate.organization_id=$2 AND candidate.campaign_id=$3 FOR UPDATE OF candidate`,[candidateId,input.organizationId,input.campaignId,input.configurationRevision])).rows[0]
       const block=(reason:string,leadId?:string,pipelineId?:string)=>items.push({candidateId,status:'blocked',reason,...(leadId?{leadId,pipelineId}:{})})
       if(!candidate){block('radar_candidate_not_found');continue}
+      if(candidate.status==='discarded'||isRadarSemanticallyOutside(candidate.research_output)||await isRadarCampaignExcluded(client,{organizationId:input.organizationId,campaignId:input.campaignId,identity:{candidateId},criteriaRevision:input.configurationRevision})){block('radar_candidate_excluded');continue}
       if(candidate.crm_lead_id){const linked=(await client.query('SELECT pipeline_id FROM public.leads WHERE id=$1 AND organization_id=$2',[candidate.crm_lead_id,input.organizationId])).rows[0];items.push({candidateId,status:'already_linked',leadId:candidate.crm_lead_id,pipelineId:linked?.pipeline_id});continue}
       const payload=candidate.normalized_payload as Record<string,unknown>
       const presence=candidate.research_output&&radarPublicPresenceFromDossier(candidate.research_output,input.configurationRevision,{name:String(payload.tradeName||candidate.title),legalName:typeof payload.legalName==='string'?payload.legalName:undefined,cnpj:typeof payload.cnpj==='string'?payload.cnpj:undefined})

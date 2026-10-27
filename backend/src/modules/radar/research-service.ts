@@ -1,3 +1,5 @@
+import {isRadarCampaignExcluded} from './campaign-exclusions.js'
+import {resolveRadarSemanticEligibility} from './semantic-eligibility.js'
 import type pg from 'pg'
 import {classifyRadarSource,isRadarInstitutionalSource,hasRadarOwnershipSignal} from './source-identity.js'
 import {validateRadarPresenceResolution,type RadarPresenceEvidence,type RadarPresenceResolution} from './presence-resolution.js'
@@ -77,13 +79,13 @@ export type RadarResearchDossier = { discovery: RadarPresenceDiscovery; pages: R
   unassociatedContacts?:RadarContactEvidence[];
   funnel?:RadarFunnelResearchState;
   deepResearchCompleted?:boolean;deepResearchStop?:string;
-  decisionExcluded?:boolean;decisionReview?:boolean;
+  decisionExcluded?:boolean;semanticExcluded?:boolean;decisionReview?:boolean;
   historicalDerivedConclusions?:{presenceResolution?:RadarPresenceResolution;qualification?:RadarQualification;profile?:RadarCompanyProfile;sizeAssessment?:ReturnType<typeof assessRadarCompanySize>};
   quality?:RadarResearchQuality;targetedQueries?:string[];
   historicalEvidence?:{pages:RadarSiteEvidence[];contacts:RadarContactEvidence[]};
   methodVersion?:number; associationVersion?:number;
   registryPhone?: string; registryEmail?: string; siteAssociation: 'confirmed'|'review'; activity: ReturnType<typeof assessRadarBusinessActivity>;
-  qualification?: RadarQualification; qualificationEvidenceHash?:string; profile?:RadarCompanyProfile;
+  qualification?: RadarQualification; qualificationEvidenceHash?:string;qualificationEvidence?:RadarSiteEvidence[]; profile?:RadarCompanyProfile;
   presenceResolution?:RadarPresenceResolution; presenceEvidenceHash?:string;
   analysisEvidence?:{presence?:RadarEvidenceVersion;semantic?:RadarEvidenceVersion};
   documents?:Array<{url:string;sourceUrl:string;observedAt:string;status:'not_read'}>;
@@ -418,8 +420,61 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
       await checkpoint('consolidation')
     }
   }
+  const assessSemantic=async(qualifiedEvidence:RadarSiteEvidence[],uniqueContacts:RadarContactEvidence[])=>{
+  const criteria={campaign:dependencies.analysisCriteria,qualification:configuration.qualification,profile:configuration.research.profileEnabled,size:configuration.research.sizeAssessment.enabled,...(configuration.funnel.enabled?{qualificationPolicyVersion:2}:{})}
+  const semanticMaterial=(value:RadarSiteEvidence[])=>value.map(page=>({...page,text:page.text.slice(0,12000)}))
+  const semanticHash=(value:RadarSiteEvidence[])=>radarEvidenceContentHash({identity:stableIdentity,criteria,purpose:'qualification',evidence:semanticMaterial(value)})
+  const oldQualified=legacyQualifiedMaterial(identity,saved)
+  const semanticContext:RadarEvidenceVersion={hashVersion:2,hash:semanticHash(qualifiedEvidence),bindings:radarEvidenceBindings(semanticMaterial(qualifiedEvidence)),dependencies:radarAnalysisDependencies({identity:stableIdentity,criteria,evidence:semanticMaterial(qualifiedEvidence),contacts:uniqueContacts},'qualification'),
+    ...(oldQualified.length&&!configuration.funnel.enabled?{legacy:{hashVersion:1 as const,hash:createHash('sha256').update(JSON.stringify({pages:oldQualified.map(page=>({url:page.url,text:page.text.slice(0,12000)})),profile:configuration.research.profileEnabled,size:configuration.research.sizeAssessment.enabled})).digest('hex'),contentHash:semanticHash(oldQualified),bindings:radarEvidenceBindings(semanticMaterial(oldQualified))}}:{})}
+  const evidenceHash=semanticContext.hash
+  let qualification:RadarQualification|undefined
+  const savedQualificationBindings=radarEvidenceBindingMatch({evidenceHash:output.qualificationEvidenceHash,evidenceVersion:output.analysisEvidence?.semantic},semanticContext)
+  if(output.qualification&&savedQualificationBindings)try{qualification=validatedQualificationProfile(remapRadarEvidenceResult(output.qualification,savedQualificationBindings,semanticContext.bindings),qualifiedEvidence)}catch{limits.push('radar_analysis_saved_citations_require_review')}
+  const qualificationDependencies=radarDependencyBindingMatch(output.analysisEvidence?.semantic,semanticContext)
+  if(!qualification&&output.qualification?.claims?.length&&qualificationDependencies)try{
+    const mapped=remapRadarEvidenceResult(output.qualification,qualificationDependencies.from,qualificationDependencies.to)
+    if(mapped.claims!.some(claim=>!qualifiedEvidence[Number(claim.evidenceId.replace('page-',''))]?.text.includes(claim.excerpt)))throw Error('radar_analysis_saved_citations_require_review')
+    if(mapped.reasons.some(reason=>!mapped.claims!.some(claim=>claim.reason===reason)))throw Error('radar_analysis_saved_citations_require_review')
+    // Reasons are generated narrative, not necessarily literal excerpts. Never
+    // carry an obsolete email/phone inside that narrative into the new result.
+    const currentText=qualifiedEvidence.map(page=>page.text).join(' ').replace(/\D/g,'')
+    const obsolete=(saved.contacts??[]).filter(contact=>!uniqueContacts.some(current=>current.kind===contact.kind&&current.value===contact.value))
+    if(obsolete.some(contact=>mapped.reasons.some(reason=>contact.kind==='email'?reason.toLowerCase().includes(contact.value.toLowerCase()):['phone','whatsapp'].includes(contact.kind)&&reason.replace(/\D/g,'').includes(contact.value.replace(/\D/g,'').replace(/^55/,''))&&!currentText.includes(contact.value.replace(/\D/g,'').replace(/^55/,'')))))throw Error('radar_analysis_saved_citations_require_review')
+    qualification=validatedQualificationProfile(mapped,qualifiedEvidence)
+    if(qualification.profileRejections?.length)throw Error('radar_analysis_saved_citations_require_review')
+  }catch{qualification=undefined;limits.push('radar_analysis_saved_citations_require_review')}
+  if(qualification)output.analysisEvidence={...output.analysisEvidence,semantic:persistedRadarEvidenceVersion({...semanticContext,...(!savedQualificationBindings?{derivedFromHash:output.qualificationEvidenceHash}:{})},savedQualificationBindings?output.qualificationEvidenceHash:undefined)}
+  const readableInstitutional=pages.some(page=>!!page.text&&!page.limitation&&isRadarInstitutionalSource(page.url,{text:page.text}))
+  if ((configuration.research.semanticQualificationEnabled||configuration.research.profileEnabled||configuration.research.sizeAssessment.enabled) && !qualification) {
+    if(!readableInstitutional)limits.push('radar_qualification_waiting_public_read')
+    else if(!qualifiedEvidence.length)limits.push('radar_qualification_waiting_identity')
+    else if (dependencies.qualify) {
+      try {
+        qualification = await dependencies.qualify(qualifiedEvidence,evidenceHash,semanticContext)
+        qualification=validatedQualificationProfile(qualification,qualifiedEvidence)
+        output.qualification = qualification;output.qualificationEvidenceHash=evidenceHash
+        output.analysisEvidence={...output.analysisEvidence,semantic:persistedRadarEvidenceVersion(semanticContext)}
+      }
+      catch (cause) { rethrowRadarAdaptiveYield(cause);qualification=undefined;output.qualification=undefined;output.qualificationEvidenceHash=undefined;
+        limits.push(`Qualificação semântica pendente (${safeResearchError(cause)}). Os fatos foram preservados.`) }
+    } else limits.push('radar_qualification_service_unavailable')
+  }
+    return {qualification,evidenceHash}
+  }
   const associatedOrigin=directlyAssociated?.url??presenceResolution?.websiteUrl
   const associated=!!associatedOrigin
+  if(configuration.research.semanticFitRequired&&configuration.research.semanticQualificationEnabled&&associatedOrigin&&presenceResolution?.scope!=='group'){
+    const material=selectRadarQualificationEvidence(pages.filter(page=>!page.limitation&&!!page.text&&sameRadarOrigin(page.url,associatedOrigin)&&!cnpjConflict(identity,page.text)),{maxPages:configuration.research.qualificationEvidenceMaxPages,maxChars:configuration.research.qualificationEvidenceMaxChars})
+    if(material.length){
+      const {qualification}=await assessSemantic(material,[])
+      if(resolveRadarSemanticEligibility({qualification,identityBinding:true,evidence:material})==='outside_profile'){
+        output.siteAssociation='confirmed';output.qualificationEvidence=material
+        const excluded=await exclude('g5');excluded.siteAssociation='confirmed';excluded.semanticExcluded=true;return excluded
+      }
+      await checkpoint('qualification')
+    }
+  }
   if(funnel){
     const fit=configuration.funnel.g5.mode==='off'?{action:'continue',effectiveMode:'off'}:await dependencies.decide?.('radar_fit_gate',pages,[],{associatedWebsite:presenceResolution?.scope==='group'?undefined:associatedOrigin})
     output.funnel!.fit=fit??{action:'continue',effectiveMode:'shadow'}
@@ -535,45 +590,8 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
   if (website && !associated) limits.push('A identidade do site exige revisão; contatos não são tratados como confirmados.')
   if(presenceResolution?.scope==='group')limits.push('Presença e canais associados ao grupo; vínculo com este estabelecimento ainda requer conferência.')
   limits.push(...discovery.limitations, ...pages.flatMap(page => page.limitation ? [`${page.url}: ${page.limitation}`] : []))
-  const criteria={campaign:dependencies.analysisCriteria,qualification:configuration.qualification,profile:configuration.research.profileEnabled,size:configuration.research.sizeAssessment.enabled,...(configuration.funnel.enabled?{qualificationPolicyVersion:2}:{})}
-  const semanticMaterial=(value:RadarSiteEvidence[])=>value.map(page=>({...page,text:page.text.slice(0,12000)}))
-  const semanticHash=(value:RadarSiteEvidence[])=>radarEvidenceContentHash({identity:stableIdentity,criteria,purpose:'qualification',evidence:semanticMaterial(value)})
-  const oldQualified=legacyQualifiedMaterial(identity,saved)
-  const semanticContext:RadarEvidenceVersion={hashVersion:2,hash:semanticHash(qualifiedEvidence),bindings:radarEvidenceBindings(semanticMaterial(qualifiedEvidence)),dependencies:radarAnalysisDependencies({identity:stableIdentity,criteria,evidence:semanticMaterial(qualifiedEvidence),contacts:uniqueContacts},'qualification'),
-    ...(oldQualified.length&&!configuration.funnel.enabled?{legacy:{hashVersion:1 as const,hash:createHash('sha256').update(JSON.stringify({pages:oldQualified.map(page=>({url:page.url,text:page.text.slice(0,12000)})),profile:configuration.research.profileEnabled,size:configuration.research.sizeAssessment.enabled})).digest('hex'),contentHash:semanticHash(oldQualified),bindings:radarEvidenceBindings(semanticMaterial(oldQualified))}}:{})}
-  const evidenceHash=semanticContext.hash
-  let qualification:RadarQualification|undefined
-  const savedQualificationBindings=radarEvidenceBindingMatch({evidenceHash:saved.qualificationEvidenceHash,evidenceVersion:saved.analysisEvidence?.semantic},semanticContext)
-  if(saved.qualification&&savedQualificationBindings)try{qualification=validatedQualificationProfile(remapRadarEvidenceResult(saved.qualification,savedQualificationBindings,semanticContext.bindings),qualifiedEvidence)}catch{limits.push('radar_analysis_saved_citations_require_review')}
-  const qualificationDependencies=radarDependencyBindingMatch(saved.analysisEvidence?.semantic,semanticContext)
-  if(!qualification&&saved.qualification?.claims?.length&&qualificationDependencies)try{
-    const mapped=remapRadarEvidenceResult(saved.qualification,qualificationDependencies.from,qualificationDependencies.to)
-    if(mapped.claims!.some(claim=>!qualifiedEvidence[Number(claim.evidenceId.replace('page-',''))]?.text.includes(claim.excerpt)))throw Error('radar_analysis_saved_citations_require_review')
-    if(mapped.reasons.some(reason=>!mapped.claims!.some(claim=>claim.reason===reason)))throw Error('radar_analysis_saved_citations_require_review')
-    // Reasons are generated narrative, not necessarily literal excerpts. Never
-    // carry an obsolete email/phone inside that narrative into the new result.
-    const currentText=qualifiedEvidence.map(page=>page.text).join(' ').replace(/\D/g,'')
-    const obsolete=(saved.contacts??[]).filter(contact=>!uniqueContacts.some(current=>current.kind===contact.kind&&current.value===contact.value))
-    if(obsolete.some(contact=>mapped.reasons.some(reason=>contact.kind==='email'?reason.toLowerCase().includes(contact.value.toLowerCase()):['phone','whatsapp'].includes(contact.kind)&&reason.replace(/\D/g,'').includes(contact.value.replace(/\D/g,'').replace(/^55/,''))&&!currentText.includes(contact.value.replace(/\D/g,'').replace(/^55/,'')))))throw Error('radar_analysis_saved_citations_require_review')
-    qualification=validatedQualificationProfile(mapped,qualifiedEvidence)
-    if(qualification.profileRejections?.length)throw Error('radar_analysis_saved_citations_require_review')
-  }catch{qualification=undefined;limits.push('radar_analysis_saved_citations_require_review')}
-  if(qualification)output.analysisEvidence={...output.analysisEvidence,semantic:persistedRadarEvidenceVersion({...semanticContext,...(!savedQualificationBindings?{derivedFromHash:saved.qualificationEvidenceHash}:{})},savedQualificationBindings?saved.qualificationEvidenceHash:undefined)}
+  const {qualification,evidenceHash}=await assessSemantic(qualifiedEvidence,uniqueContacts)
   const readableInstitutional=pages.some(page=>!!page.text&&!page.limitation&&isRadarInstitutionalSource(page.url,{text:page.text}))
-  if ((configuration.research.semanticQualificationEnabled||configuration.research.profileEnabled||configuration.research.sizeAssessment.enabled) && !qualification) {
-    if(!readableInstitutional)limits.push('radar_qualification_waiting_public_read')
-    else if(!qualifiedEvidence.length)limits.push('radar_qualification_waiting_identity')
-    else if (dependencies.qualify) {
-      try {
-        qualification = await dependencies.qualify(qualifiedEvidence,evidenceHash,semanticContext)
-        qualification=validatedQualificationProfile(qualification,qualifiedEvidence)
-        output.qualification = qualification;output.qualificationEvidenceHash=evidenceHash
-        output.analysisEvidence={...output.analysisEvidence,semantic:persistedRadarEvidenceVersion(semanticContext)}
-      }
-      catch (cause) { rethrowRadarAdaptiveYield(cause);qualification=undefined;output.qualification=undefined;output.qualificationEvidenceHash=undefined;
-        limits.push(`Qualificação semântica pendente (${safeResearchError(cause)}). Os fatos foram preservados.`) }
-    } else limits.push('radar_qualification_service_unavailable')
-  }
   limits.push(...(qualification?.limitations??[]))
   const profile=qualification?.profile
   if(configuration.research.profileEnabled&&!profile)limits.push(!readableInstitutional?'radar_profile_waiting_public_read':!qualifiedEvidence.length?'radar_profile_waiting_identity':'radar_profile_waiting_analysis')
@@ -593,9 +611,10 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     deepResearchCompleted:output.deepResearchCompleted,deepResearchStop:output.deepResearchStop,
     historicalEvidence:output.historicalEvidence,targetedQueries:output.targetedQueries,analysisEvidence:output.analysisEvidence,
     discovery:{...discovery,websiteUrl:associatedOrigin??(discovery.websiteUrl&&isRadarInstitutionalSource(discovery.websiteUrl,{text:pages.find(page=>canonicalRadarReadUrl(page.url)===canonicalRadarReadUrl(discovery.websiteUrl!))?.text})?discovery.websiteUrl:undefined),association:associatedOrigin?'confirmed' as const:discovery.websiteUrl?'review' as const:discovery.association}, pages, contacts: uniqueContacts,unassociatedContacts, registryPhone: identity.phone, siteAssociation:associated?'confirmed' as const:'review' as const, activity, qualification,
-    qualificationEvidenceHash:qualification?evidenceHash:undefined,presenceResolution,presenceEvidenceHash:presenceResolution?presenceEvidenceHash:undefined,profile,sizeAssessment,documents,limitations: limits }
+    qualificationEvidence:qualifiedEvidence,qualificationEvidenceHash:qualification?evidenceHash:undefined,presenceResolution,presenceEvidenceHash:presenceResolution?presenceEvidenceHash:undefined,profile,sizeAssessment,documents,limitations: limits }
   const qualityDecision=configuration.funnel.enabled?undefined:await decide('radar_quality_gate',pages,[])
-  const result={...dossier,decisionReview:qualityDecision?.action==='review',quality:evaluateRadarResearchQuality({dossier,policy:configuration.research,currentRevision:true})}
+  const semanticExcluded=resolveRadarSemanticEligibility({qualification,identityBinding:associated&&presenceResolution?.scope!=='group',evidence:qualifiedEvidence})==='outside_profile'
+  const result={...dossier,semanticExcluded,decisionExcluded:resolveRadarSemanticEligibility({qualification,identityBinding:associated&&presenceResolution?.scope!=='group',evidence:qualifiedEvidence})==='outside_profile',decisionReview:qualityDecision?.action==='review',quality:evaluateRadarResearchQuality({dossier,policy:configuration.research,currentRevision:true})}
   if(result.decisionReview){result.quality={...result.quality,readyForReview:false};result.limitations.push('A avaliação encontrou evidências que precisam de conferência antes da aprovação.')}
   Object.assign(output, result); await checkpoint('review')
   return result
@@ -606,7 +625,7 @@ type ResearchContext = pg.QueryResultRow & { id: string; organization_id: string
   target_segment: string; offer_type: string; product_focus: string[]; target_cnaes: string[] }
 type ResearchRun = pg.QueryResultRow & { id:string; organization_id:string; campaign_id:string; candidate_id:string; requested_by:string;
   operation?:'complete'|'resume'|'refresh'|'reanalyze';request_id?:string;
-  configuration_revision:number; status:string; stage:string; output:Output; calls:Record<string, { status:string; source:string; result?:unknown; error?:string; evidenceHash?:string;evidenceVersion?:RadarEvidenceVersion;requestBindings?:RadarEvidenceBindings;effectReceiptId?:string;actualUsd?:string;billingOutcome?:string;refreshAuthorized?:boolean;previous?:unknown;retryProvenByReceipt?:boolean;requestId?:string;retryAuthorization?:RadarAnalysisRetryBinding;costEstimate?:RadarCostEstimate;costPolicy?:RadarCostPolicy;budgetRequestId?:string;
+  configuration_revision:number; status:string; stage:string; output:Output; calls:Record<string, { status:string; source:string; result?:unknown; error?:string; evidenceHash?:string;evidenceVersion?:RadarEvidenceVersion;requestBindings?:RadarEvidenceBindings;effectReceiptId?:string;actualUsd?:string;billingOutcome?:string;refreshAuthorized?:boolean;assessmentCount?:number;previous?:unknown;retryProvenByReceipt?:boolean;requestId?:string;retryAuthorization?:RadarAnalysisRetryBinding;costEstimate?:RadarCostEstimate;costPolicy?:RadarCostPolicy;budgetRequestId?:string;
     responseBody?:unknown;queryCount?:number;billableRequestCount?:number;usageDate?:string;query?:string;recoveryRequestId?:string;
     rejections?:Array<{error:string;evidenceHash?:string;observedAt:string}> }>;
   created_at:string; updated_at:string; completed_at?:string; error_code?:string; lease_id?:string; lease_until?:string;historical_closed_at?:string|null }
@@ -803,6 +822,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
       if(!requester||!await isRadarEnabledOrganization(queryable,run.organization_id))throw error('research_admin_required',403)
       await requireRadarScope(queryable,requester as AuthUser,{organizationId:run.organization_id,campaignId:run.campaign_id,candidateId:run.candidate_id},true)
       const current=await loadContext(queryable,run.organization_id,run.candidate_id)
+      if(await isRadarCampaignExcluded(queryable,{organizationId:run.organization_id,campaignId:run.campaign_id,identity:{candidateId:run.candidate_id},criteriaRevision:run.configuration_revision}))throw error('radar_candidate_excluded')
       if(current.configuration_revision!==run.configuration_revision)throw error('radar_campaign_configuration_changed')
       if(current.status!=='pending_review'||['paused','archived','completed'].includes(current.campaign_status))throw error('radar_campaign_or_candidate_inactive')
       if(!resolveRadarSearchConfiguration(current.search_configuration).research.enabled)throw error('campaign_research_disabled')
@@ -810,7 +830,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
       if(approval?.approved_at)throw error('radar_research_approved_candidate_requires_review')
     }
     const collect:typeof collectRadarSiteEvidence=async(url,policy,options={})=>{
-      if(!adaptiveTurn)return(dependencies.collect??collectRadarSiteEvidence)(url,policy,options)
+      if(!adaptiveTurn){await assertEffectAuthorization();return(dependencies.collect??collectRadarSiteEvidence)(url,policy,options)}
       const initial=options.initialPages??[],tls=await options.tlsOptions?.(new URL(url).hostname)
       const key=`read_${radarDecisionHash({url,policy,epoch:intentBudget?.requestId??run.request_id??run.id,reader:RADAR_READER_VERSION,tls:tls?.tlsException?.id,initial:radarEvidenceContentHash({identity:{},criteria:{},purpose:'read',evidence:initial})})}`
       const cached=run.calls[key]
@@ -1037,7 +1057,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
       discoveryQueries:Object.values(run.calls).filter(call=>['brave_web_search','serper_web_search','brave_place_search','perplexity_search_fast','perplexity_search_web'].includes(call.source)).length},{
       signal,checkpoint,decide,analysisCriteria:{segment:context.target_segment,offer:context.offer_type,products:context.product_focus},registrySizeFacts:registryRadarSizeFacts(payload),collect:run.operation==='reanalyze'||!configuration.sources.inspectWebsite ? async () => [] : collect,
       registryPayload:payload,targetCnaes:context.target_cnaes,emailPolicy:funnelEmailPolicy,configurationRevision:run.configuration_revision,funnelOverrides:radarScopedFunnelOverrides(payload),
-      sourceCostsBrl,maxDecisionCalls:funnelPolicy?.limits.maxDecisionCallsPerCompany,
+      sourceCostsBrl,maxDecisionCalls:Math.max(0,(funnelPolicy?.limits.maxDecisionCallsPerCompany??6)-2),
       recoverAgent:funnelAgentReadiness?.recoverOnly,agentCostBrl:funnelAgentReadiness?.price?.amountBrl??undefined,
       onRegistryGate:configuration.funnel.enabled?()=>applyRadarFunnelRegistryGate(pool,funnelScope,{authorize:assertEffectAuthorization}):undefined,
       onInitialGate:configuration.funnel.enabled?blocked=>markRadarFunnelInitialGate(pool,funnelScope,blocked,{authorize:assertEffectAuthorization}):undefined,
@@ -1135,7 +1155,10 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         const baseRequestId=`${run.id}:${evidenceHash}`
         const retry=previousSemantic&&previousSemantic.status!=='completed'&&!canRetryPreProviderRejection(previousSemantic)?await resolveRadarAnalysisRetry(pool,{organizationId:run.organization_id,campaignId:run.campaign_id,candidateId:run.candidate_id,runId:run.id,configurationRevision:run.configuration_revision,action:'radar_business_qualification',previousRequestId:previousSemantic.requestId??`${run.id}:${previousSemantic.evidenceHash}`,searchConfiguration:context.search_configuration}):previousSemantic&&canRetryPreProviderRejection(previousSemantic)?previousSemantic.retryAuthorization:undefined
         if (previousSemantic&&previousSemantic.status!=='completed'&&!canRetryPreProviderRejection(previousSemantic)&&!retry) throw error(previousSemantic.status.startsWith('received_')?previousSemantic.error??'radar_analysis_response_invalid':'radar_qualification_previous_request_uncertain')
-        if (previousSemantic?.status==='completed'&&!previousSemantic.refreshAuthorized) throw error(!previousSemantic.evidenceVersion&&!version.legacy?'radar_analysis_legacy_material_missing':'radar_qualification_refresh_authorization_required')
+        const semanticMaximum=Math.min(configuration.research.maxSemanticFitAssessmentsPerCandidate,funnelPolicy?.limits.maxSemanticFitAssessmentsPerCompany??2)
+        const semanticCount=Number(previousSemantic?.assessmentCount??(previousSemantic?1:0))
+        const automaticSemanticRefresh=configuration.research.semanticFitRequired&&!!previousSemantic?.evidenceVersion&&semanticCount<semanticMaximum
+        if (previousSemantic?.status==='completed'&&!previousSemantic.refreshAuthorized&&!automaticSemanticRefresh) throw error(!previousSemantic.evidenceVersion&&!version.legacy?'radar_analysis_legacy_material_missing':'radar_qualification_refresh_authorization_required')
         const tenant = await pool.query(`SELECT organization.client_id, contract.id AS contract_id FROM public.organizations organization
           LEFT JOIN LATERAL (SELECT id FROM public.contracts WHERE client_id=organization.client_id AND status='active' ORDER BY starts_at DESC,id DESC LIMIT 1) contract ON TRUE
           WHERE organization.id=$1`,[run.organization_id])
@@ -1148,7 +1171,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         await assertEffectAuthorization()
         const requestEvidence=canonicalRadarAnalysisEvidence(pages.map(page=>({...page,text:page.text.slice(0,12000)})))
         run.calls.semantic={status:'reserved',source:'radar_business_qualification',evidenceHash,evidenceVersion:persistedRadarEvidenceVersion(version),requestBindings:radarEvidenceBindings(requestEvidence),rejections:previousSemantic?.rejections,
-          previous:previousSemantic}
+          previous:previousSemantic,assessmentCount:semanticCount+1}
         const requestId=retry?`${baseRequestId}:retry:${retry.authorization_id}`:baseRequestId
         run.calls.semantic.requestId=requestId
         const costPolicy=frozenRadarCostPolicy(intentBudget,(await loadRadarOperationalLimits(pool)).costPolicy)
@@ -1242,7 +1265,7 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
       companyProfile:dossier.profile,sizeAssessment:dossier.sizeAssessment,presenceResolution:dossier.presenceResolution,researchMethodVersion:RADAR_RESEARCH_METHOD_VERSION,
       researchQuality:quality,researchIdentityName:identity.name,
       ...(configuration.funnel.enabled?{funnel:{...(candidate.rows[0].normalized_payload.funnel as Record<string,unknown>??{}),...dossier.funnel,...(dossier.funnel?.blockedGate?{lastBlock:{gate:dossier.funnel.blockedGate,configurationRevision:run.configuration_revision,runId:run.id}}:{lastBlock:null})},
-        decisionExclusion:{active:dossier.decisionExcluded===true,revision:run.configuration_revision,gate:dossier.funnel?.blockedGate,reason:'outside_profile',runId:run.id},emailDomainSignal:dossier.funnel?.emailSignal??context.normalized_payload.emailDomainSignal}
+        decisionExclusion:{active:dossier.decisionExcluded===true,revision:run.configuration_revision,gate:dossier.semanticExcluded?undefined:dossier.funnel?.blockedGate,origin:dossier.semanticExcluded?'semantic':'decision',reason:'outside_profile',runId:run.id},emailDomainSignal:dossier.funnel?.emailSignal??context.normalized_payload.emailDomainSignal}
         :dossier.decisionExcluded&&context.normalized_payload.manualDecisionOverride!==true?{decisionExclusion:{active:true,revision:run.configuration_revision,reason:'outside_profile',runId:run.id}}:context.normalized_payload.decisionExclusion?{decisionExclusion:{...(context.normalized_payload.decisionExclusion as Record<string,unknown>),active:false}}:{}),
       researchLimitations:dossier.limitations,
       researchTlsExceptions:dossier.pages.filter(page=>page.tlsException).map(page=>({...page.tlsException,sourceUrl:page.url})),

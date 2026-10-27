@@ -1,3 +1,4 @@
+import {isRadarSemanticallyOutside} from './semantic-eligibility.js'
 export type RadarCaptureResearchStage='discovery'|'reading'|'presence'|'qualification'|'profile'
 export type RadarFunnelOutcome='out_of_profile'|'completed'|'completed_with_gaps'|'technical_failure'
 export type RadarCaptureResearchAssessment={status:'researching'|'completed'|'insufficient'|'blocked';reason?:string;stage?:RadarCaptureResearchStage}
@@ -7,7 +8,7 @@ type Child={status:string;stage?:string;error_code?:string|null;lease_until?:str
 export function canResumeRadarResearch(run:Child,policy:{semanticQualificationEnabled?:boolean}):boolean{
  if(['queued','running'].includes(run.status))return false
  if(assessRadarResearchProgress(run).status!=='completed')return true
- if(!run.output?.funnel||run.output.decisionExcluded===true)return false
+ if(!run.output?.funnel||run.output.decisionExcluded===true||isRadarSemanticallyOutside(run.output))return false
  const qualification=run.output.qualification as {targetStatus?:string}|undefined
  return (run.output.quality as {readyForReview?:boolean}|undefined)?.readyForReview===false
    ||!!policy.semanticQualificationEnabled&&qualification?.targetStatus!=='confirmed'
@@ -23,7 +24,7 @@ export function assessRadarResearchProgress(run:Child):RadarCaptureResearchAsses
 export function assessRadarFunnelResearch(run:Child):{outcome:RadarFunnelOutcome|null;retryable:boolean;reason?:string}{
  // A completed, authorized exclusion supersedes irrelevant enrichment failures;
  // their paid receipts remain audited. Never finalize an active or failed worker.
- if(['partial','succeeded'].includes(run.status)&&run.output?.decisionExcluded===true)return{outcome:'out_of_profile',retryable:false}
+ if(['partial','succeeded'].includes(run.status)&&(run.output?.decisionExcluded===true||isRadarSemanticallyOutside(run.output)))return{outcome:'out_of_profile',retryable:false}
  const finishedFallback=run.output?.readingComplete===true&&['eligible_actions_exhausted','decision_stop','identity_found'].includes(String((run.output?.funnel as {stopReason?:string}|undefined)?.stopReason))
  const assessment=assessRadarCaptureResearch(run.output?.funnel?{...run,calls:Object.fromEntries(Object.entries(run.calls??{}).filter(([,call])=>call.source!=='openrouter_decision'&&!(finishedFallback&&call.status==='failed'&&call.error==='radar_web_response_invalid'&&['brave_web_search','serper_web_search'].includes(call.source??''))))}:run)
  if(assessment.status==='researching')return{outcome:null,retryable:false}

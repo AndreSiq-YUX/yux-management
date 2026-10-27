@@ -21,6 +21,7 @@ class ResearchPool {
   async connect(){return{query:this.query.bind(this),release(){}}}
   async query(sql:string,params:unknown[]=[]):Promise<{rows:any[]}> {
     this.queries.push({sql,params})
+    if(sql.includes('FROM public.radar_campaign_exclusions'))return{rows:[]}
     if(sql.includes('FROM public.radar_capture_items'))return{rows:[]}
     if(sql.includes('FROM public.radar_research_request_items'))return{rows:[]}
     if(sql.includes('FROM private.radar_operational_policy()'))return{rows:[{version:1,limits:defaultRadarOperationalLimits,cost_policy:defaultRadarCostPolicy}]}

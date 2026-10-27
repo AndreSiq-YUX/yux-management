@@ -206,6 +206,7 @@ class FakeRadarPool {
     if (normalized.includes('COUNT(*)::text AS candidates') && normalized.includes("source_type = 'osm_extract'"))
       return { rows: [{ candidates: '2', with_site: '1', verified_sites: '0', with_phone: '0', with_email: '0', duplicates: '0', imported: '0' }] }
     if (normalized.includes('SELECT dedupe_key FROM public.radar_candidate_records')) return { rows: this.osmSeenKeys.map(dedupe_key => ({ dedupe_key })) }
+    if (normalized.includes('radar_campaign_exclusion')||normalized.includes('radar_business_identity_keys')) return {rows:[]}
     if (normalized.includes('SELECT * FROM public.radar_candidate_records WHERE id = $1')) return { rows: [candidateRow({ status: this.candidateStatus })] }
     if (normalized.includes('FROM public.radar_candidate_records')) return { rows: [candidateRow({ status: this.candidateStatus })] }
     if (normalized.includes('SELECT DISTINCT ON (run.candidate_id)')) return {rows:[]}
@@ -213,7 +214,7 @@ class FakeRadarPool {
       this.candidateStatus = 'imported'
       return { rows: [candidateRow({ status: 'imported', importedCompanyRecordId: params[1] as string, importedOpportunityId: params[2] as string })] }
     }
-    if (normalized.includes("SET status = 'discarded'")) {
+    if (normalized.includes("SET status = 'discarded'")||normalized.includes("SET status='discarded'")) {
       this.candidateStatus = 'discarded'
       return { rows: [candidateRow({ status: 'discarded' })] }
     }

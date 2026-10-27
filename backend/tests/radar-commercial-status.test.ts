@@ -2,6 +2,21 @@ import {expect,it} from 'vitest'
 import {validateRadarResearchContract} from '../src/modules/radar/effect-receipts.js'
 const api=await import('../src/modules/radar/commercial-status.js').catch(()=>({})) as Record<string,any>
 const observedAt='2026-10-19T10:00:00Z'
+it.each([
+ ['radar_presence_unverifiable','identity_analysis_incomplete','presence'],
+ ['radar_qualification_unverifiable_claim','commercial_analysis_incomplete','semantic'],
+ ['radar_research_call_uncertain','attempt_confirmation_pending','semantic'],
+ ['radar_research_previous_request_failed','public_research_interrupted','discovery'],
+])('explains %s with a public enumerated reason', (error,reason,key)=>{
+ const result=api.projectRadarCommercialResearchStatus({run:{status:'partial',calls:{[key]:{status:error.includes('uncertain')?'uncertain':'received_invalid',error}},output:{funnel:{},readingComplete:true,quality:{readyForReview:false}}}})
+ expect(result.status).toBe('waiting')
+ expect(result.attention).toMatchObject({reason,canResume:false})
+ expect(JSON.stringify(result)).not.toContain(error)
+ expect(validateRadarResearchContract(result)).toBe(true)
+})
+it('does not call normal missing contact data a pending execution',()=>{
+ expect(api.projectRadarCommercialResearchStatus({run:{status:'partial',output:{funnel:{},readingComplete:true,quality:{readyForReview:false}}}}).attention).toBeUndefined()
+})
 it('explains that a possible fit is not a finished segment verification',()=>{
  const result=api.projectRadarCommercialResearchStatus({requestedFields:['fit'],run:{status:'partial',output:{funnel:{},readingComplete:true,siteAssociation:'confirmed',quality:{readyForReview:false},qualification:{targetStatus:'review',productFit:'possible'}}}});
  expect(result.status).toBe('incomplete');expect(result.unresolvedFields).toContainEqual({field:'fit',reason:'verification_pending'});
@@ -47,4 +62,12 @@ it('distinguishes outside-profile results from a blocked operation and does not 
  const result=api.projectRadarCommercialResearchStatus({requestedFields:['website','fit'],previous:{websiteUrl:'https://empresa.example/',targetStatus:'not_target'},run:{status:'succeeded',updated_at:observedAt,output}})
  expect(result.updatedFields).toEqual([]);expect(result.status).toBe('incomplete');expect(result.nextAction).toBe('review_result')
  expect(result.unresolvedFields).toContainEqual({field:'fit',reason:'outside_profile'})
+})
+
+it('groups the real 40-company distribution and clears one updated pending company',async()=>{
+ const {summarizeRadarResearchAttention}=await import('../src/modules/radar/research-attention.js')
+ const items=[...Array.from({length:26},()=>({status:'insufficient'})),...Array.from({length:10},()=>({status:'blocked',blocker:'radar_presence_unverifiable'})),...Array.from({length:2},()=>({status:'blocked',blocker:'radar_qualification_unverifiable_claim'})),{status:'blocked',blocker:'radar_research_call_uncertain'},{status:'blocked',blocker:'radar_research_previous_request_failed'}]
+ expect(summarizeRadarResearchAttention(items)).toEqual([{reason:'identity_analysis_incomplete',count:10},{reason:'commercial_analysis_incomplete',count:2},{reason:'attempt_confirmation_pending',count:1},{reason:'public_research_interrupted',count:1}])
+ items[26]={status:'completed'}
+ expect(summarizeRadarResearchAttention(items)[0].count).toBe(9)
 })

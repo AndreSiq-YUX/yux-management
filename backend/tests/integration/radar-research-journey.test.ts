@@ -209,7 +209,8 @@ describe.skipIf(!connectionString)('Radar research with migrated PostgreSQL and 
     expect(refreshed.runId).not.toBe(reanalysis.runId)
     await jobScope(()=>executeRadarCandidateResearch(worker,{PROVIDER_SECRET_ENCRYPTION_KEY_B64:fixtureKey} as AppEnv,
       {runId:refreshed.runId,organizationId},undefined,{web,collect,runtime:runtime as never}))
-    expect(web).toHaveBeenCalledTimes(2)
+    // The complete funnel reuses a fresh associated site in the next round.
+    expect(web).toHaveBeenCalledTimes(1);expect(runtime).toHaveBeenCalledTimes(3)
     await scoped(()=>approveRadarB2bProspect(worker,admin,{organizationId,candidateId,manualEvidenceUrl:'https://alfa.example/',manualReviewNote:'Identidade e público conferidos na evidência pública de teste.'}))
     const csv=await scoped(()=>exportRadarB2bProspectsCsv(worker,admin,organizationId,campaignId))
     expect(csv).toContain('Empresa Alfa')
@@ -224,7 +225,7 @@ describe.skipIf(!connectionString)('Radar research with migrated PostgreSQL and 
       ()=>worker.query('SELECT id FROM public.radar_candidate_research_runs WHERE id=$1',[starts[0].runId]))
     expect(hidden.rows).toHaveLength(0)
     const usage=await pool.query('SELECT SUM(units)::integer AS units FROM public.radar_source_usage_counters WHERE campaign_id=$1',[campaignId])
-    expect(Number(usage.rows[0].units)).toBe(2)
+    expect(Number(usage.rows[0].units)).toBe(1)
   })
   it('reclassifies legacy facts without searches then explicitly refreshes brand identity while preserving history',async()=>{
     await pool.query(`UPDATE public.radar_campaigns SET search_configuration=jsonb_set(search_configuration,'{research}', '{"enabled":true,"webSearchEnabled":true,"presenceResolutionEnabled":true,"maxSearchQueriesPerCandidate":1}'::jsonb) WHERE id=$1`,[campaignId])

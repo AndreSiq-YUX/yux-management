@@ -5,6 +5,14 @@ const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city: 'Curitiba
 const url = 'https://alfa.example/';
 const page = { url, text: 'Empresa Alfa CNPJ 12.345.678/0001-90. Atendimento empresarial. contato@alfa.example', observedAt: '2026-10-21' };
 const config = (patch = {}) => resolveRadarSearchConfiguration({ funnel: { enabled: true, g0: { mode: 'enforce' }, g1: { mode: 'enforce' }, g5: { mode: 'enforce' } }, research: { enabled: true, webSearchEnabled: true, semanticQualificationEnabled: true }, ...patch });
+it('excludes a cited incompatible business before supplier/social/deep enrichment without word filters',async()=>{
+ const incompatible={...page,text:page.text+' Projetos de montagem elétrica e geração de energia.'}
+ const qualify=vi.fn(async()=>({targetStatus:'not_target',productFit:'low',reasons:['Atividade incompatível'],evidenceIds:['page-0'],claims:[{reason:'Atividade incompatível',evidenceId:'page-0',excerpt:incompatible.text}],limitations:[]}))
+ const collectSocial=vi.fn(async()=>[]),deepResearch=vi.fn(async()=>[])
+ const result=await runRadarResearchPipeline(identity,config({funnel:{enabled:true,g1:{mode:'off'},g5:{mode:'off'}},research:{enabled:true,semanticFitRequired:true,semanticQualificationEnabled:true,inspectLinkedSocialProfiles:true,deepResearchEnabled:true}}),{pages:[incompatible],readingComplete:true,discovery:{websiteUrl:url,hits:[],suggestions:[],queries:0,association:'confirmed',limitations:[]}}, {web:async()=>[],collect:async()=>[incompatible],qualify,collectSocial,deepResearch,checkpoint:async()=>{}} as never)
+ expect(result.decisionExcluded).toBe(true)
+ expect(qualify).toHaveBeenCalledTimes(1);expect(collectSocial).not.toHaveBeenCalled();expect(deepResearch).not.toHaveBeenCalled()
+})
 it.each(['found','exhausted','uncertain'] as const)('continues cheap searches only after a real unresolved identity (%s), and resumes without repurchasing',async mode=>{
  const wrong={url:'https://candidate.example/',text:'Empresa Alfa é mencionada nesta página. Informações institucionais gerais.',observedAt:page.observedAt};
  const web=vi.fn(async()=>[{url:web.mock.calls.length===1||mode!=='found'?wrong.url:url,title:identity.name,snippets:[],observedAt:page.observedAt}]);

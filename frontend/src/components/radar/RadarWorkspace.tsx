@@ -1,3 +1,4 @@
+import {RadarCampaignExclusions} from './RadarCampaignExclusions'
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarClock, CheckCircle2, CheckSquare, Link2, Lock, Plus, Radar, Search, ShieldCheck, Upload } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -237,6 +238,7 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,technical
   const activeConfigurationEditor = screen==='configuration' ? campaigns.find(item=>item.id===(campaignId??selectedCampaignId))??null : configurationEditor
     ?? (screen==='new' && creationMode === 'regional' ? 'new' : null)
   const [selectedCandidateIds,setSelectedCandidateIds]=useState<string[]>([])
+  const [waitingFilterSignal,setWaitingFilterSignal]=useState(0)
   const [expandedCandidateId,setExpandedCandidateId]=useState<string|null>(null)
   const detailsHeading=useRef<HTMLHeadingElement|null>(null),detailsReturnFocus=useRef<HTMLElement|null>(null)
   const [detailsOpenRequest,setDetailsOpenRequest]=useState(0)
@@ -257,7 +259,7 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,technical
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(campaignId??null)
   const sidebarScope=useRef(''),sidebarSequence=useRef(0)
   sidebarScope.current=`${organizationId??''}:${selectedCampaignId??''}`
-  useEffect(()=>{setExpandedCandidateId(null);setSelectedCandidateIds([])},[organizationId,selectedCampaignId])
+  useEffect(()=>{setExpandedCandidateId(null);setSelectedCandidateIds([]);setWaitingFilterSignal(0)},[organizationId,selectedCampaignId])
   const [researchAvailability,setResearchAvailability]=useState<RadarResearchAvailability|null>(null)
   const [researchAvailabilityError,setResearchAvailabilityError]=useState<string|null>(null)
   const [researchAvailabilityRefresh,setResearchAvailabilityRefresh]=useState(0)
@@ -1306,7 +1308,7 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,technical
               finally{if(consent.scope===sidebarScope.current)setCaptureBusy(false)}
             }}/>}
             {canEditConfiguration&&captureConsent&&captureConsent.scope===sidebarScope.current&&captureConsent.operationId===captureOperation?.id&&<RadarCaptureContinuationDialog key={captureConsent.preflight.stateId} open preflight={captureConsent.preflight} busy={captureBusy} error={captureError} onCancel={()=>setCaptureConsent(null)} onConfirm={async limits=>{await resumeCapture({approvedLimits:limits})}}/>}
-            {captureOperation&&<div className="mt-4"><RadarCaptureProgress showTechnical={technicalOnly} operation={captureOperation} onRefresh={()=>setCaptureRefresh(value=>value+1)} busy={captureBusy}/></div>}
+            {captureOperation&&<div className="mt-4"><RadarCaptureProgress onShowWaiting={()=>{setWaitingFilterSignal(value=>value+1);document.getElementById('radar-campaign-results')?.scrollIntoView({block:'start',behavior:'smooth'})}} showTechnical={technicalOnly} operation={captureOperation} onRefresh={()=>setCaptureRefresh(value=>value+1)} busy={captureBusy}/></div>}
             {batchRequestedAt>0&&<p role="status" className="mt-2 text-xs text-slate-600">Busca solicitada. Os resultados serão atualizados automaticamente durante o acompanhamento; a consulta continua em segundo plano.</p>}
             <div className="mt-3 flex items-center gap-3 border-t pt-3">
               <span className="text-sm text-slate-600">{b2bProspects.filter(item => item.approvedAt).length} empresas aprovadas para contato manual</span>
@@ -1712,7 +1714,8 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,technical
             {researchAvailabilityError&&<p role="alert" className="mb-3 text-sm text-red-700">{researchAvailabilityError}</p>}
             {researchBatchStatus.length>0&&<div role="status" className="mb-3 rounded border bg-slate-50 p-3 text-xs">{researchBatchStatus.map((message,index)=><p key={index}>{message}</p>)}</div>}
             {researchRequestResult?.items.some(item=>item.feedback&&item.feedback.status!=='researching')&&<div className="mb-4 grid gap-3 md:grid-cols-2">{researchRequestResult.items.filter(item=>item.feedback&&item.feedback.status!=='researching').map(item=><section key={item.candidateId} className="min-w-0"><h4 className="mb-2 text-sm font-medium">{candidates.find(candidate=>candidate.id===item.candidateId)?.title??'Empresa selecionada'}</h4><RadarResearchOutcome feedback={item.feedback}/></section>)}</div>}
-            <RadarResultsTable candidates={candidates} revision={selectedCampaign.configurationRevision??1} selectedIds={selectedCandidateIds} approvedIds={b2bProspects.filter(item=>item.approvedAt).map(item=>item.id)} onSelect={setSelectedCandidateIds} onOpen={openCandidateDetails} onRestore={async id=>{try{await radarService.restoreProfile(id);await refreshCampaignSidebars()}catch{setResearchAvailabilityError('Não foi possível reincluir a empresa para revisão. Confira as permissões e tente novamente.')}}}/>
+            {organizationId&&<RadarCampaignExclusions key={selectedCampaign.id} organizationId={organizationId} campaignId={selectedCampaign.id} candidateIds={selectedCandidateIds} canManage={canManage} onChanged={()=>{setSelectedCandidateIds([]);refreshCampaignSidebars()}}/>}
+            <RadarResultsTable waitingFilterSignal={waitingFilterSignal} canManage={canManage} onChanged={refreshCampaignSidebars} candidates={candidates} revision={selectedCampaign.configurationRevision??1} selectedIds={selectedCandidateIds} approvedIds={b2bProspects.filter(item=>item.approvedAt).map(item=>item.id)} onSelect={setSelectedCandidateIds} onOpen={openCandidateDetails} onRestore={async id=>{try{await radarService.restoreProfile(id);await refreshCampaignSidebars()}catch{setResearchAvailabilityError('Não foi possível reincluir a empresa para revisão. Confira as permissões e tente novamente.')}}}/>
             <div className="mt-4 space-y-4">
               {expandedCandidateId&&<div className="rounded-md border">
                 <div className="border-b p-3">

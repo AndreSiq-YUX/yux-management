@@ -3,6 +3,9 @@ import {buildRadarCrmLeadFacts} from '../src/modules/radar/crm-delivery.js'
 const api=await import('../src/modules/radar/commercial-view.js').catch(()=>({})) as Record<string,Function>
 const project=(surface:string,value:unknown)=>api.projectRadarCommercialResponse?.(surface,value)
 const internal={provider:'OpenRouter',model:'secret-model',sourceType:'brave_web_search',costUsd:2,futureInternalField:'private'}
+it('does not hide a business solely from a legacy negative label without a canonical exclusion',()=>{
+ expect(project('candidates',[{normalizedPayload:{targetStatus:'not_target',researchRevision:7}}])[0].facts.outsideProfile).toBe(false)
+})
 it('does not deliver unassociated publisher contacts as prospect channels when no company website is identified',()=>{
  const result=project('research',{run:{status:'partial',output:{discovery:{},siteAssociation:'review',contacts:[{kind:'email',value:'support@publisher.example',sourceUrl:'https://publisher.example/',association:'review',scope:'unresolved'}]}}});
  expect(result.facts.contacts).toEqual([]);
@@ -45,7 +48,7 @@ describe('Radar commercial data boundary',()=>{
   expect(project('candidates',[{normalizedPayload:{triageReasons:['brave_web_search indisponível','serper_search aguardando','cnpja_advanced_search pendente','Atende indústrias']}}])).toMatchObject([{facts:{reasons:['Atende indústrias']}}])
  })
  it('hides new research mechanisms while preserving legitimate identity and reversible exclusions',()=>{
-  expect(project('candidates',[{normalizedPayload:{triageReasons:['Perplexity indisponível','Atende indústrias'],targetStatus:'not_target',researchRevision:7}}])).toMatchObject([{facts:{reasons:['Atende indústrias'],outsideProfile:true,outsideProfileRevision:7}}])
+  expect(project('candidates',[{normalizedPayload:{triageReasons:['Perplexity indisponível','Atende indústrias'],targetStatus:'not_target',researchRevision:7,decisionExclusion:{active:true,revision:7}}}])).toMatchObject([{facts:{reasons:['Atende indústrias'],outsideProfile:true,outsideProfileRevision:7}}])
   expect(api.radarCommercialUrl?.('https://api.perplexity.ai/search')).toBeUndefined()
   expect(project('candidates',[{title:'Perplexity Comércio',normalizedPayload:{tradeName:'Perplexity Comércio',companyProfile:{summary:{value:'Perplexity Comércio atende indústrias',sourceUrl:'https://comercio.example/'}}}}])).toMatchObject([{facts:{profile:{summary:{value:'Perplexity Comércio atende indústrias'}}}}])
  })

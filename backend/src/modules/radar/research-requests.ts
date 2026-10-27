@@ -1,3 +1,4 @@
+import {isRadarCampaignExcluded} from './campaign-exclusions.js'
 import {createHash,randomUUID} from 'node:crypto'
 import type pg from 'pg'
 import {z} from 'zod'
@@ -62,6 +63,7 @@ export async function queueRadarResearchRequest(pool:pg.Pool,user:AuthUser,value
   if(candidateIds.length>limits.limits.maxNewCompaniesPerLot)throw failure('radar_operational_limit_exceeded')
   const candidates=(await client.query('SELECT id FROM public.radar_candidate_records WHERE id=ANY($1::uuid[]) AND organization_id=$2 AND campaign_id=$3',[candidateIds,input.organizationId,input.campaignId])).rows
   if(candidates.length!==candidateIds.length)throw failure('radar_research_request_scope_invalid',403)
+  for(const candidateId of candidateIds)if(await isRadarCampaignExcluded(client,{organizationId:input.organizationId,campaignId:input.campaignId,identity:{candidateId},criteriaRevision:campaign.configuration_revision}))throw failure('radar_candidate_excluded')
   if(input.analysisAuthorizationId){
    const grants=(await client.query('SELECT candidate_id,configuration_revision,expires_at,consumed_at FROM public.radar_analysis_retry_authorizations WHERE request_id=$1 AND organization_id=$2 AND campaign_id=$3',[input.analysisAuthorizationId,input.organizationId,input.campaignId])).rows
    const selected=grants.filter(grant=>candidateIds.includes(grant.candidate_id))

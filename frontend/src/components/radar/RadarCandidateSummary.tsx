@@ -1,3 +1,4 @@
+import {RadarResearchAttention} from './RadarResearchAttention'
 import {Button} from '@/components/ui/button'
 import {buildRadarPresenceSummary,radarPublicLink} from '@/lib/radar/radarPresenceSummary'
 import type {RadarCandidateRecord} from '@/types/radar'
@@ -7,7 +8,7 @@ const radarChannelLabels={phone:'Telefone público',email:'E-mail',whatsapp:'Wha
 export function RadarCandidateSummary({candidate,revision,onOpenFull}:{candidate:RadarCandidateRecord;revision:number;onOpenFull:(id:string)=>void}) {
   const summary=buildRadarPresenceSummary(candidate,revision)
   return <section aria-label={`Resumo de ${candidate.title}`} className="flex flex-col gap-3 p-4">
-    <h4 className="font-semibold">{candidate.title}</h4>
+    <h4 className="font-semibold">{candidate.title}</h4><RadarResearchAttention attention={candidate.feedback?.attention}/>
     <RadarQualitySummary quality={Number(candidate.normalizedPayload.researchRevision)===revision&&candidate.normalizedPayload.researchAssociationNeedsReview!==true?candidate.normalizedPayload.researchQuality as RadarResearchQuality|undefined:undefined}/>
     <p className="text-sm text-muted-foreground">{String(candidate.normalizedPayload.city??'Localização não informada')} {String(candidate.normalizedPayload.state??'')}</p>
     {summary.website?<p className="break-words text-sm"><span className="font-medium">{summary.website.label}</span>: <a className="text-primary underline" href={summary.website.url} target="_blank" rel="noreferrer">{summary.website.url}</a></p>:<p className="text-sm">{summary.presenceLabel}</p>}

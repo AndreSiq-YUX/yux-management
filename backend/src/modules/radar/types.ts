@@ -1,6 +1,6 @@
 import type { RadarSearchConfiguration } from './search-configuration.js'
 
-export type RadarCaptureOperation = {
+export type RadarCaptureOperation = {attentionSummary?:Array<{reason:'identity_analysis_incomplete'|'commercial_analysis_incomplete'|'attempt_confirmation_pending'|'public_research_interrupted';count:number}>;
   id:string;campaignId:string;configurationRevision:number;status:'queued'|'discovering'|'researching'|'completed'|'partial'|'blocked';
   discoveryStopped:boolean;discoveryReason?:string;queries:number;blockers:string[];canContinue?:boolean;
   countingMode?:'admitted'|'qualified';
@@ -155,6 +155,7 @@ export type RadarEnrichmentRunRow = {
 }
 
 export type RadarCandidateRecordRow = {
+  commercial_feedback?: import('../../contracts/generated/radarResearch.js').CommercialResearchStatusV1
   id: string
   organization_id: string
   campaign_id: string
@@ -331,6 +332,7 @@ export interface RadarEnrichmentRun {
 }
 
 export interface RadarCandidateRecord {
+  feedback?: import('../../contracts/generated/radarResearch.js').CommercialResearchStatusV1
   id: string
   organizationId: string
   campaignId: string

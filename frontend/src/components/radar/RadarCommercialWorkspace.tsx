@@ -37,7 +37,7 @@ export function RadarCommercialWorkspace(props:RadarWorkspaceProps){
  },[org,id,screen,scope,allowed,refresh])
  const operationStatus=operation?.status
  const pendingAnalysis=opportunities.some(item=>item.status==='diagnosing')
- useEffect(()=>{if(!pendingAnalysis&&(!operationStatus||!['queued','discovering','researching'].includes(operationStatus)))return
+ useEffect(()=>{if(!pendingAnalysis&&(!operationStatus||!['queued','discovering','researching','blocked'].includes(operationStatus)))return
   const timer=setTimeout(()=>setRefresh(value=>value+1),4_000);return()=>clearTimeout(timer)
  },[operationStatus,pendingAnalysis,refresh,scope])
  useEffect(()=>{if(fullId&&!detailsLoading){heading.current?.focus({preventScroll:true});heading.current?.scrollIntoView?.({block:'start',behavior:window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'})}},[fullId,detailsLoading])

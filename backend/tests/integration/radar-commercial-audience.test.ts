@@ -30,6 +30,45 @@ describe.skipIf(!connectionString)('Radar commercial HTTP audience with isolated
  })
  afterAll(async()=>{await app?.close();await apiPool?.end();if(campaignId)await pool.query('DELETE FROM public.radar_campaigns WHERE id=$1',[campaignId]);await pool.end()})
  const get=(path:string,user:string)=>app.inject({method:'GET',url:`/api/radar${path}`,headers:{cookie:cookies.get(user)!}})
+ it('keeps attribution-restricted excluded names in the YUX Admin audience',async()=>{
+  const company=(await pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key) VALUES($1,$2,'osm_extract','Nome com atribuição restrita',$3) RETURNING id`,[fixtureIds.organizationA,campaignId,randomUUID()])).rows[0].id
+  try{
+   const response=await app.inject({method:'POST',url:`/api/radar/campaigns/${campaignId}/exclusions`,headers:{cookie:cookies.get('yux_admin')!},payload:{organizationId:fixtureIds.organizationA,candidateIds:[company],requestId:randomUUID()}})
+   expect(response.statusCode).toBe(200)
+   for(const role of ['yux_admin','yux_operator','client_admin_A','client_member_A']){
+    const rows=(await get(`/campaigns/${campaignId}/exclusions?organizationId=${fixtureIds.organizationA}`,role)).json()
+    expect(rows.find((row:any)=>row.candidateId===company).title).toBe(role==='yux_admin'?'Nome com atribuição restrita':'Empresa excluída')
+   }
+  }finally{await pool.query('DELETE FROM public.radar_candidate_records WHERE id=$1',[company])}
+ })
+ it('explains per-company attention and scopes campaign exclusions through direct HTTP for every audience',async()=>{
+  const company=(await pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key) VALUES($1,$2,'manual','Brave Transportes Filial',$3) RETURNING id`,[fixtureIds.organizationA,campaignId,randomUUID()])).rows[0].id
+  try{
+   await pool.query(`INSERT INTO public.radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,status,calls,output) VALUES($1,$2,$3,$4,1,'partial',$5::jsonb,'{"funnel":{},"readingComplete":true}')`,[fixtureIds.organizationA,campaignId,company,fixtureUsers.yux_admin.id,JSON.stringify({presence:{status:'received_invalid',error:'radar_presence_unverifiable',provider:'secret-tool',cost:99}})])
+   for(const role of ['yux_admin','yux_operator','client_admin_A','client_member_A']){
+    const response=await get(`/campaigns/${campaignId}/candidates`,role)
+    expect(response.statusCode).toBe(200)
+    const item=response.json().find((row:any)=>row.id===company)
+    expect(item.feedback.attention.reason).toBe('identity_analysis_incomplete')
+    expect(item.title).toBe('Brave Transportes Filial')
+    if(role!=='yux_admin')expect(response.body).not.toMatch(/radar_presence_unverifiable|secret-tool|cost|received_invalid/)
+   }
+   const body={organizationId:fixtureIds.organizationA,candidateIds:[company],requestId:randomUUID()}
+   const post=(role:string)=>app.inject({method:'POST',url:`/api/radar/campaigns/${campaignId}/exclusions`,headers:{cookie:cookies.get(role)!},payload:body})
+   expect((await post('client_admin_B')).statusCode).toBe(403)
+   expect((await post('yux_admin')).statusCode).toBe(200)
+   for(const role of ['yux_admin','yux_operator','client_admin_A','client_member_A']){
+    const response=await get(`/campaigns/${campaignId}/exclusions?organizationId=${fixtureIds.organizationA}`,role)
+    expect(response.statusCode).toBe(200);expect(response.json()).toEqual(expect.arrayContaining([expect.objectContaining({candidateId:company,title:'Brave Transportes Filial'})]))
+    expect(response.body).not.toMatch(/identity_keys|input_hash|provider|cost|request_id/)
+   }
+   expect((await get(`/campaigns/${campaignId}/exclusions?organizationId=${fixtureIds.organizationA}`,'client_admin_B')).statusCode).toBe(403)
+   const excluded=(await get(`/campaigns/${campaignId}/exclusions?organizationId=${fixtureIds.organizationA}`,'yux_admin')).json().find((row:any)=>row.candidateId===company)
+   const restored=await app.inject({method:'POST',url:`/api/radar/campaigns/${campaignId}/exclusions/${excluded.id}/restore`,headers:{cookie:cookies.get('yux_admin')!},payload:{organizationId:fixtureIds.organizationA}})
+   expect(restored.json()).toEqual({status:'restored'})
+   expect((await pool.query('SELECT status FROM public.radar_candidate_records WHERE id=$1',[company])).rows[0].status).toBe('pending_review')
+  }finally{await pool.query('DELETE FROM public.radar_candidate_records WHERE id=$1',[company])}
+ })
  it('keeps the configured discovery order and budget only in the global Admin response, including nested fields',async()=>{
   const created=await createRadarCampaign(pool,fixtureUsers.yux_admin as AuthUser,{organizationId:fixtureIds.organizationA,name:'Configuração interna',targetSegment:'Refeições',targetStates:['SP'],campaignType:'regional_b2b',offerType:'Oferta',budgetLimit:17.35,searchConfiguration:{discovery:{enabled:true,sourceOrder:['serper_web_search','brave_web_search','cnpja_advanced_search','perplexity_search_web'],terms:[]}}} as never)
   try{

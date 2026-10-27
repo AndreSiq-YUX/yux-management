@@ -48,6 +48,7 @@ export const radarResearchPolicySchema = z.object({
   qualificationEvidenceMaxChars:z.number().int().min(500).max(12000).default(6000),
   freshnessDays: z.number().int().positive().safe().default(7),
   semanticQualificationEnabled: z.boolean().default(false),
+  semanticFitRequired:z.boolean().default(false),maxSemanticFitAssessmentsPerCandidate:z.number().int().positive().safe().default(2),
   presenceResolutionEnabled:z.boolean().default(false),
   inspectLinkedSocialProfiles:z.boolean().default(false),
   profileEnabled:z.boolean().default(false),
@@ -113,7 +114,7 @@ const newCampaignDefaults = {
   discovery:{enabled:true,sourceOrder:['osm_extract','serper_web_search','cnpja_advanced_search']},
   funnel:{enabled:true,g0:{mode:'enforce'},g1:{mode:'shadow'},g3:{mode:'effective'},g5:{mode:'shadow'},agentPolicy:{mode:'escalation'}},
   research:{enabled:true,webSearchEnabled:true,webSearchProviders:['serper_web_search','brave_web_search','perplexity_search_fast'],
-    presenceResolutionEnabled:true,semanticQualificationEnabled:true,profileEnabled:true,inspectLinkedSocialProfiles:true,deepResearchEnabled:true,
+    presenceResolutionEnabled:true,semanticQualificationEnabled:true,semanticFitRequired:true,profileEnabled:true,inspectLinkedSocialProfiles:true,deepResearchEnabled:true,
     completion:{enabled:true,requireIdentity:true,requireSegment:true,minimumUsefulContacts:1}},
 }
 function mergeCreationDefaults(defaults:Record<string,unknown>,value:unknown):unknown {

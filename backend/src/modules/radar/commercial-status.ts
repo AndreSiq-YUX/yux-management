@@ -2,6 +2,7 @@ import type {CommercialResearchStatusV1} from '../../contracts/generated/radarRe
 import {assessRadarResearchProgress} from './capture-research-state.js'
 import {validateRadarResearchContract} from './effect-receipts.js'
 import {z} from 'zod'
+import {projectRadarResearchAttention} from './research-attention.js'
 type Field=CommercialResearchStatusV1['updatedFields'][number]
 export const radarCommercialStatusSchema=z.custom<CommercialResearchStatusV1>(value=>validateRadarResearchContract(value)&&value!==null&&typeof value==='object'&&'updatedFields' in value)
 const object=(value:unknown):Record<string,any>=>value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,any>:{}
@@ -52,6 +53,8 @@ export function projectRadarCommercialResearchStatus(input:{run?:unknown;previou
  const status=active?'researching':waiting?'waiting':complete?(!updatedFields.length&&Object.keys(previous).length?'unchanged':'complete'):'incomplete'
  const timestamp=run.updated_at??run.completed_at??run.created_at
  const date=timestamp&&new Date(timestamp)
+ const attention=waiting?projectRadarResearchAttention({assessment}):null
  return{schemaVersion:1,status,updatedFields,unresolvedFields,lastAttemptAt:date&&Number.isFinite(date.getTime())?date.toISOString():null,
+  ...(attention?{attention}:{}),
   nextAction:active||waiting?'wait':outside||complete||terminalFunnel?'review_result':restricted&&!read?'review_source':'continue'}
 }

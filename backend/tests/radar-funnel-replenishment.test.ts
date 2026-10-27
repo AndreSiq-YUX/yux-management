@@ -1,4 +1,7 @@
 import {expect,it} from 'vitest'
+it('requires the full requested number of final compatible companies in qualified counting mode',()=>{
+ expect(api.planRadarFunnelReplenishment({requested:10,ratio:.5,admitted:10,passed:1,pending:0,countingMode:'qualified'})).toMatchObject({required:10,missing:9,replenish:true})
+})
 const api=await import('../src/modules/radar/funnel-replenishment.js').catch(()=>({})) as Record<string,any>
 it.each([
  [50,.5,20,30,0,25,5,true],

@@ -1,3 +1,4 @@
+import {isRadarCampaignExcluded} from './campaign-exclusions.js'
 import type pg from 'pg'
 import type {AuthUser} from '../../auth/routes.js'
 import {createHash,randomUUID} from 'node:crypto'
@@ -61,9 +62,11 @@ export async function admitRadarBusinessMention(pool:pg.Pool,input:Input,depende
   if(!campaign)throw Error('radar_campaign_not_found')
   if(campaign.configuration_revision!==input.revision)throw Error('radar_campaign_configuration_changed')
   const hash=inputHash(input),previous=(await db.query('SELECT id,candidate_id,resolution,state,input_hash FROM public.radar_business_observations WHERE organization_id=$1 AND campaign_id=$2 AND observation_key=$3',[input.organizationId,input.campaignId,input.observationKey])).rows[0]
+  if(previous&&await isRadarCampaignExcluded(db,{organizationId:input.organizationId,campaignId:input.campaignId,criteriaRevision:input.revision,identity:{candidateId:previous.candidate_id}})){if(!dependencies.transaction)await db.query('COMMIT');return{...result(previous,true),candidateId:undefined,newCandidateCount:0,nextAction:'none',admission:'outside_profile'}}
   if(previous){if(previous.input_hash!==hash)throw Error('radar_business_observation_conflict');if(!dependencies.transaction)await db.query('COMMIT');return result(previous,true)}
   const resolution=resolveRadarBusinessEntity({...input,existingCandidates:await savedBusinesses(db,input.organizationId,input.campaignId)})
-  const outside=input.registryPolicy.triage==='outside_profile'
+  const excluded=await isRadarCampaignExcluded(db,{organizationId:input.organizationId,campaignId:input.campaignId,criteriaRevision:input.revision,identity:{candidateId:resolution.candidateId,cnpj:resolution.taxId,taxIdVerified:!!resolution.taxId,title:input.mention.name,...input.mention.location,websiteUrl:input.verification?.website?.url,websiteVerified:input.verification?.website?.association==='confirmed',externalKey:input.externalKey,keys:input.externalKey?[`identity:external_id:${JSON.stringify(input.externalKey)}`]:[]}})
+  const outside=excluded||input.registryPolicy.triage==='outside_profile'
   const observationId=randomUUID()
   let candidateId=outside?undefined:resolution.candidateId
   if(!outside&&resolution.status==='new_provisional'){
@@ -72,7 +75,7 @@ export async function admitRadarBusinessMention(pool:pg.Pool,input:Input,depende
    candidateId=row.id
   }
   const state=outside?'outside_profile':resolution.status==='matched'?'linked':resolution.status==='new_provisional'?'provisional':'ambiguous'
-  const saved={...resolution,...(candidateId?{candidateId}:{}),newCandidateCount:outside?0:resolution.newCandidateCount}
+  const saved={...resolution,...(candidateId?{candidateId}:{}),newCandidateCount:outside?0:resolution.newCandidateCount,...(outside?{nextAction:'none' as const}:{})}
   const row=(await db.query(`INSERT INTO public.radar_business_observations(id,organization_id,campaign_id,observation_key,input_hash,criteria_revision,mention,resolution,candidate_id,state,verification,external_identity) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id,candidate_id,resolution,state`,[observationId,input.organizationId,input.campaignId,input.observationKey,hash,input.revision,JSON.stringify(input.mention),JSON.stringify(saved),candidateId??null,state,JSON.stringify(input.verification??{}),input.externalKey?JSON.stringify(input.externalKey):null])).rows[0]
   if(candidateId){
    const keys:Array<[string,string]>=[]

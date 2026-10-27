@@ -70,6 +70,7 @@ export interface RadarAnalysisRequest {
 }
 
 export interface RadarCandidateRecord {
+  feedback?: import('./generated/radarResearch').CommercialResearchStatusV1
   id: string
   organizationId: string
   campaignId: string

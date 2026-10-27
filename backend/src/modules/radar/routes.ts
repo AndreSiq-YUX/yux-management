@@ -1,3 +1,4 @@
+import {excludeRadarCampaignCandidates,listRadarCampaignExclusions,restoreRadarCampaignExclusion,radarCampaignExclusionSchema} from './campaign-exclusions.js'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import {restoreRadarDecisionExclusion} from './decision-review.js'
@@ -809,6 +810,20 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     return { ...result, analyzed: analysisRequests.map(item => item.opportunity), analysisRequests }
   })
 
+  app.post('/campaigns/:id/exclusions',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    const campaignId=z.object({id:uuid}).parse(request.params).id
+    return excludeRadarCampaignCandidates(app.pg,user,radarCampaignExclusionSchema.parse({...request.body as object,campaignId}))
+  })
+  app.get('/campaigns/:id/exclusions',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    return listRadarCampaignExclusions(app.pg,user,{campaignId:z.object({id:uuid}).parse(request.params).id,organizationId:campaignQuerySchema.parse(request.query).organizationId})
+  })
+  app.post('/campaigns/:id/exclusions/:exclusionId/restore',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    const params=z.object({id:uuid,exclusionId:uuid}).parse(request.params)
+    return restoreRadarCampaignExclusion(app.pg,user,{campaignId:params.id,exclusionId:params.exclusionId,organizationId:campaignQuerySchema.parse(request.body).organizationId})
+  })
   app.post('/candidates/:id/discard', async (request, reply) => {
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply

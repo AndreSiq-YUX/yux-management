@@ -36,7 +36,7 @@ export type RadarSearchConfiguration = {
     webSearchProviders?:Array<'brave_web_search'|'serper_web_search'|'perplexity_search_fast'|'perplexity_search_web'>;
     localSearchOrder?:'before_web'|'after_web_if_needed'|'disabled';
     completion?:RadarCompletionPolicy;
-    maxPagesPerCandidate: number;qualificationEvidenceMaxPages?:number;qualificationEvidenceMaxChars?:number; freshnessDays: number; semanticQualificationEnabled: boolean;presenceResolutionEnabled?:boolean;inspectLinkedSocialProfiles?:boolean;
+    maxPagesPerCandidate: number;qualificationEvidenceMaxPages?:number;qualificationEvidenceMaxChars?:number; freshnessDays: number; semanticQualificationEnabled: boolean;semanticFitRequired?:boolean;maxSemanticFitAssessmentsPerCandidate?:number;presenceResolutionEnabled?:boolean;inspectLinkedSocialProfiles?:boolean;
     profileEnabled?:boolean;deepResearchEnabled?:boolean;contactPurpose?:'general'|'suppliers'|'sales'|'finance'|'recruitment';sizeAssessment?:RadarSizePolicy }
   cities: Array<{ city: string; state: string }>
   activityScope: 'main' | 'main_or_secondary'
@@ -60,7 +60,7 @@ export function defaultRadarSearchConfiguration(): RadarSearchConfiguration {
   return {discovery:{enabled:true,sourceOrder:['osm_extract','serper_web_search','cnpja_advanced_search'],terms:[]},
     funnel:{enabled:true,g0:{mode:'enforce'},g1:{mode:'shadow',criteria:gateCriteria()},g3:{mode:'effective'},g5:{mode:'shadow',criteria:gateCriteria()},agentPolicy:{mode:'escalation',timing:'after_first_cheap_attempt',priorities:['primary','secondary']},weakFitBudget:{maxCheapSearches:1,agent:false},depthByPriority:{primary:'full',secondary:'full'}},
     research: { enabled: true, webSearchEnabled: true,webSearchProviders:['serper_web_search','brave_web_search','perplexity_search_fast'],localSearchOrder:'after_web_if_needed',completion:{...defaultRadarCompletionPolicy(),enabled:true,requireSegment:true}, maxSearchQueriesPerCandidate: 3,
-    maxPagesPerCandidate: 4, freshnessDays: 7, semanticQualificationEnabled: true,presenceResolutionEnabled:true,inspectLinkedSocialProfiles:true,profileEnabled:true,deepResearchEnabled:true,contactPurpose:'general',sizeAssessment:defaultRadarSizePolicy() },
+    maxPagesPerCandidate: 4, freshnessDays: 7, semanticQualificationEnabled: true,semanticFitRequired:true,maxSemanticFitAssessmentsPerCandidate:2,presenceResolutionEnabled:true,inspectLinkedSocialProfiles:true,profileEnabled:true,deepResearchEnabled:true,contactPurpose:'general',sizeAssessment:defaultRadarSizePolicy() },
     cities: [], activityScope: 'main_or_secondary', excludedNameTerms: [], registrationStatusIds: [2],
     braveQueryTemplate: '{name}', sources: { enrichWithBrave: true, inspectWebsite: true },
     qualification: { includeAnyTerms: [], includeAllTerms: [], excludeTerms: [], requireCnaeMatch: false,

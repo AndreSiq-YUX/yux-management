@@ -7,6 +7,22 @@ const facts={cnpj:'1128426000198',city:'Poá',state:'SP',websiteUrl:'https://emp
  profile:{summary:{value:'Alimentação empresarial',sourceUrl:'https://empresa.example/'},services:[{value:'Refeições coletivas'}],customerSegments:[{value:'Indústrias'}],operatingRegions:[{value:'Sudeste'}]},
  activity:{status:'inconclusive',signals:[],presenceSignals:[{kind:'accessible_site',excerpt:'Site acessível',sourceUrl:'https://empresa.example/'}]},sizeAssessment:{score:70,evidenceCoverage:60,contributions:[{metric:'units',amount:30,points:70,weight:1,sourceUrl:'https://empresa.example/'}]}}
 describe('commercial results without operational tooling',()=>{
+ it('counts only compatible companies toward the progress of a new qualified lot',async()=>{
+  const host=document.createElement('div'),root=createRoot(host)
+  try{await act(async()=>root.render(<api.RadarCommercialResults campaign={campaign} candidates={[]} operation={{status:'discovering',countingMode:'qualified',counts:{requested:10,admitted:10,qualified:3,confirmedFit:3,completed:3,completedWithGaps:0,outsideProfile:7,technicalFailures:0}}} screen="results" onNavigate={vi.fn()} onOpenDetails={vi.fn()}/>));expect(host.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('30')}finally{act(()=>root.unmount())}
+ })
+ it('identifies pending companies in the row and filters them without confusing gaps with blockers',async()=>{
+  const host=document.createElement('div'),root=createRoot(host)
+  const feedback={schemaVersion:1,status:'waiting',updatedFields:[],unresolvedFields:[],lastAttemptAt:null,nextAction:'wait',attention:{stage:'website_identity',reason:'identity_analysis_incomplete',nextAction:'review_company',canResume:false}}
+  try{
+   await act(async()=>root.render(<api.RadarCommercialResults campaign={campaign} candidates={[{id:'a',title:'Empresa pendente',facts,feedback},{id:'b',title:'Empresa pesquisada',facts}]} operation={null} screen="results" onNavigate={vi.fn()} onOpenDetails={vi.fn()}/>))
+   expect(host.textContent).toContain('Identificação do site não concluída')
+   const select=host.querySelector('select[aria-label="Filtrar por situação"]') as HTMLSelectElement
+   expect(select).not.toBeNull()
+   await act(async()=>{select.value='waiting';select.dispatchEvent(new Event('change',{bubbles:true}))})
+   expect(host.textContent).toContain('Empresa pendente');expect(host.textContent).not.toContain('Empresa pesquisada')
+  }finally{act(()=>root.unmount())}
+ })
  it('shows the dated last useful site and contact when a new attempt remains incomplete',async()=>{
   const host=document.createElement('div'),root=createRoot(host)
   try{

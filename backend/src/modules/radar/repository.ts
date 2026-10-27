@@ -1,3 +1,6 @@
+import {excludeRadarCampaignCandidates} from './campaign-exclusions.js'
+import {isRadarSemanticallyOutside} from './semantic-eligibility.js'
+import {projectRadarCommercialResearchStatus} from './commercial-status.js'
 import type pg from 'pg'
 import {validateRadarFunnelActivation} from './funnel-controls.js'
 import { randomUUID } from 'node:crypto'
@@ -2065,7 +2068,7 @@ export async function listRadarCandidates(pool: pg.Pool, user: AuthUser, campaig
   const result = await pool.query<RadarCandidateRecordRow>(
     `SELECT *
      FROM public.radar_candidate_records
-     WHERE campaign_id = $1
+     WHERE campaign_id = $1 AND status <> 'discarded'
      ORDER BY created_at DESC`,
     [campaignId],
   )
@@ -2074,16 +2077,16 @@ export async function listRadarCandidates(pool: pg.Pool, user: AuthUser, campaig
 
 async function attachRadarPublicPresence<T extends RadarCandidateRecordRow>(pool:pg.Pool,rows:T[]):Promise<T[]> {
   if(!rows.length)return rows
-  const saved=await pool.query<{candidate_id:string;configuration_revision:number;output:unknown}>(`SELECT DISTINCT ON (run.candidate_id) run.candidate_id,run.configuration_revision,run.output
+  const saved=await pool.query<{candidate_id:string;configuration_revision:number;output:unknown;status:string}>(`SELECT DISTINCT ON (run.candidate_id) run.*
     FROM public.radar_candidate_research_runs run
     JOIN public.radar_campaigns campaign ON campaign.id=run.campaign_id AND campaign.organization_id=run.organization_id
     WHERE run.candidate_id=ANY($1::uuid[]) AND run.configuration_revision=campaign.configuration_revision
-      AND run.status IN ('succeeded','partial') ORDER BY run.candidate_id,run.created_at DESC,run.id DESC`,[rows.map(row=>row.id)])
+      ORDER BY run.candidate_id,run.created_at DESC,run.id DESC`,[rows.map(row=>row.id)])
   const byId=new Map(saved.rows.map(run=>[run.candidate_id,run]))
   return rows.map(row=>{
     const run=byId.get(row.id),name=String(row.normalized_payload?.tradeName||row.title||'')
     const presence=run&&radarPublicPresenceFromDossier(run.output,run.configuration_revision,name?{name,legalName:typeof row.normalized_payload?.legalName==='string'?row.normalized_payload.legalName:undefined,cnpj:typeof row.normalized_payload?.cnpj==='string'?row.normalized_payload.cnpj:undefined}:undefined)
-    return presence?{...row,normalized_payload:{...row.normalized_payload,publicPresence:presence}}:row
+    return {...row,commercial_feedback:projectRadarCommercialResearchStatus({run,previous:row.normalized_payload}),normalized_payload:{...row.normalized_payload,...(presence?{publicPresence:presence}:{}),...(run&&(row.normalized_payload?.semanticReviewOverride as {runId?:string}|undefined)?.runId!==(run as any).id&&['partial','succeeded'].includes(run.status)&&isRadarSemanticallyOutside(run.output as Record<string,unknown>)?{decisionExclusion:{active:true,revision:run.configuration_revision,origin:'semantic'},targetStatus:'not_target',researchRevision:run.configuration_revision}:{})}}
   })
 }
 
@@ -2157,26 +2160,12 @@ export async function importRadarCandidate(
   }
 }
 
-export async function discardRadarCandidate(pool: pg.Pool, user: AuthUser, candidateId: string) {
-  await requireRadarScope(pool, user, { candidateId }, true)
-  const client=await pool.connect()
-  try{
-  await client.query('BEGIN')
-  const initial=(await client.query('SELECT organization_id,campaign_id FROM public.radar_candidate_records WHERE id=$1',[candidateId])).rows[0]
-  if(!initial)throw Object.assign(new Error('radar_candidate_not_found'),{statusCode:404})
-  await client.query('SELECT id FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[initial.campaign_id,initial.organization_id])
-  const result = await client.query<RadarCandidateRecordRow>(
-    `UPDATE public.radar_candidate_records
-     SET status = 'discarded', reviewed_by = $2, reviewed_at = NOW(), updated_at = NOW()
-     WHERE id = $1
-     RETURNING *`,
-    [candidateId, user.id],
-  )
-  if (!result.rows[0]) throw Object.assign(new Error('radar_candidate_not_found'), { statusCode: 404 })
-  await reconcileRadarCaptureItems(client,{organizationId:initial.organization_id,candidateId})
-  await client.query('COMMIT')
-  return mapCandidate(result.rows[0])
-  }catch(cause){await client.query('ROLLBACK');throw cause}finally{client.release()}
+export async function discardRadarCandidate(pool:pg.Pool,user:AuthUser,candidateId:string){
+ await requireRadarScope(pool,user,{candidateId},true)
+ const row=(await pool.query('SELECT organization_id,campaign_id FROM public.radar_candidate_records WHERE id=$1',[candidateId])).rows[0]
+ if(!row)throw Object.assign(Error('radar_candidate_not_found'),{statusCode:404})
+ await excludeRadarCampaignCandidates(pool,user,{organizationId:row.organization_id,campaignId:row.campaign_id,candidateIds:[candidateId],requestId:randomUUID()})
+ return mapCandidate((await pool.query<RadarCandidateRecordRow>('SELECT * FROM public.radar_candidate_records WHERE id=$1',[candidateId])).rows[0])
 }
 
 export async function listRadarDuplicateCandidates(pool: pg.Pool, user: AuthUser, campaignId: string) {
@@ -2254,7 +2243,7 @@ export async function listRadarRuns(pool: pg.Pool, user: AuthUser, campaignId: s
   const result = await pool.query<RadarEnrichmentRunRow>(
     `SELECT *
      FROM public.radar_enrichment_runs
-     WHERE campaign_id = $1
+     WHERE campaign_id = $1 AND status <> 'discarded'
      ORDER BY created_at DESC
      LIMIT 50`,
     [campaignId],
@@ -2772,6 +2761,7 @@ export function mapCandidate(row: RadarCandidateRecordRow): RadarCandidateRecord
     rawPayload: row.raw_payload ?? {},
     normalizedPayload: projectRadarCompanyFacts(row.normalized_payload ?? {},row.title),
     dedupeKey: row.dedupe_key,
+    feedback: row.commercial_feedback,
     status: row.status,
     importedCompanyRecordId: row.imported_company_record_id ?? undefined,
     importedOpportunityId: row.imported_opportunity_id ?? undefined,

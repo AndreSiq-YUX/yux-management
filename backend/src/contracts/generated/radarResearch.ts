@@ -813,6 +813,16 @@ export interface CommercialResearchStatusV1 {
   }[]
   lastAttemptAt: string | null
   nextAction: 'continue' | 'review_source' | 'review_result' | 'wait' | 'none'
+  attention?: {
+    stage: 'website_identity' | 'commercial_fit' | 'public_research'
+    reason:
+      | 'identity_analysis_incomplete'
+      | 'commercial_analysis_incomplete'
+      | 'attempt_confirmation_pending'
+      | 'public_research_interrupted'
+    nextAction: 'review_company' | 'resume_available_steps' | 'review_previous_attempt'
+    canResume: boolean
+  }
 }
 export interface BusinessMentionV1 {
   schemaVersion: 1

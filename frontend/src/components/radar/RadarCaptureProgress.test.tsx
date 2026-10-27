@@ -22,7 +22,7 @@ describe('truthful capture progress',()=>{
     expect(container.textContent).toContain('etapas com dados salvos')
     expect(container.querySelector('a[href="/admin/integrations"]')).not.toBeNull()
    }else{
-    expect(container.textContent).toContain('equipe responsável')
+    expect(container.textContent).toContain('etapa pendente')
     expect(container.querySelector('a[href="/admin/integrations"]')).toBeNull()
     expect(container.textContent).not.toMatch(/fonte|quota|Admin|cobrança|certificado/)
    }

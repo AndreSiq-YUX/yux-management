@@ -544,6 +544,43 @@
             "wait",
             "none"
           ]
+        },
+        "attention": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "stage",
+            "reason",
+            "nextAction",
+            "canResume"
+          ],
+          "properties": {
+            "stage": {
+              "enum": [
+                "website_identity",
+                "commercial_fit",
+                "public_research"
+              ]
+            },
+            "reason": {
+              "enum": [
+                "identity_analysis_incomplete",
+                "commercial_analysis_incomplete",
+                "attempt_confirmation_pending",
+                "public_research_interrupted"
+              ]
+            },
+            "nextAction": {
+              "enum": [
+                "review_company",
+                "resume_available_steps",
+                "review_previous_attempt"
+              ]
+            },
+            "canResume": {
+              "type": "boolean"
+            }
+          }
         }
       }
     },

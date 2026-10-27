@@ -2,12 +2,12 @@ import type pg from 'pg'
 import {assessRadarCaptureResearch,assessRadarFunnelResearch,type RadarFunnelOutcome} from './capture-research-state.js'
 import {syncRadarFunnelDiscovery} from './funnel-replenishment.js'
 
-type Operation={id?:string;campaign_id?:string;configuration_revision?:number;requested_count:number;discovery_stopped:boolean;discovery_reason?:string|null;blockers:string[];pipeline_version?:number;qualified_count?:number;funnel_enabled?:boolean;historical_closed_at?:unknown}
+type Operation={id?:string;campaign_id?:string;configuration_revision?:number;requested_count:number;discovery_stopped:boolean;discovery_reason?:string|null;blockers:string[];pipeline_version?:number;qualified_count?:number;configuration_snapshot?:any;funnel_enabled?:boolean;historical_closed_at?:unknown}
 type Item={status:string;blocker?:string|null;target_status?:string;funnel_outcome?:RadarFunnelOutcome|null}
 export function summarizeRadarCaptureItems(op:Operation,items:Item[],discoveryBlockers?:string[]){
  items=items.map(item=>item.funnel_outcome&&item.funnel_outcome!=='technical_failure'?{...item,status:'completed',blocker:null}:item)
  const pending=items.some(item=>['queued','researching'].includes(item.status))
- const achieved=op.pipeline_version===2&&!op.funnel_enabled?op.qualified_count??0:items.length
+ const achieved=op.pipeline_version===2&&(!op.funnel_enabled||op.configuration_snapshot?.commercialFitCountingVersion===1)?op.qualified_count??0:items.length
  const capped=!op.funnel_enabled&&achieved<op.requested_count&&['page_cap','query_cap'].includes(op.discovery_reason??'')
  const discovery=discoveryBlockers??(!op.discovery_stopped?op.blockers:[])
  const blockers=[...new Set([...discovery,...(capped?[op.discovery_reason==='page_cap'?'radar_capture_page_limit':'radar_capture_query_limit']:[]),...items.flatMap(item=>item.blocker?[item.blocker]:[])])]
@@ -47,6 +47,7 @@ export async function reconcileRadarCaptureItems(db:Pick<pg.PoolClient,'query'>,
   for(const op of operations){
    if(op.historical_closed_at)continue
    const latest=(await db.query(`SELECT * FROM public.radar_candidate_research_runs WHERE organization_id=$1 AND candidate_id=$2 AND campaign_id=$3 AND configuration_revision=$4 ORDER BY created_at DESC,id DESC LIMIT 1`,[input.organizationId,input.candidateId,parent.campaign_id,op.configuration_revision])).rows[0]
+   if(discarded){await db.query("UPDATE public.radar_capture_items SET status='completed',blocker=NULL,funnel_outcome='out_of_profile' WHERE operation_id=$1 AND organization_id=$2 AND candidate_id=$3",[op.id,input.organizationId,input.candidateId]);await reconcileRadarCaptureSummary(db,{organizationId:input.organizationId,operationId:op.id});continue}
    if(!latest||input.runId&&latest.id!==input.runId)continue
    const previous=(await db.query<Item>('SELECT status,blocker FROM public.radar_capture_items WHERE operation_id=$1 AND organization_id=$2',[op.id,input.organizationId])).rows
    const childReasons=new Set(previous.flatMap(item=>item.blocker?[item.blocker]:[]))
