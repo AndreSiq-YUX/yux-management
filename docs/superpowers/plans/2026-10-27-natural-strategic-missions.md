@@ -69,6 +69,6 @@
 **Interfaces:** Preservar callbacks de resposta/aprovação; perguntas atuais em apresentação leve, histórico não acionável, lacunas duplicadas removidas da apresentação e pendências técnicas com ação de configuração adequada, sem pergunta de habilitação ao cliente.
 
 - [x] RED/GREEN: conteúdo estratégico permanece principal; perguntas/lacunas não duplicam; etapas antigas não apresentam ações ativas; brief/planos mantêm aprovação.
-- [ ] Executar testes/builds apropriados, replay local completo sem provedor pago e revisão independente única.
+- [x] Executar testes/builds apropriados, replay local completo sem provedor pago e revisão independente única. P2 da revisão corrigido com RED/GREEN: condição futura de canal não é afirmação de conexão atual; recomendações nas demais orações permanecem intactas. Runtime final: 458 passed, 7 skipped.
 - [ ] Integrar/preservar main, implantar a correção autorizada e verificar saúde/contexto sem inferência paga.
 - [ ] Preparar uma demonstração real somente depois de código pronto, mediante autorização específica de consumo; não alterar histórico da conversa original silenciosamente.

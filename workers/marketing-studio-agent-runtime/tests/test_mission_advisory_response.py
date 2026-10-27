@@ -23,6 +23,27 @@ def response(reply):
 
 
 class MissionAdvisoryResponseTest(unittest.TestCase):
+    def test_conditional_recommendations_survive_absent_or_unknown_connection(self):
+        for state in ('not_connected', 'unverified'):
+            for text in (
+                'Quando o WhatsApp estiver conectado, teste uma abordagem curta para clientes recorrentes antes de ampliar a cadência.',
+                'Se o Radar Comercial estiver habilitado, compare segmentos por recompra antes de pesquisar.',
+                'Caso a conexão do WhatsApp esteja disponível, valide a oferta com um grupo pequeno.',
+            ):
+                with self.subTest(state=state, text=text):
+                    parsed = response(text)
+                    parsed['questions'] = []
+                    parsed['readiness']['missing'] = []
+                    self.assertEqual(enforce_account_availability(parsed, snapshot(connected=state, enabled=False), 'org-a')['reply'], text)
+
+    def test_false_state_does_not_erase_the_recommendation_in_the_next_clause(self):
+        parsed = response('O WhatsApp está conectado nesta conta; recomendo uma abordagem curta para clientes recorrentes.')
+        parsed['questions'] = []
+        parsed['readiness']['missing'] = []
+        result = enforce_account_availability(parsed, snapshot(connected='not_connected'), 'org-a')
+        self.assertNotIn('O WhatsApp está conectado nesta conta', result['reply'])
+        self.assertIn('recomendo uma abordagem curta para clientes recorrentes.', result['reply'])
+
     def test_account_question_never_erases_useful_strategy_or_blocks_consulting(self):
         text = ('Eu começaria pelas cozinhas industriais, pois combinam compra em volume e recorrência.\n\n'
                 'Como hipótese de expansão, testaria redes regionais de hotéis depois de validar margem e logística.\n\n'

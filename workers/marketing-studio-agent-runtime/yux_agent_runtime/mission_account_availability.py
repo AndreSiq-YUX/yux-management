@@ -71,15 +71,18 @@ def _incorrect_state(sentence: str, tools: list[dict[str, Any]], snapshot: dict[
     # Only interpret explicit state assertions. Recommendations and decisions
     # remain the model's prose; an enablement fact never grants execution.
     for tool in _mentioned_tools(text, tools):
-        claim = re.search(r'\b(nao\s+)?(?:esta\s+)?(desabilitad|habilitad|desativad|ativad)', text)
+        claim = re.search(r'\b(nao\s+)?(?:esta|estao|permanece|permanecem)\s+(desabilitad|habilitad|desativad|ativad)', text)
         if claim:
             asserted = not claim.group(1) and not claim.group(2).startswith('des')
             if bool(asserted) != bool(tool.get('enabled')):
                 return True
     for connection in _relevant_connections(snapshot, text):
-        if not re.search(r'conectad', text):
+        # Future/subjunctive premises ("quando estiver conectado") are advice,
+        # not claims that the channel is connected now.
+        claim = re.search(r'\b(nao\s+)?(?:esta|estao|permanece|permanecem)\s+conectad', text)
+        if not claim:
             continue
-        negative = bool(re.search(r'\b(?:nao|sem)\b.{0,20}conectad', text))
+        negative = bool(claim.group(1))
         state = connection.get('status')
         if state == 'unverified' or (state == 'connected') == negative:
             return True
@@ -109,7 +112,7 @@ def enforce_account_availability(parsed: dict[str, Any], operational: dict[str, 
     missing = readiness.get('missing') or []
     missing_state = [item for item in missing if item.get('key') in removed_keys or _is_account_state(item.get('reason'), tools)]
     reply = str(parsed.get('reply') or '')
-    parts = re.split(r'(\n+|(?<=[.!?])[^\S\n]+)', reply)
+    parts = re.split(r'(\n+|(?<=[.!?;,])[^\S\n]+)', reply)
     reply_state = [part for part in parts if _incorrect_state(part, tools, snapshot)]
     if not removed and not reply_state and not missing_state:
         return parsed
