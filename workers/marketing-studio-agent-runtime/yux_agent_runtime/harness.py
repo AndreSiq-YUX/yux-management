@@ -25,10 +25,22 @@ def _string_list(value: Any) -> list[str]:
 
 
 def _strategy_item_text(item: dict[str, Any]) -> str:
+    # The authorized search already applied its context budget. Never replace
+    # this excerpt with the full source retained for provenance and hashing.
+    if 'context_excerpt' in item:
+        excerpt = str(item.get('context_excerpt') or '')
+        if item.get('context_truncated'):
+            excerpt += '\n[Trecho parcial: não presumir regras ou conclusões omitidas.]'
+        return excerpt
     if item.get("concept"):
         parts = [f"Card: {item['concept']}"]
         if item.get("problem_solved"):
             parts.append(f"Problema: {item['problem_solved']}")
+        for label, key in (("Sinais", "trigger_signals"), ("Perguntas", "diagnosis_questions"),
+                           ("Critérios", "decision_rules"), ("Evitar", "anti_patterns")):
+            values = _string_list(item.get(key))
+            if values:
+                parts.append(f"{label}: " + "; ".join(values))
         actions = _string_list(item.get("recommended_actions"))
         if actions:
             parts.append("Ações: " + "; ".join(actions))

@@ -602,6 +602,8 @@ class StrategyRetrievalService:
 
                 if candidate_len <= remaining:
                     context_parts.append(candidate)
+                    item['context_excerpt'] = candidate
+                    item['context_truncated'] = False
                     included.append(item)
                     remaining -= candidate_len
                     continue
@@ -609,6 +611,8 @@ class StrategyRetrievalService:
                 if not context_parts and remaining > len(prefix) + 24:
                     fitted = prefix + _fit_text(raw_context, remaining - len(prefix))
                     context_parts.append(fitted)
+                    item['context_excerpt'] = fitted
+                    item['context_truncated'] = True
                     included.append(item)
                     remaining = 0
                 break
