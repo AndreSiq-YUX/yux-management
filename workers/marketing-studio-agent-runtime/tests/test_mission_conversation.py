@@ -566,6 +566,50 @@ class MissionConversationWorkflowTest(unittest.TestCase):
         self.assertEqual(first.contextHash, second.contextHash)
         self.assertNotEqual(first.retrievalTraceId, second.retrievalTraceId)
 
+    def test_advisory_replay_keeps_strategy_for_different_businesses_despite_channel_questions(self):
+        cases = [
+            ('Represento fabricantes de alimentos e quero crescer com recorrência.',
+             'Eu priorizaria cozinhas industriais com compra recorrente, validando margem e concentração de entregas.\n\n'
+             'Como hipótese de expansão, hotéis podem aproveitar conveniência e padronização. No CRM, separaria qualificação, amostra e proposta.\n\n'
+             'Prepararia abordagens por segmento para revisão, antes de qualquer envio.'),
+            ('Tenho uma oficina mecânica e quero aumentar minha carteira de clientes.',
+             'Eu começaria por retenção e indicações dos clientes atuais, usando o histórico de manutenção para definir oportunidades.\n\n'
+             'Como hipótese, pequenas frotas locais podem oferecer recorrência; validaria capacidade e margem antes da prospecção.\n\n'
+             'No CRM, acompanharia agendamento, diagnóstico e retorno, com mensagens preparadas para revisão.'),
+            ('Minha agência quer captar empresas para criação de sites.',
+             'Eu definiria uma oferta de diagnóstico e priorizaria empresas cujo site limita a conversão, com evidências públicas verificáveis.\n\n'
+             'Como hipótese, serviços locais com atendimento consultivo podem valorizar uma página que facilite o primeiro contato.\n\n'
+             'Testaria uma abordagem por nicho e mediria conversas qualificadas, antes de escalar campanhas.'),
+        ]
+        for message, advice in cases:
+            with self.subTest(message=message):
+                incoming = request()
+                incoming['user_message'] = message
+                incoming['operationalContext']['accountAvailability'] = {
+                    'authority': 'server', 'organizationId': 'org-a',
+                    'tools': [{'key': 'whatsapp', 'title': 'WhatsApp', 'enabled': True,
+                               'planningAvailable': False, 'blockers': ['integration_not_enabled_for_account']}],
+                    'connections': [{'key': 'whatsapp', 'status': 'not_connected'}]}
+
+                def transform(body):
+                    body.update(reply=advice, brief={'packKeys': []}, questions=[
+                        {'key': 'commercial', 'label': 'Qual capacidade de atendimento devemos respeitar?', 'whyNeeded': 'Definir o primeiro teste.',
+                         'priority': 1, 'answerType': 'text', 'choices': []},
+                        {'key': 'connection', 'label': 'O WhatsApp está conectado nesta conta?', 'whyNeeded': 'Preparar envio.',
+                         'priority': 2, 'answerType': 'boolean', 'choices': []}])
+                    body['readiness'].update(status='needs_information', knownFacts=[], assumptions=[], missing=[
+                        {'key': 'connection', 'category': 'integration', 'reason': 'Confirmar se o WhatsApp está conectado', 'requiredFor': ['mission_planning']}])
+                    return body
+
+                captured = []
+                result = self.make_workflow(captured, response_transform=transform).respond(incoming)
+                self.assertTrue(result.reply.startswith(advice))
+                self.assertEqual([q.key for q in result.questions], ['commercial'])
+                self.assertEqual(result.readiness.status, 'needs_information')
+                self.assertEqual(result.brief.packKeys, [])
+                self.assertEqual(result.readiness.missing, [])
+                self.assertEqual(len(captured), 1)
+
     def test_mission_uses_scoped_wait_budget_and_configured_16000_output_without_reasoning_override(self):
         from unittest.mock import patch
         from yux_agent_runtime import providers

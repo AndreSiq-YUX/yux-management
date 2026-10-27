@@ -572,8 +572,10 @@ class StrategyWorkflowEngine:
                     str(mission_request.get("audience") or "client_user"),
                 )
             ]
+            from .mission_conversation_prompt import STRATEGIC_CONVERSATION_GUIDANCE
             contract = (
-                "Responda somente JSON no formato exato: "
+                STRATEGIC_CONVERSATION_GUIDANCE
+                + "Responda somente JSON no formato exato: "
                 "{kind:'message|questions|brief_confirmation|blocked', reply:'texto', understood:{}, "
                 "questions:[{key,label,whyNeeded,priority,answerType,choices}], "
                 "readiness:{status:'needs_information|needs_configuration|ready_for_brief_confirmation|ready_for_plan',"
@@ -612,7 +614,8 @@ class StrategyWorkflowEngine:
                 "Para prospecção, escolha radar_prospecting somente se constar de allowedActionPacks. "
                 "No brief.constraints.radarParameters guarde {campaign,requestedCount}; campaign deve conter "
                 "{existingCampaignId} confirmado ou {name,targetSegment,targetStates:[UF],cities:[],offerType}. "
-                "Pergunte os dados ausentes em conjunto, não invente IDs ou quantidades. Radar aceita somente modo "
+                "Quando houver pedido de execução de pesquisa, consulte o contexto e pergunte somente os dados realmente ausentes; "
+                "não invente IDs ou quantidades. Radar aceita somente modo "
                 "assistido nesta versão; salvar campanha não inicia pesquisa e pesquisar exige aprovação. "
                 "Uma campanha genérica exige esclarecer publicidade ou prospecção antes de confirmar o brief. "
                 "knownFacts, assumptions e missing são arrays de objetos, nunca arrays de textos. "

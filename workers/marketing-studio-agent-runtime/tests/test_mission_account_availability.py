@@ -48,7 +48,7 @@ class MissionAccountAvailabilityTest(unittest.TestCase):
         self.assertIn('integração com Missões ainda não está liberada', response.reply)
         self.assertNotIn('Preciso confirmar', response.reply)
         self.assertEqual([item.key for item in response.readiness.missing], ['consent'])
-        self.assertEqual(response.readiness.status, 'needs_configuration')
+        self.assertEqual(response.readiness.status, 'needs_information')
         self.assertEqual(response.brief.packKeys, [])
         self.assertEqual(response.suggestedActions, [])
 
@@ -96,9 +96,8 @@ class MissionAccountAvailabilityTest(unittest.TestCase):
                 result = enforce_account_availability(parsed, snapshot, 'org-a')
                 self.assertEqual(result['questions'], [])
                 self.assertIn(expected, result['reply'])
-                self.assertEqual(result['readiness']['status'], 'needs_configuration')
-                self.assertEqual(result['readiness']['missing'][0]['category'], 'integration')
-                self.assertNotIn('?', result['readiness']['missing'][0]['reason'])
+                self.assertEqual(result['readiness']['status'], 'needs_information')
+                self.assertEqual(result['readiness']['missing'], [])
 
     def test_configuration_missing_field_is_resolved_even_without_a_question_card(self):
         parsed = {'kind': 'message', 'reply': 'Vamos continuar.', 'questions': [], 'readiness': {
@@ -107,7 +106,7 @@ class MissionAccountAvailabilityTest(unittest.TestCase):
         operational = {'accountAvailability': {'authority': 'server', 'organizationId': 'org-a', 'tools': [
             {'key': 'radar', 'title': 'Radar Comercial', 'enabled': False, 'planningAvailable': False}]}}
         result = enforce_account_availability(parsed, operational, 'org-a')
-        self.assertIn('não está habilitado nesta conta', result['reply'])
+        self.assertEqual(result['reply'], 'Vamos continuar.')
         self.assertEqual(result['readiness']['missing'], [])
 
 

@@ -49,10 +49,10 @@
 **Files:** `workflow.py`, novo `mission_conversation_prompt.py` se necessário, `mission_account_availability.py`, testes de conversa/disponibilidade/golden.
 **Interfaces:** `reply` continua Markdown livre; perguntas/lacunas são metadados opcionais. Contrato orienta diagnóstico, prioridades, exemplos, hipóteses e próximos passos antes das poucas perguntas necessárias. Guardião não altera aprovações/capacidades.
 
-- [ ] RED: resposta estratégica ampla + pergunta técnica indevida; preservar análise, remover apenas a pergunta, não criar bloqueio consultivo nem pedir configuração ao cliente.
-- [ ] RED: afirmação errada de disponibilidade, escolha de negócio legítima, status desconhecido, conta divergente, consentimento e proposta executável bloqueada.
-- [ ] GREEN: correção por trecho e metadados coerentes; não substituir a resposta inteira. Não exigir pré-requisitos de execução para desenvolver estratégia.
-- [ ] Verificar prompts simulados para representante, oficina e agência, sem introduzir roteiro específico de cliente.
+- [x] RED: resposta estratégica ampla + pergunta técnica indevida; preservar análise, remover apenas a pergunta, não criar bloqueio consultivo nem pedir configuração ao cliente.
+- [x] RED: afirmação errada de disponibilidade, escolha de negócio legítima, status desconhecido, conta divergente, consentimento e proposta executável bloqueada.
+- [x] GREEN: correção por trecho e metadados coerentes; não substituir a resposta inteira. Não exigir pré-requisitos de execução para desenvolver estratégia.
+- [x] Verificar prompts simulados para representante, oficina e agência, sem introduzir roteiro específico de cliente.
 
 ### Task 3: Disponibilidade operacional fiel às fontes
 
