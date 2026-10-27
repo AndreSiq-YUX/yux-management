@@ -60,7 +60,7 @@
 
 Runtime: 430 testes aprovados, 7 ignorados; backend: 1.594 aprovados, 126 ignorados; frontend: 1.263 aprovados. Builds backend e frontend aprovados. Navegador local confirmou falha explicada, uma tentativa explícita, uma mensagem e uma resposta persistidas, sem erro de aplicação. A revisão encontrou mais um caso de array prefixado e um erro de classificação de saída vazia interrompida; ambos foram reproduzidos em RED e corrigidos, com suíte runtime completa novamente aprovada.
 
-- [ ] Prova real com a mensagem já salva: depende de autorização de uma tentativa de consumo nas rotas atuais. Nenhum modelo ou limite será alterado.
+- [x] Prova real com a mensagem já salva: concluída na Task 3 após autorização posterior do usuário para os limites e o modelo escolhido no Admin.
 
 ### Task 3: Janela de processamento para a saída autorizada de 16.000 tokens
 
@@ -74,7 +74,9 @@ Runtime: 430 testes aprovados, 7 ignorados; backend: 1.594 aprovados, 126 ignora
 
 - [x] RED: testes de 45 segundos fora de Missões, 120 dentro, prazo compartilhado/não ampliado, expiração sem transporte/fallback, restauração após exceção e payload de 16.000 sem mudança de reasoning.
 - [x] GREEN: contexto de prazo em transporte e roteamento; escopo aplicado em `respond`, sem mutações globais ou timers de retry.
-- [ ] Verificar suíte runtime completa, revisão independente e publicação/implantação já autorizadas.
-- [ ] Salvar e conferir 16.000 no Admin; reprocessar uma vez a mensagem existente; conferir resposta persistida ou documentar falha sem chamadas adicionais.
+- [x] Verificar suíte runtime completa, revisão independente e publicação/implantação já autorizadas.
+- [x] Salvar e conferir 16.000 no Admin; reprocessar uma vez a mensagem existente; conferir resposta persistida ou documentar falha sem chamadas adicionais.
 
 Revisão independente: um achado importante — timeout por operação de socket não interrompia cabeçalho/corpo enviados aos poucos — foi reproduzido em dois testes RED locais e corrigido em uma passagem. O transporte com prazo usa isolamento por requisição, interrupção de sockets ativos e bloqueio de envio após conexão tardia. HTTPS mantém verificação de certificado/hostname; teste local confirma resposta válida e rejeição de certificado não confiável. DNS pendente pode terminar em thread daemon; uma conexão obtida depois da expiração é fechada antes de enviar HTTP. Suíte final: 443 aprovados, 7 ignorados. Nenhuma inferência paga adicional foi feita durante desenvolvimento/revisão.
+
+Homologação em produção (27/10/2026): código `a32643d` conferido por hashes dos quatro arquivos implantados. Rota efetiva `action_engine_strategist`, Haiku 5.5, 16.000 tokens. Uma retomada explícita da mensagem existente concluiu normalmente (`stop`/`end_turn`), com 20.160 tokens de entrada e 8.522 de saída, incluindo 4.917 de processamento interno. Sessão `d89363fe-4732-4c0d-8aed-fdb0aff68186`; conversa versão 4, `awaiting_user`, sem erro pendente. Permaneceram as duas mensagens originais do usuário e foi acrescentada uma resposta. Quatro fontes governadas foram referenciadas (três do guia do Radar e uma de segmentação estratégica); resposta preservada após recarregar. Nenhuma pesquisa ou execução de campanha foi iniciada. O resultado comprova processamento e persistência; não constitui homologação de execução das ações nem avaliação completa da qualidade da consultoria.

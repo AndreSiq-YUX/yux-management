@@ -123,6 +123,8 @@ A conversa compartilha uma janela de 120 segundos entre busca, geração e fallb
 
 O teto de saída continua governado em Admin > IA > Action Engine — conversa estratégica. Tokens de processamento interno também consomem esse teto. A homologação com Haiku 5.5 atingiu 8.000 tokens (5.962 de processamento interno); o usuário autorizou elevar para 16.000 e realizar uma tentativa adicional, sem reduzir o processamento interno, alterar o modelo ou executar campanhas. Isso não autoriza retries pagos automáticos.
 
+Essa tentativa de 27/10/2026 concluiu com `stop`/`end_turn`, 8.522 tokens de saída (4.917 de processamento interno), e resposta persistida após recarregar, sem duplicar a mensagem do usuário. Foram referenciadas quatro fontes publicadas, incluindo o guia do Radar. O teto permaneceu em 16.000; os demais modelos, conexões e aprovações não foram alterados. A validação cobriu o processamento da conversa, sem pesquisa ou execução de campanhas.
+
 O formato JSON da conversa é uma instrução confiável do workflow, enviada ao provedor na mensagem de sistema. O catálogo de fontes e o contexto da empresa continuam sendo dados não confiáveis, separados das instruções. O contrato não aumenta o limite configurado de saída: pede uma resposta compacta, sem repetir uma estratégia extensa em `reply`, `understood`, `brief` e `strategyProposal`. Uma proposta grande pode ser desenvolvida em etapas, sem alegar que foi salva.
 
 O leitor aceita somente a primeira raiz JSON completa. Uma explicação ou rascunho repetido após uma raiz completa continua compatível; um objeto interno de uma raiz quebrada não é promovido a resposta. `finish_reason=length` é recusado antes da interpretação. Não há tentativa paga adicional automática nem reparador por LLM.
