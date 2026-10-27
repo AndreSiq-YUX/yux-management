@@ -265,6 +265,11 @@ def _normalize_readiness(value: Any, questions: list[dict[str, Any]]) -> dict[st
             readiness["status"] = "needs_information" if normalized_missing or questions else "ready_for_brief_confirmation"
         if demoted_claims and readiness.get("status") in {"ready_for_brief_confirmation", "ready_for_plan"}:
             readiness["status"] = "needs_information"
+        # An inconsistent model status cannot erase a real prerequisite or turn
+        # the entire answer into a 422. Downgrade conservatively; do not approve.
+        if normalized_missing and readiness.get("status") in {"ready_for_brief_confirmation", "ready_for_plan"}:
+            readiness["status"] = "needs_configuration" if any(
+                item['category'] == 'integration' for item in normalized_missing) else "needs_information"
         return readiness
     if questions:
         missing = []
