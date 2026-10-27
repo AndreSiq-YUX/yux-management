@@ -23,13 +23,3 @@ export function crmPreparationProposal(missionId: string, sourceId: string) {
           step.stepKey.startsWith('pack.draft_email_')?emails[Number(step.stepKey.at(-1))-1]:step.stepKey==='pack.draft_sequence'?sequence:step.defaultParameters,
         timeoutSeconds:300,maxAttempts:1,approvalRequired:false,effect:registry.get(step.capabilityKey,step.capabilityVersion).effect,outputBindings:{}}))}}
 }
-
-
-
-
-
-
-
-
-
-

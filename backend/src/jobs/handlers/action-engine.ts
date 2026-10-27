@@ -906,10 +906,10 @@ export async function handleActionEnginePlanMission(
           .filter(step => effectsByCapability.get(`${step.capabilityKey}@${step.capabilityVersion}`) !== 'none')
           .map(step => ({
             id: step.stepKey, entityType: step.capabilityKey.split('.')[1] ?? 'artifact', operation: step.capabilityKey.split('.').at(-1) ?? 'change',
-            quantity: inferArtifactQuantity(step.parameters), label: humanizeCapability(step.capabilityKey),
+            quantity: pack.key === 'crm_preparation' ? 1 : inferArtifactQuantity(step.parameters), label: humanizeCapability(step.capabilityKey),
             version: `${step.capabilityVersion}:${step.capabilityDefinitionHash}`, providerTarget: step.capabilityKey.split('.')[0],
           })),
-        existingContacts: Number(mission.parameters.existingContacts ?? 0), futureEligibleContacts: true,
+        existingContacts: Number(mission.parameters.existingContacts ?? 0), futureEligibleContacts: pack.key !== 'crm_preparation',
         channels: Array.isArray(mission.parameters.channels) ? mission.parameters.channels.map(String) : [],
         estimatedCostBrl: compiled.estimatedEconomics.totalExecutionCost,
         maximumCostBrl: mission.autonomyEnvelope.maxTotalCostBrl,
@@ -1011,6 +1011,9 @@ function inferArtifactQuantity(parameters: Record<string, unknown>): number {
 }
 
 function humanizeCapability(key: string): string {
+  const drafts: Record<string,string> = { 'crm.pipeline.create_draft': 'Funil de CRM em rascunho',
+    'email.template.create_draft': 'E-mail em rascunho', 'crm.sequence.create_draft': 'Sequência desativada' }
+  if (drafts[key]) return drafts[key]
   return key.split('.').map(part => part.replace(/_/g, ' ')).join(' › ')
 }
 

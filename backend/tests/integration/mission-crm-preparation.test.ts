@@ -77,6 +77,8 @@ it('creates and reviews real drafts through conversation without a sender, with 
     const awaiting = (await getChat()).body
     expect(awaiting.status).toBe('awaiting_plan_approval')
     const reference = awaiting.messages.at(-1).structuredPayload
+    expect(reference.decisionSummary.changes.map((item:any)=>item.quantity)).toEqual([1,1,1,1,1])
+    expect(reference.decisionSummary.contactImpact.futureEligibleContacts).toBe(false)
     const approvalBody = {organizationId:org,missionId,approvalId:reference.approvalId,expectedMissionVersion:reference.missionVersion,
       subjectHash:reference.subjectHash,decision:'approved',reason:'Revisado: criar apenas rascunhos.'}
     const approveUrl = `/api/action-engine/plans/${reference.planId}/submit`
@@ -154,5 +156,3 @@ it('creates and reviews real drafts through conversation without a sender, with 
     expect(await rig.providerCalls()).toHaveLength(0)
   } finally { await pool.end(); await rig.close() }
 },120_000)
-
-

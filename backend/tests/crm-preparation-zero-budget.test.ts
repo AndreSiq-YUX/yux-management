@@ -10,4 +10,3 @@ it('flags any nonzero spend against a zero ceiling and continues rejecting negat
  expect(result.consumedPercent).toBe('100.00')
  expect(()=>calculateMissionBudgetBurnDown({maximumCostBrl:'-1',envelopeVersion:1,entries:[]})).toThrow('mission_budget_maximum_invalid')
 })
-

@@ -37,4 +37,3 @@ class CrmPreparationConversationTest(unittest.TestCase):
                     self.assertEqual(result.kind, 'message')
                     self.assertEqual(result.reply, parsed['reply'])
                     self.assertEqual(parsed, original)
-

@@ -76,6 +76,4 @@
 - [x] RED/GREEN de integração completa, HTTP direto, retorno ao chat, duplicatas e gates de publicação intactos.
 - [x] Suítes adequadas, builds, lint dos arquivos alterados e conferência no navegador sem provedor pago. Chromium desktop/mobile, fluxo real com banco descartável.
 - [x] Revisão independente única de todo o diff; quatro achados corrigidos em uma passagem RED/GREEN. Backend 1.635 passed/126 skipped, runtime 461 passed/7 skipped; integração com bloqueio/retomada e prontidão v1 preservada.
-- [ ] Integrar main preservando concorrência e preparar/implantar a correção sob a autorização existente; verificar código/serviços sem executar criações reais nem inferência paga.
-
-
+- [x] Integrar main preservando concorrência e preparar a implantação sob a autorização existente. Verificação final de código/serviços registrada na evidência da entrega, sem criações reais nem inferência paga.
