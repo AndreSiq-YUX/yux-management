@@ -16,13 +16,13 @@ afterEach(() => {
 })
 
 describe('PortalCompanyUsersPage', () => {
-  it('sem CRM mostra "Gestão da equipe" como pendente (B4) e não lista ninguém', async () => {
-    usePlatformStore.setState({ enabledModuleKeys: ['finance'] })
+  it('sem conta selecionada orienta a seleção sem exibir gestão pendente', async () => {
+    usePlatformStore.setState({ enabledModuleKeys: ['finance'], organization: null, isLoading: false })
     const { container, unmount } = await render(<PortalCompanyUsersPage />)
     expect(container.querySelector('h1')?.textContent).toBe('Equipe')
-    expect(container.textContent).toContain('Gestão da equipe')
-    expect(container.querySelector('[aria-label^="Pendente"]')).not.toBeNull()
-    expect(container.textContent).toContain('em implantação')
+    expect(container.textContent).toContain('Selecione uma conta de cliente')
+    expect(container.querySelector('[aria-label^="Pendente"]')).toBeNull()
+    expect(container.textContent).not.toContain('em implantação')
     expect(container.textContent).not.toContain('Pessoas e papéis')
     expect(container.querySelector('table, ul li[data-user]')).toBeNull()
     await unmount()
