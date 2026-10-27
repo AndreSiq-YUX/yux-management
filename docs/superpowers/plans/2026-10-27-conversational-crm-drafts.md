@@ -53,9 +53,9 @@
 
 **Interfaces:** catálogo inclui apenas preparação autorizada; briefing confirmado vira missão `prepare`, com capacidades restritas, contatos zero e prazo técnico de preparação quando ausente. Planner/specialists reutilizam artefatos de funil/e-mail/sequência e retiram automação não solicitada. Estado operacional inclui prontidão do CRM/pacote sem fornecedores. Pacotes de ativação mantêm checks atuais.
 
-- [ ] RED: pedido de rascunhos não escolhe pacote de ativação; confirmação cria missão exata/idempotente sem conexão; ICP/oferta ausentes pedem esclarecimento; modo/capabilities/tenant adulterados recusam.
-- [ ] GREEN: integrar pacote em catálogo, confirmação, roteamento, validação do plano, preflight e fontes. Não criar qualquer artefato só porque foi citado no texto.
-- [ ] Verificar testes Python/TypeScript focados, builds e registrar commit.
+- [x] RED: pedido de rascunhos não escolhe pacote de ativação; confirmação cria missão exata/idempotente sem conexão; ICP/oferta ausentes pedem esclarecimento; modo/capabilities/tenant adulterados recusam.
+- [x] GREEN: integrar pacote em catálogo, confirmação, roteamento, validação do plano, preflight e fontes. Não criar qualquer artefato só porque foi citado no texto.
+- [x] Verificar testes Python/TypeScript focados, builds e registrar commit. Backend 1.627 passed/126 skipped; runtime 461 passed/7 skipped; build aprovado.
 
 ### Task 4: Aprovação, execução e retorno à conversa
 

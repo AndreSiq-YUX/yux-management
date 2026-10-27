@@ -4,6 +4,7 @@ import { persistMissionStrategyProposalInTransaction } from '../company-strategy
 import { companyStrategyProposalSchema,type CompanyStrategyAccess } from '../company-strategy/schemas.js'
 import { CAMPAIGN_LAUNCH_PACK_V1 } from './packs/campaign-launch-v1.js'
 import { FUNNEL_NURTURE_PACK_V1 } from './packs/funnel-nurture-v1.js'
+import { CRM_PREPARATION_PACK_V1 } from './packs/crm-preparation-v1.js'
 import { REVENUE_RECOVERY_PACK_V0 } from './packs/revenue-recovery-v0.js'
 import { RADAR_PROSPECTING_PACK_V1,radarProspectingParameters } from './packs/radar-prospecting-v1.js'
 import { createMissionInTransaction, getMission, hashCanonical, transitionMission, type Connectable, type Queryable } from './repository.js'
@@ -194,12 +195,14 @@ export async function confirmMissionConversationBrief(pool: Connectable, input: 
     const currentBrief = current.current_brief ?? {}
     if (hashCanonical(currentBrief) !== input.briefHash) throw new Error('mission_conversation_brief_changed')
     const selected = await resolveConversationPacks(client, input.organizationId, current.contract_id, currentBrief)
-    const deadlineAt = requiredDeadline(currentBrief.deadlineAt)
-    const mode = missionMode(currentBrief.mode)
+    const preparation = selected.some(pack => pack.key === 'crm_preparation')
+    if (preparation && (selected.length !== 1 || currentBrief.mode != null && currentBrief.mode !== 'prepare')) throw new Error('crm_preparation_scope_invalid')
+    const deadlineAt = requiredDeadline(preparation && !currentBrief.deadlineAt ? new Date(Date.now() + 7 * 86400000).toISOString() : currentBrief.deadlineAt)
+    const mode = preparation ? 'prepare' : missionMode(currentBrief.mode)
     const objective = requiredBriefString(currentBrief.objective, 'mission_conversation_objective_required')
     const maxTotalCostBrl = confirmedDecimalLimit(currentBrief.maxTotalCostBrl)
     const maxHumanHours = confirmedDecimalLimit(currentBrief.maxHumanHours)
-    const maxExternalContacts = confirmedContactLimit(currentBrief.maxExternalContacts)
+    const maxExternalContacts = preparation ? 0 : confirmedContactLimit(currentBrief.maxExternalContacts)
     const allowedModules = [...new Set(selected.flatMap(item => item.allowedModules))].sort()
     const parameters = conversationMissionParameters(currentBrief, selected.map(item => item.key), deadlineAt, maxTotalCostBrl, maxHumanHours)
     const mission = await createMissionInTransaction(client, {
@@ -670,6 +673,7 @@ function iso(value: string | Date): string {
 type ConversationPack = { id: string; key: string; version: string; contentHash: string; allowedModules: string[] }
 
 const CONVERSATION_PACKS = {
+  crm_preparation: { definition: CRM_PREPARATION_PACK_V1, allowedModules: ['crm', 'automations'] },
   funnel_nurture: { definition: FUNNEL_NURTURE_PACK_V1, allowedModules: ['crm', 'automations', 'funnel_nurture_agent'] },
   campaign_launch: { definition: CAMPAIGN_LAUNCH_PACK_V1, allowedModules: ['campaigns', 'landing_pages', 'campaign_launch_agent'] },
   revenue_recovery: { definition: REVENUE_RECOVERY_PACK_V0, allowedModules: ['crm'] },
@@ -683,9 +687,10 @@ async function resolveConversationPacks(
   brief: Record<string, unknown>,
 ): Promise<ConversationPack[]> {
   const requested = stringList(brief.packKeys)
-  const order = ['funnel_nurture', 'campaign_launch', 'revenue_recovery','radar_prospecting'] as const
+  const order = ['crm_preparation', 'funnel_nurture', 'campaign_launch', 'revenue_recovery','radar_prospecting'] as const
   const keys = order.filter((key) => requested.includes(key))
   if (!keys.length) throw new Error('mission_conversation_pack_selection_invalid')
+  if (keys.includes('crm_preparation') && (keys.length !== 1 || requested.length !== 1)) throw new Error('crm_preparation_scope_invalid')
   const definitions = keys.map((key) => ({ key, ...CONVERSATION_PACKS[key] }))
   const rows = await client.query<{ id: string; key: string; semantic_version: string; content_hash: string }>(
     `SELECT version.id, pack.key, version.semantic_version, version.content_hash
@@ -699,7 +704,8 @@ async function resolveConversationPacks(
     if (!row || row.content_hash !== definition.contentHash) throw new Error('mission_conversation_pack_unavailable')
     return { id: row.id, key, version: row.semantic_version, contentHash: row.content_hash, allowedModules: [...allowedModules] }
   })
-  const requiredEntitlements = resolved.flatMap(item => item.allowedModules.filter(module => module.endsWith('_agent')))
+  const preparation = keys.includes('crm_preparation')
+  const requiredEntitlements = preparation ? ['action_engine', 'crm', 'automations'] : resolved.flatMap(item => item.allowedModules.filter(module => module.endsWith('_agent')))
   if (requiredEntitlements.length) {
     const entitlement = await client.query<{ kind: string; module_keys: string[] }>(
       `SELECT organization.kind,
@@ -716,6 +722,11 @@ async function resolveConversationPacks(
     if (row?.kind !== 'yux' && requiredEntitlements.some(key => !enabled.has(key))) {
       throw new Error('mission_conversation_pack_not_entitled')
     }
+  }
+  if (preparation) {
+    const crm = await client.query(`SELECT id FROM public.crm_instances WHERE organization_id=$1 AND contract_id=$2
+      AND status IN ('draft','active') LIMIT 1 FOR SHARE`, [organizationId, contractId])
+    if (!crm.rows[0]) throw new Error('crm_preparation_crm_unavailable')
   }
   return resolved
 }
@@ -745,7 +756,7 @@ function conversationMissionParameters(
       targetRevenueBrl: positiveDecimal(constraints.targetRevenueBrl, '1'),
     }
   }
-  if (packKeys.includes('funnel_nurture')) {
+  if (packKeys.includes('funnel_nurture') || packKeys.includes('crm_preparation')) {
     return {
       ...common,
       icp: requiredBriefString(constraints.icp ?? constraints.audience, 'mission_conversation_icp_required'),

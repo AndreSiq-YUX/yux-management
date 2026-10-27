@@ -10,6 +10,8 @@ import { REVENUE_RECOVERY_PACK_V0 } from '../../modules/action-engine/packs/reve
 import { CAMPAIGN_LAUNCH_PACK_V1 } from '../../modules/action-engine/packs/campaign-launch-v1.js'
 import { CAMPAIGN_OPTIMIZATION_PACK_V1 } from '../../modules/action-engine/packs/campaign-optimization-v1.js'
 import { FUNNEL_NURTURE_PACK_V1 } from '../../modules/action-engine/packs/funnel-nurture-v1.js'
+import { CRM_PREPARATION_PACK_V1, ensureCrmPreparationPackVersion } from '../../modules/action-engine/packs/crm-preparation-v1.js'
+import { conversationPackAvailable } from '../../modules/action-engine/conversation-pack-availability.js'
 import { compileSupervisorPlan, diffMissionPlans, requestMissionPlan, type CompiledMissionPlan } from '../../modules/action-engine/planner.js'
 import type { ActionPackVersion } from '../../modules/action-engine/action-pack.js'
 import {
@@ -91,6 +93,10 @@ export async function handleActionEngineProcessMissionConversation(
       resolveRadarMissionAvailability(pool, env, organizationId, conversation.createdBy),
     ])
     const availability = buildMissionAccountAvailability(registry, access, radar)
+    // Definition publication has no operational effect and is idempotent. It
+    // happens under the worker's existing service permissions, never from LLM data.
+    if (availability.capabilities.some(item => item.key === 'crm.pipeline.create_draft')
+      && access.enabledModules.includes('automations')) await ensureCrmPreparationPackVersion(pool, conversation.createdBy)
     const metadata = availability.capabilities
     const manifest = createCapabilityManifest(registry, metadata.map((item) => ({ key: item.key, version: item.version })))
     const operational = await buildMissionOperationalContext(pool, {
@@ -108,8 +114,8 @@ export async function handleActionEngineProcessMissionConversation(
     )
     const bounded = boundTranscript(conversation.messages)
     const allowedKeys = new Set(manifest.entries.map(item => item.key))
-    const packs = [REVENUE_RECOVERY_PACK_V0, FUNNEL_NURTURE_PACK_V1, CAMPAIGN_LAUNCH_PACK_V1, CAMPAIGN_OPTIMIZATION_PACK_V1, RADAR_PROSPECTING_PACK_V1]
-      .filter(pack => pack.topologyTemplate.steps.every(step => allowedKeys.has(step.capabilityKey)))
+    const packs = [CRM_PREPARATION_PACK_V1, REVENUE_RECOVERY_PACK_V0, FUNNEL_NURTURE_PACK_V1, CAMPAIGN_LAUNCH_PACK_V1, CAMPAIGN_OPTIMIZATION_PACK_V1, RADAR_PROSPECTING_PACK_V1]
+      .filter(pack => conversationPackAvailable(pack, allowedKeys, operational.accountAvailability!))
     const request: MissionConversationTurnRequestWire = {
       schemaVersion: 1,
       organization_id: organizationId,
@@ -595,6 +601,7 @@ export async function handleActionEnginePlanMission(
   const registry = createActionEngineCapabilityRegistry()
   const packs = await loadMissionActionPacks(pool, mission.packVersionId, mission.packSelection)
   const pack = packs[0]!
+  if (packs.some(item => item.key === 'crm_preparation') && (packs.length !== 1 || mission.mode !== 'prepare')) throw new Error('crm_preparation_scope_invalid')
   const radar=packs.some(item=>item.key===RADAR_PROSPECTING_PACK_V1.key)
   if(radar&&(!await radarMissionAvailable(pool,env,organizationId,mission.createdBy)||mission.mode!=='assisted'||packs.length!==1))throw new Error('radar_mission_unavailable')
   const serializablePacks = packs.map((item) => {

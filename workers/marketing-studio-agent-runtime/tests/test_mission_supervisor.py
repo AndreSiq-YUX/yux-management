@@ -212,3 +212,26 @@ def test_retrieved_prompt_injection_is_marked_untrusted_and_cannot_expand_author
     assert "UNTRUSTED" in messages[0]["content"]
     with pytest.raises(ValueError, match="mission_plan_capability_not_allowed"):
         supervisor.propose(request)
+
+
+def test_preparation_uses_specialists_without_projecting_an_unused_automation() -> None:
+    request = _request()
+    request['mission']['mode'] = 'prepare'
+    request['action_pack']['key'] = 'crm_preparation'
+    response = _plan_response()
+    response['selectedPacks'][0]['key'] = 'crm_preparation'
+    response['plan']['actionPack']['key'] = 'crm_preparation'
+    supervisor = _supervisor(response)
+    class DraftSpecialist:
+        traces = []
+        def generate(self, value):
+            assert value['mission']['mode'] == 'prepare'
+            return {'funnel': {'name': 'Comercial'}, 'emails': [{}, {}, {}],
+                    'sequence': {'steps': []}, 'automation': {'name': 'Not requested'}, 'sourceIds': ['source-1']}
+    supervisor.funnel_nurture = DraftSpecialist()
+    result = supervisor.propose(request)
+    artifacts = result['plan']['resolvedParameters']['funnelNurtureArtifacts']
+    assert artifacts['funnel']['name'] == 'Comercial'
+    assert len(artifacts['emails']) == 3
+    assert 'automation' not in artifacts
+    assert result['selectedPacks'][0]['key'] == 'crm_preparation'

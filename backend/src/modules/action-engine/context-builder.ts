@@ -45,7 +45,7 @@ export async function buildMissionOperationalContext(client: Queryable, input: {
   accountAvailability?: MissionAccountAvailability
 }): Promise<BuiltMissionOperationalContext> {
   if (input.accountAvailability && input.accountAvailability.organizationId !== input.organizationId) throw new Error('mission_account_context_scope_mismatch')
-  const [entitlements, learningMemory, channels, advertising, platformEmail] = await Promise.all([
+  const [entitlements, learningMemory, channels, advertising, platformEmail, crm] = await Promise.all([
     input.accountAvailability ? Promise.resolve({ rows: input.accountAvailability.enabledModules.map(module_key => ({ module_key })) }) : input.contractId
       ? client.query<{ module_key: string }>(
         `SELECT module.module_key
@@ -85,6 +85,10 @@ export async function buildMissionOperationalContext(client: Queryable, input: {
        WHERE provider.provider_type = 'email' AND provider.provider_key = 'smtp2go' AND provider.environment = 'production'
        ORDER BY provider.is_default DESC, provider.updated_at DESC LIMIT 1`,
     )) : Promise.resolve({ rows: [], verified: false }),
+    input.accountAvailability ? safeRows(() => client.query<{ status: string; max_pipeline_count: number }>(
+      `SELECT status,max_pipeline_count FROM public.crm_instances WHERE organization_id=$1
+       AND ($2::uuid IS NULL OR contract_id=$2) ORDER BY id LIMIT 1`, [input.organizationId, input.contractId ?? null],
+    )) : Promise.resolve({ rows: [], verified: false }),
   ])
 
   const entitled = new Set(entitlements.rows.map((row) => normalizeModule(row.module_key)))
@@ -110,6 +114,18 @@ export async function buildMissionOperationalContext(client: Queryable, input: {
   }
   const accountAvailability: MissionAccountAvailability | undefined = input.accountAvailability ? {
     ...input.accountAvailability,
+    preparation: {
+      available: crm.verified && ['draft', 'active'].includes(crm.rows[0]?.status ?? '')
+        && ['crm', 'automations'].every(key => input.accountAvailability!.enabledModules.includes(key))
+        && ['crm.pipeline.create_draft', 'email.template.create_draft', 'crm.sequence.create_draft'].every(key => input.capabilityManifest.some(item => item.key === key)),
+      crmStatus: !crm.verified ? 'unverified' : crm.rows[0]?.status === 'draft' ? 'draft' : crm.rows[0]?.status === 'active' ? 'active' : 'unavailable',
+      ...(Number.isInteger(crm.rows[0]?.max_pipeline_count) ? { maxPipelineCount: crm.rows[0]!.max_pipeline_count } : {}),
+      blockers: [
+        ...(!crm.verified ? ['crm_state_unverified'] : !['draft', 'active'].includes(crm.rows[0]?.status ?? '') ? ['crm_unavailable'] : []),
+        ...(['crm', 'automations'].every(key => input.accountAvailability!.enabledModules.includes(key)) ? [] : ['module_not_enabled']),
+        ...(['crm.pipeline.create_draft', 'email.template.create_draft', 'crm.sequence.create_draft'].every(key => input.capabilityManifest.some(item => item.key === key)) ? [] : ['user_not_permitted']),
+      ],
+    },
     connections: [
       { key: 'email', status: channels.verified && providerHealth.channels.some(item => item.key === 'email' && item.ready) ? 'connected'
         : !channels.verified || !platformEmail.verified || platformEmail.rows[0]?.configured === true ? 'unverified' : 'not_connected',

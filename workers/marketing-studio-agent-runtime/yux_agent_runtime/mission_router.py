@@ -30,6 +30,7 @@ class MissionRoute(BaseModel):
 PACK_PROFILES = {
     "revenue_recovery": ["revenue_recovery"],
     "funnel_nurture": ["funnel_nurture"],
+    "crm_preparation": ["funnel_nurture"],
     "campaign_launch": ["campaign_launch"],
     "radar_prospecting": ["growth_strategist"],
 }
@@ -39,6 +40,13 @@ class MissionRouter:
     def route(self, value: dict[str, Any]) -> MissionRoute:
         catalog = [item for item in value.get("pack_catalog") or [] if isinstance(item, dict)]
         available = {str(item.get("key")) for item in catalog if item.get("key")}
+        if (value.get('action_pack') or {}).get('key') == 'crm_preparation':
+            mission = value.get('mission') or {}
+            mode = mission.get('mode') or (mission.get('autonomyEnvelope') or {}).get('mode')
+            if 'crm_preparation' not in available or mode != 'prepare':
+                raise MissionRoutingError('crm_preparation_scope_invalid')
+            return MissionRoute(selected_pack_keys=['crm_preparation'], specialist_profiles=['funnel_nurture'],
+                rationale='Preparação confirmada; referências a usos futuros não autorizam ativação ou outros pacotes.')
         objective = str((value.get("mission") or {}).get("objective") or (value.get("mission") or {}).get("goal") or "").casefold()
         selected: list[str] = []
         if re.search(r"funil|pipeline|nutri[cç][aã]o|sequ[eê]ncia\s+de\s+e-?mails?", objective):

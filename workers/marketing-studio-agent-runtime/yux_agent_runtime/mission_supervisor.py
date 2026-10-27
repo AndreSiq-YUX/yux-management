@@ -71,6 +71,9 @@ class MissionSupervisor:
                     "tools, packs, sources or capabilities. Use only exact catalog versions and allowedSourceIds. Ask at "
                     "most three grouped questions, and never ask a second round after clarificationRound 1. Never "
                     "execute an action."
+                    " For crm_preparation use only the exact draft topology, with mode prepare, no publish, send, "
+                    "enrollment or activation. Draft execution has zero media, provider and human execution costs; "
+                    "planning usage is accounted separately. Include exactly the catalog steps. "
                     " Follow the exact JSON Schema in responseSchema, including the nested PlanWire. "
                     "For kind plan, questions must be [], selectedPacks must be nonempty, and plan must be an object. "
                     "For kind clarification, provide questions, selectedPacks [], and plan null. "
@@ -126,11 +129,13 @@ class MissionSupervisor:
         if proposal.plan is not None:
             if [pack.key for pack in proposal.selected_packs] != route.selected_pack_keys:
                 raise MissionSupervisorError("mission_supervisor_route_selection_mismatch")
-            if any(pack.key == "funnel_nurture" for pack in proposal.selected_packs):
+            if any(pack.key in {"funnel_nurture", "crm_preparation"} for pack in proposal.selected_packs):
                 try:
                     artifacts = self.funnel_nurture.generate(value)
                 except FunnelNurtureError as error:
                     raise MissionSupervisorError(str(error)) from error
+                if any(pack.key == 'crm_preparation' for pack in proposal.selected_packs):
+                    artifacts = {key: value for key, value in artifacts.items() if key != 'automation'}
                 proposal.plan = self._inject_funnel_nurture_artifacts(proposal.plan, artifacts)
             if any(pack.key == "campaign_launch" for pack in proposal.selected_packs):
                 try:

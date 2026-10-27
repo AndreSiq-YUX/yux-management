@@ -159,6 +159,10 @@ export function compileSupervisorPlan(input: {
   if (!['shadow','prepare','assisted','autonomous'].includes(input.autonomyEnvelope.mode)) {
     throw new Error('mission_autonomy_mode_unsupported')
   }
+  if (input.packCatalog.some(pack => pack.key === 'crm_preparation')
+    && (input.packCatalog.length !== 1 || input.autonomyEnvelope.mode !== 'prepare')) {
+    throw new Error('crm_preparation_scope_invalid')
+  }
 
   const allowedSources = new Set(input.allowedSourceIds)
   const sourceIds = [...new Set(proposal.sourceIds ?? [])].sort()

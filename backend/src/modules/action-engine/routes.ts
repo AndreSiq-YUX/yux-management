@@ -7,6 +7,7 @@ import { validatePackParameters } from './action-pack.js'
 import { createActionEngineCapabilityRegistry } from './capabilities/index.js'
 import { REVENUE_RECOVERY_PACK_V0 } from './packs/revenue-recovery-v0.js'
 import { FUNNEL_NURTURE_PACK_V1 } from './packs/funnel-nurture-v1.js'
+import { CRM_PREPARATION_PACK_V1 } from './packs/crm-preparation-v1.js'
 import { CAMPAIGN_LAUNCH_PACK_V1 } from './packs/campaign-launch-v1.js'
 import { RADAR_PROSPECTING_PACK_V1 } from './packs/radar-prospecting-v1.js'
 import { ensureRadarProspectingPackVersion, radarMissionAvailable } from './radar-pack-registration.js'
@@ -405,8 +406,9 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     const parsed = z.object({
       organizationId: uuid, contractId: uuid.optional(), targetRevenueBrl: decimal, deadlineAt: z.string().datetime(),
       maxTotalCostBrl: decimal, maxHumanHours: decimal, humanHourlyRateBrl: decimal,
-      packKey: z.enum(['revenue_recovery','funnel_nurture','campaign_launch','radar_prospecting']).optional(),
-      packKeys: z.array(z.enum(['revenue_recovery','funnel_nurture','campaign_launch','radar_prospecting'])).min(1).max(5).optional(),
+      packKey: z.enum(['revenue_recovery','funnel_nurture','campaign_launch','radar_prospecting','crm_preparation']).optional(),
+      packKeys: z.array(z.enum(['revenue_recovery','funnel_nurture','campaign_launch','radar_prospecting','crm_preparation'])).min(1).max(5).optional(),
+      mode: z.enum(['shadow','prepare','assisted','autonomous']).optional(),
     }).safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_mission_readiness_request' })
     requireAccess(ctx, 'action_engine.write', { organizationId: parsed.data.organizationId })
@@ -1035,6 +1037,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       maxHumanHours: mission.autonomyEnvelope.maxHumanHours,
       humanHourlyRateBrl: String(mission.parameters.humanHourlyRateBrl ?? mission.budget.humanHourlyRateBrl ?? '100'),
       packKeys: missionPackKeys(mission.packSelection),
+      mode: mission.mode,
       agentHarnessHealthy: Boolean(app.config.YUX_AGENT_RUNTIME_URL), mutationLeaseReady: Boolean(app.config.ACTION_ENGINE_MUTATION_LEASE_SECRET),
     })
     const allowedAreas = [
@@ -1322,6 +1325,7 @@ function selectIntentPacks(quickStart: 'revenue_recovery' | 'funnel_nurture' | '
 }
 
 function packDefinitionForKey(packKey: string) {
+  if (packKey === CRM_PREPARATION_PACK_V1.key) return CRM_PREPARATION_PACK_V1
   if (packKey === RADAR_PROSPECTING_PACK_V1.key) return RADAR_PROSPECTING_PACK_V1
   if (packKey === CAMPAIGN_LAUNCH_PACK_V1.key) return CAMPAIGN_LAUNCH_PACK_V1
   if (packKey === FUNNEL_NURTURE_PACK_V1.key) return FUNNEL_NURTURE_PACK_V1
@@ -1329,19 +1333,19 @@ function packDefinitionForKey(packKey: string) {
   throw new Error('mission_action_pack_unavailable')
 }
 
-function missionPackKey(selection: Record<string, unknown>): 'revenue_recovery' | 'funnel_nurture' | 'campaign_launch' | 'radar_prospecting' {
+function missionPackKey(selection: Record<string, unknown>): 'revenue_recovery' | 'funnel_nurture' | 'campaign_launch' | 'radar_prospecting' | 'crm_preparation' {
   const packs = Array.isArray(selection.packs) ? selection.packs : []
   const key = packs[0] && typeof packs[0] === 'object' ? Reflect.get(packs[0], 'key') : undefined
-  if(key==='radar_prospecting'||key==='campaign_launch'||key==='funnel_nurture'||key==='revenue_recovery')return key
+  if(key==='radar_prospecting'||key==='campaign_launch'||key==='funnel_nurture'||key==='revenue_recovery'||key==='crm_preparation')return key
   if(key!==undefined)throw new Error('mission_action_pack_unavailable')
   return 'revenue_recovery'
 }
 
-function missionPackKeys(selection: Record<string, unknown>): Array<'revenue_recovery' | 'funnel_nurture' | 'campaign_launch' | 'radar_prospecting'> {
+function missionPackKeys(selection: Record<string, unknown>): Array<'revenue_recovery' | 'funnel_nurture' | 'campaign_launch' | 'radar_prospecting' | 'crm_preparation'> {
   const packs = Array.isArray(selection.packs) ? selection.packs : []
   const keys = packs.flatMap((item) => {
     const key = item && typeof item === 'object' ? Reflect.get(item, 'key') : undefined
-    return key === 'campaign_launch' || key === 'funnel_nurture' || key === 'revenue_recovery' || key==='radar_prospecting' ? [key] : []
+    return key === 'campaign_launch' || key === 'funnel_nurture' || key === 'revenue_recovery' || key==='radar_prospecting' || key==='crm_preparation' ? [key] : []
   })
   return keys.length > 0 ? [...new Set(keys)] : [missionPackKey(selection)]
 }
@@ -1443,6 +1447,7 @@ function sendDomainError(reply: FastifyReply, error: unknown) {
     plan_or_approval_not_found: 404, plan_not_pending_approval: 409, approval_subject_changed: 409,
     agent_harness_unavailable: 503,
     mission_not_ready: 409, mission_plan_not_approved: 409,
+    crm_preparation_scope_invalid: 409, crm_preparation_crm_unavailable: 409,
     approval_not_found: 404, approval_already_decided: 409, plan_approval_requires_version_context: 409,
     action_not_retryable: 409, action_skip_not_allowed: 409, action_not_human_task: 409,
     actual_minutes_required: 400, human_task_evidence_required: 400, human_cost_rate_missing: 409,

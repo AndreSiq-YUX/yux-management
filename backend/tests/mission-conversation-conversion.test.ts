@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { confirmMissionConversationBrief } from '../src/modules/action-engine/mission-conversations.js'
 import { hashCanonical, type Connectable, type Queryable } from '../src/modules/action-engine/repository.js'
 import { FUNNEL_NURTURE_PACK_V1 } from '../src/modules/action-engine/packs/funnel-nurture-v1.js'
+import { CRM_PREPARATION_PACK_V1 } from '../src/modules/action-engine/packs/crm-preparation-v1.js'
 
 type Row = Record<string, unknown>
 type Step = { match: string; rows: Row[] }
@@ -33,6 +34,17 @@ function scriptedPool(steps: Step[]) {
 }
 
 describe('Mission conversation conversion', () => {
+  it('converts a preparation brief without sender, activation entitlement, spending or a commercial deadline', async () => {
+    const prep = { ...brief, packKeys: ['crm_preparation'], mode: 'prepare', deadlineAt: null, maxTotalCostBrl: null, maxHumanHours: null,
+      maxExternalContacts: 0, constraints: { icp: 'Cozinhas industriais', offer: 'Linha de alimentos' } }
+    const fake = conversionPool(prep)
+    await confirmMissionConversationBrief(fake.pool, { organizationId: orgId, conversationId, expectedVersion: 3, briefHash: hashCanonical(prep), confirmedBy: userId })
+    const insert = fake.calls.find(call => call.sql.includes('INSERT INTO public.action_missions'))!
+    expect(insert.params?.[5]).toBe('prepare')
+    expect(insert.params?.[7]).toMatchObject({ allowedModules: ['automations', 'crm'], maxExternalContacts: 0, maxTotalCostBrl: '0' })
+    expect(insert.params?.[9]).toMatchObject({ icp: 'Cozinhas industriais', offer: 'Linha de alimentos' })
+    expect(Date.parse(String(insert.params?.[11]))).toBeGreaterThan(Date.now())
+  })
   it.each(['0', '0.00', 0])('preserves explicit zero limits (%s) in parameters, envelope and budget', async zero => {
     const zeroBrief = { ...brief, maxTotalCostBrl: zero, maxHumanHours: zero, maxExternalContacts: 0 }
     const fake = conversionPool(zeroBrief)
@@ -109,11 +121,14 @@ describe('Mission conversation conversion', () => {
 })
 
 function conversionPool(currentBrief: Record<string, unknown>) {
+  const preparation = (currentBrief.packKeys as string[])?.includes('crm_preparation')
+  const pack = preparation ? CRM_PREPARATION_PACK_V1 : FUNNEL_NURTURE_PACK_V1
   const attached = conversationRow({ current_brief: currentBrief, mission_id: missionId, status: 'planning', version: 4 })
   return scriptedPool([
     { match: 'FOR UPDATE', rows: [conversationRow({ current_brief: currentBrief })] },
-    { match: 'FROM public.action_pack_versions', rows: [{ id: packVersionId, key: 'funnel_nurture', semantic_version: FUNNEL_NURTURE_PACK_V1.semanticVersion, content_hash: FUNNEL_NURTURE_PACK_V1.contentHash }] },
+    { match: 'FROM public.action_pack_versions', rows: [{ id: packVersionId, key: pack.key, semantic_version: pack.semanticVersion, content_hash: pack.contentHash }] },
     { match: 'FROM public.organizations organization', rows: [{ kind: 'yux', module_keys: [] }] },
+    ...(preparation ? [{ match: 'FROM public.crm_instances', rows: [{ id: 'crm', status: 'draft' }] }] : []),
     { match: 'INSERT INTO public.action_missions', rows: [missionRow()] },
     { match: 'INSERT INTO public.domain_events', rows: [eventRow('mission.created')] },
     { match: 'FROM public.action_missions', rows: [missionRow()] },

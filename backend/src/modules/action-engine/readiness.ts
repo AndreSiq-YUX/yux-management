@@ -190,7 +190,7 @@ export async function evaluateMissionReadiness(
   const claimTargets = [
     ...(funnelNurture || preparation ? [{ resourceKey: 'crm.funnel_nurture_configuration', scope: 'organization_funnel_nurture' }] : []),
     ...(campaignLaunch ? [{ resourceKey: 'campaign.provider_account', scope: 'organization_campaign_launch' }] : []),
-    ...(!funnelNurture && !campaignLaunch && !radar ? [{ resourceKey: 'crm.lead_population', scope: 'inactive_revenue_recovery' }] : []),
+    ...(!funnelNurture && !preparation && !campaignLaunch && !radar ? [{ resourceKey: 'crm.lead_population', scope: 'inactive_revenue_recovery' }] : []),
   ]
   for (const claimTarget of claimTargets) {
     const claim = await client.query<{ mission_id: string; mission_label: string; lease_expires_at: string | Date }>(

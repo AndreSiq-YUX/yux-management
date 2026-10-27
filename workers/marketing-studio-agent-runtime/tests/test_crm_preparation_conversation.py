@@ -3,9 +3,18 @@ from copy import deepcopy
 
 from yux_agent_runtime.mission_contracts import MissionConversationTurnRequestWire
 from yux_agent_runtime.mission_conversation import normalize_mission_conversation_response
+from yux_agent_runtime.mission_router import MissionRouter
 
 
 class CrmPreparationConversationTest(unittest.TestCase):
+    def test_prepare_request_routes_to_preparation_even_when_the_objective_mentions_the_future_radar_or_campaign(self):
+        route = MissionRouter().route({'mission': {'objective': 'Preparar funil e e-mails para depois importar leads do Radar',
+            'mode': 'prepare', 'parameters': {}}, 'action_pack': {'key': 'crm_preparation'},
+            'pack_catalog': [{'key': 'crm_preparation'}, {'key': 'funnel_nurture'}, {'key': 'radar_prospecting'}]})
+        self.assertEqual(route.selected_pack_keys, ['crm_preparation'])
+        self.assertEqual(route.specialist_profiles, ['funnel_nurture'])
+        self.assertFalse(route.clarification_questions)
+
     def test_contradictory_ready_state_keeps_missing_context_and_returns_a_valid_message(self):
         request = MissionConversationTurnRequestWire.model_validate({
             'schemaVersion': 1, 'organization_id': 'org-a', 'conversation_id': 'conversation-a',
