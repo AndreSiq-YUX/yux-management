@@ -22,7 +22,7 @@ const internalRoles = new Set<UserRole>(['yux_admin', 'yux_operator'])
 
 export async function resolveWorkspaceContext(
   pool: Queryable,
-  config: Pick<AppEnv, 'MISSION_CONVERSATIONS_ENABLED' | 'MISSION_CONVERSATIONS_TENANT_ALLOWLIST'>,
+  config: Pick<AppEnv, 'MISSION_SUPERVISOR_ENABLED' | 'MISSION_CONVERSATIONS_ENABLED' | 'MISSION_CONVERSATIONS_TENANT_ALLOWLIST'>,
   requestContext: RequestContext,
   organizationId: string,
 ): Promise<WorkspaceContextV1 | null> {
@@ -105,7 +105,7 @@ export function resolveMissionCreation(
   if (isMissionConversationRolloutEnabled(config, organizationId)) return { mode: 'conversation', reasonCode: null }
   const allowlist = new Set((config.MISSION_CONVERSATIONS_TENANT_ALLOWLIST ?? '').split(',').map(item => item.trim()).filter(Boolean))
   return {
-    mode: 'form',
+    mode: 'unavailable',
     reasonCode: config.MISSION_CONVERSATIONS_ENABLED === true && allowlist.size > 0
       ? 'mission_conversation_not_allowlisted'
       : 'mission_conversation_disabled',

@@ -48,7 +48,7 @@ export function MissionIntake({ open, organizationId, contractId, canWrite, onOp
     ...(quickStart==='radar_prospecting'&&(!radarAvailable||!radarBrief.name.trim()||!radarBrief.targetSegment.trim()||!radarBrief.offerType.trim()||!radarBrief.states.trim()||radarBrief.requestedCount<1)?['Complete o perfil e a quantidade da pesquisa no Radar.']:[]),
     ...(envelope.allowedModules.length === 0 ? ['Selecione ao menos uma área permitida.'] : []),
     ...(!deadlineAt || Date.parse(deadlineAt) <= Date.now() ? ['Defina um prazo futuro.'] : []),
-    ...(Number(envelope.maxTotalCostBrl) <= 0 ? ['O orçamento precisa ser maior que zero.'] : []),
+    ...(!/^\d+(?:\.\d{1,6})?$/.test(envelope.maxTotalCostBrl) ? ['Informe um limite de custo igual ou maior que zero.'] : []),
     ...(Number(envelope.maxHumanHours) < 0 ? ['As horas humanas não podem ser negativas.'] : []),
   ]
 

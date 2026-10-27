@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { Loader2, MessageCircle, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { MissionIntake } from './MissionIntake'
 import { MissionDashboard } from './MissionDashboard'
 import { MissionConversationComposer } from './MissionConversationComposer'
 import { ErrorState, SkeletonCard, SkeletonKpiGrid, StatusChip } from '@/components/portal-ui'
@@ -27,10 +26,8 @@ const STARTER_PROMPTS = ['Criar uma campanha completa', 'Montar um funil e uma s
 export function MissionsWorkspace({ organizationId, contractId, canWrite, missionCreation, detailHref, conversationHref, profile = 'default' }: MissionsWorkspaceProps) {
   const navigate = useNavigate()
   const portal = profile === 'portal'
-  const compatibilityMode = missionCreation.mode === 'form'
-  const creationUnavailableMessage = missionCreation.reasonCode === 'mission_supervisor_disabled'
-    ? 'A criação de missões está temporariamente desativada porque o Supervisor de Missões não está habilitado. As missões existentes continuam disponíveis para consulta.'
-    : 'A criação de missões não está disponível para este acesso. Você ainda pode acompanhar as missões existentes e solicitar a criação a um administrador do workspace.'
+  const conversationAvailable = canWrite && missionCreation.mode === 'conversation'
+  const creationUnavailableMessage = missionCreationUnavailableMessage(missionCreation.reasonCode)
   const [missions, setMissions] = useState<ActionMission[]>([])
   const [conversations, setConversations] = useState<MissionConversation[]>([])
   const [economics, setEconomics] = useState<Record<string, MissionEconomics>>({})
@@ -38,7 +35,6 @@ export function MissionsWorkspace({ organizationId, contractId, canWrite, missio
   const [loadError, setLoadError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   const [actionError, setActionError] = useState<string | null>(null)
-  const [intakeOpen, setIntakeOpen] = useState(false)
   const [conversationOpen, setConversationOpen] = useState(false)
   const [creatingConversation, setCreatingConversation] = useState(false)
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -58,6 +54,7 @@ export function MissionsWorkspace({ organizationId, contractId, canWrite, missio
   }, [organizationId, reloadKey])
 
   const startConversation = async (message: string) => {
+    if (!conversationAvailable) return
     setCreatingConversation(true); setActionError(null)
     try {
       const result = await actionEngineService.createMissionConversation({ organizationId, contractId, message })
@@ -81,9 +78,9 @@ export function MissionsWorkspace({ organizationId, contractId, canWrite, missio
       : <div className="flex flex-col gap-3 border border-yx-crit-line bg-yx-crit-soft p-5 text-sm text-yx-crit sm:flex-row sm:items-center sm:justify-between"><span>{loadError}</span><Button type="button" variant="outline" onClick={() => setReloadKey(key => key + 1)}>Tentar novamente</Button></div>
   }
   return <>
-    <MissionDashboard profile={profile} missions={missions} conversations={conversations} economicsByMission={economics} detailHref={detailHref} conversationHref={conversationHref} canCreate={canWrite && missionCreation.mode !== 'unavailable'} creationMode={compatibilityMode ? 'form' : 'conversation'} onCreate={() => compatibilityMode ? setIntakeOpen(true) : setConversationOpen(true)} />
-    {missionCreation.mode === 'unavailable' ? <div className="mt-4 rounded-lg border border-yx-warn-line bg-yx-warn-soft p-4 text-sm text-yx-warn">{creationUnavailableMessage}</div> : null}
-    {!compatibilityMode ? (
+    <MissionDashboard profile={profile} missions={missions} conversations={conversations} economicsByMission={economics} detailHref={detailHref} conversationHref={conversationHref} canCreate={conversationAvailable} creationMode="conversation" onCreate={() => setConversationOpen(true)} />
+    {!conversationAvailable ? <div role="status" className="mt-4 rounded-lg border border-yx-warn-line bg-yx-warn-soft p-4 text-sm text-yx-warn">{creationUnavailableMessage}</div> : null}
+    {conversationAvailable ? (
       // Radix Dialog: foco preso dentro da janela, devolvido ao botão de origem e fechamento por Esc.
       <DialogPrimitive.Root open={conversationOpen} onOpenChange={open => { if (!open && creatingConversation) return; setConversationOpen(open) }}>
         <DialogPrimitive.Portal>
@@ -121,6 +118,18 @@ export function MissionsWorkspace({ organizationId, contractId, canWrite, missio
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
     ) : null}
-    {compatibilityMode ? <MissionIntake open={intakeOpen} organizationId={organizationId} contractId={contractId} canWrite={canWrite} onOpenChange={setIntakeOpen} onCreated={mission => setMissions(current => [mission, ...current])} /> : null}
   </>
+}
+
+function missionCreationUnavailableMessage(reasonCode: string | null) {
+  if (reasonCode === 'mission_conversation_not_allowlisted') {
+    return 'A conversa com o agente ainda não foi liberada para este workspace. A equipe YUX precisa concluir essa liberação. Suas conversas e missões existentes continuam disponíveis para consulta.'
+  }
+  if (reasonCode === 'mission_conversation_disabled') {
+    return 'A conversa com o agente está temporariamente indisponível. A equipe YUX precisa restabelecer o serviço. Suas conversas e missões existentes continuam disponíveis para consulta.'
+  }
+  if (reasonCode === 'mission_supervisor_disabled') {
+    return 'A criação de missões está temporariamente desativada porque o Supervisor de Missões não está habilitado. As missões existentes continuam disponíveis para consulta.'
+  }
+  return 'A criação de missões não está disponível para este acesso. Você ainda pode acompanhar as missões existentes e solicitar a criação a um administrador do workspace.'
 }

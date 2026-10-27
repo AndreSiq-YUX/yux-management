@@ -425,6 +425,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     if (!body.success) return reply.code(400).send({ error: 'invalid_mission_conversation' })
     requireAccess(ctx, 'action_engine.write', { organizationId: body.data.organizationId })
     if (!isMissionConversationRolloutEnabled(app.config, body.data.organizationId)) return reply.code(503).send({ error: 'mission_conversations_disabled' })
+    if (app.config.MISSION_SUPERVISOR_ENABLED === false) return reply.code(503).send({ error: 'mission_supervisor_disabled' })
     const idempotencyKey = readIdempotencyKey(request.headers['idempotency-key'])
     if (!idempotencyKey) return reply.code(400).send({ error: 'idempotency_key_required' })
     try {
@@ -630,7 +631,10 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       if (recipe && recipe.contentHash !== parsed.data.recipeSelection?.contentHash) return reply.code(409).send({ error: 'mission_recipe_hash_mismatch' })
       const recipePacks = recipe?.packSelections ?? []
       const packKeys = recipe ? recipePacks.map((item) => item.key) : selectIntentPacks(parsed.data.quickStart, parsed.data.objective)
-      if (packKeys.length === 0) return reply.code(409).send({ error: 'mission_pack_selection_invalid' })
+      if (packKeys.length === 0) return reply.code(409).send({
+        error: 'mission_pack_selection_invalid',
+        message: 'Este pedido precisa ser detalhado na conversa com o agente antes de criar a missão. Uma campanha comercial não exige necessariamente mídia paga.',
+      })
       const radar=packKeys.includes(RADAR_PROSPECTING_PACK_V1.key)
       if(radar&&(!await radarMissionAvailable(app.pg,app.config,parsed.data.organizationId,ctx.userId)||parsed.data.mode!=='assisted'||packKeys.length!==1||!parsed.data.allowedModules.includes('radar')))return reply.code(403).send({error:'radar_mission_unavailable'})
       if (recipe) {
@@ -1462,6 +1466,7 @@ function sendDomainError(reply: FastifyReply, error: unknown) {
     mission_conversation_brief_changed: 409,
     mission_conversation_pack_selection_invalid: 409,
     mission_conversation_pack_unavailable: 409,
+    mission_conversation_limit_invalid: 409,
     mission_conversation_pack_not_entitled: 403,
     mission_conversation_deadline_required: 409,
     mission_conversation_objective_required: 409,

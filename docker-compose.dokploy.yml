@@ -5,7 +5,6 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
-        VITE_MISSION_FORM_COMPATIBILITY: ${VITE_MISSION_FORM_COMPATIBILITY:-true}
     expose:
       - "80"
     depends_on:

@@ -219,12 +219,12 @@ export async function evaluateMissionReadiness(
   checks.push(check(Boolean(owner.rows[0]), 'mission_owner_available', 'mission_owner_missing', 'Responsável disponível.', 'A organização não possui responsável elegível.', '/platform/users'))
 
   const validEconomics = (radar||positiveDecimal(input.targetRevenueBrl))
-    && positiveDecimal(input.maxTotalCostBrl)
-    && positiveDecimal(input.maxHumanHours)
-    && positiveDecimal(input.humanHourlyRateBrl)
+    && nonnegativeDecimal(input.maxTotalCostBrl)
+    && nonnegativeDecimal(input.maxHumanHours)
+    && nonnegativeDecimal(input.humanHourlyRateBrl)
     && Number.isFinite(Date.parse(input.deadlineAt))
     && Date.parse(input.deadlineAt) > Date.now()
-  checks.push(check(validEconomics, 'mission_parameters_valid', 'mission_parameters_invalid', 'Target, prazo e budgets válidos.', 'Target, prazo futuro e parâmetros econômicos positivos são obrigatórios.'))
+  checks.push(check(validEconomics, 'mission_parameters_valid', 'mission_parameters_invalid', 'Meta, prazo e limites válidos.', 'Defina uma meta válida, um prazo futuro e limites iguais ou maiores que zero.'))
 
   const connections = await client.query<{ channel: string }>(
     `SELECT channel FROM public.channel_connections WHERE organization_id = $1 AND is_active = TRUE AND channel IN ('email','whatsapp')`,
@@ -331,6 +331,10 @@ function correctionKey(code: string, fixHref: string): CorrectionTargetV1['key']
 
 function positiveDecimal(value: string): boolean {
   return /^\d+(\.\d{1,6})?$/.test(value) && Number(value) > 0
+}
+
+function nonnegativeDecimal(value: string): boolean {
+  return /^\d+(\.\d{1,6})?$/.test(value)
 }
 
 function check(passes: boolean, passCode: string, failCode: string, passMessage: string, failMessage: string, fixHref?: string): ReadinessCheck {

@@ -1,6 +1,6 @@
 # Rollout e rollback — Conversas de Missão
 
-**Data:** 2026-08-31; continuidade corrigida em 2026-10-23
+**Data:** 2026-08-31; continuidade corrigida em 2026-10-23; entrada conversacional corrigida em 2026-10-27
 **Responsável:** operação YUX
 **Escopo:** Harness existente, backend/worker e frontend do YUX Hub
 
@@ -35,13 +35,15 @@ Validação da correção em 23/10/2026: a conversa real `0b969532-7daa-4030-a33
 
 Durante o canário, use `MISSION_CONVERSATIONS_ENABLED=true` e coloque somente o UUID da organização YUX na allowlist. Separe vários UUIDs por vírgula. Allowlist vazia com a flag ligada habilita todos os tenants, portanto não deve ser usada antes da liberação geral.
 
-O modo de compatibilidade do frontend é definido no build:
+A conversa natural com o Harness é a entrada de novos pedidos. O contexto do workspace, calculado pelo backend, define sua disponibilidade. Quando a flag está desligada ou a organização está fora da allowlist, a interface explica a situação e mantém o histórico consultável; não abre o formulário antigo como substituto. O valor legado `missionCreation.mode=form`, retornado por um backend anterior, também recebe essa explicação no frontend novo.
 
-```text
-VITE_MISSION_FORM_COMPATIBILITY=false
-```
+`VITE_MISSION_FORM_COMPATIBILITY` não tinha consumidor no frontend atual e foi removida do Dockerfile, Compose e exemplo de ambiente. Valores remanescentes no painel não controlam a entrada. A mesma organização deve estar liberada em `MISSION_CONVERSATIONS_TENANT_ALLOWLIST` na API e no worker interativo; preserve os UUIDs já presentes. Não esvazie a lista para liberar apenas um cliente, pois lista vazia libera todos os tenants quando a flag está ligada.
 
-Quando publicado com `true`, o botão principal muda para **Criar missão** e abre diretamente o formulário anterior. Como essa variável é incorporada ao build, a alteração exige novo deploy do frontend. O Compose usa `true` por padrão para manter o rollout seguro; durante o canário conversacional, defina explicitamente `VITE_MISSION_FORM_COMPATIBILITY=false`.
+Uma conversa não exige escolher pack, prazo, verba ou autonomia antes de explicar o objetivo. O Harness reúne contexto e propõe os próximos passos; o briefing e o plano são confirmados nas etapas correspondentes. Não classificar automaticamente uma campanha comercial ou orgânica como lançamento de mídia paga. A ausência de um pack executável não impede conversar e construir a estratégia, mas impede prometer uma automação que ainda não exista.
+
+Orçamento zero é permitido para propostas sem gasto de execução. Na confirmação do briefing, custo, horas e contatos zero são preservados em vez de substituídos por tetos maiores; limites ausentes assumem zero, e valores inválidos são recusados. Isso não torna gratuitas as chamadas de IA nem autoriza pesquisa, mídia, mensagens ou outro consumo pago. O planejamento e a execução continuam sujeitos aos custos reais, créditos, estimativas, aprovações e bloqueios existentes. Um plano com custo estimado maior que zero não cabe num limite de execução zero.
+
+Verificação operacional da entrada: consulte `GET /api/workspace/organizations/<UUID>/context`. `missionCreation.mode=conversation` confirma a entrada; `reasonCode=mission_conversation_not_allowlisted` identifica uma liberação pendente dessa organização. Confirme também a configuração equivalente do worker antes de criar um pedido. Mudança de ambiente/deploy e eventual teste pago precisam da autorização correspondente; não aprovam nem executam missões existentes.
 
 ## Ordem de implantação
 
@@ -110,7 +112,7 @@ Rollback imediato se ocorrer qualquer um destes eventos:
 1. Definir `MISSION_CONVERSATIONS_ENABLED=false` no backend e redeploy/restart pelo Dokploy.
 2. Manter tabelas e mensagens; não executar limpeza nem migration reversa.
 3. Interromper novos jobs `action-engine.processMissionConversation`. Jobs ainda não iniciados podem permanecer na fila porque o handler rejeita versões/estados obsoletos; durante incidente de segurança, pause o worker até a triagem.
-4. Publicar o frontend com `VITE_MISSION_FORM_COMPATIBILITY=true` para direcionar novos pedidos ao intake de compatibilidade.
+4. Manter o frontend com a entrada conversacional: ele explica a indisponibilidade dos novos pedidos sem substituir o chat pelo intake antigo.
 5. Permitir que Missions já aprovadas continuem sob seus envelopes, kill switches e aprovações existentes, salvo se o incidente afetar execução.
 
 ## Recuperação para frente

@@ -72,6 +72,7 @@ describe('Action Engine deterministic plan compiler', () => {
     const noApproval = rawPlan(); noApproval.steps.find((step: { stepKey: string }) => step.stepKey === 'pack.approve_canary')!.approvalRequired = false
     expect(() => compile(noApproval)).toThrowError('mission_plan_required_approval_missing')
     expect(() => compile(rawPlan(), '100')).toThrowError('mission_plan_budget_exceeded')
+    expect(() => compile(rawPlan(), '0')).toThrowError('mission_plan_budget_exceeded')
   })
 
   it('rejects invalid wait timeouts at the contract boundary', () => {

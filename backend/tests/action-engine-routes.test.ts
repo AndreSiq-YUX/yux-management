@@ -104,6 +104,29 @@ function auth(role: AuthUser['role']) {
 }
 
 describe('Action Engine routes', () => {
+  it('rejects direct conversation creation when the supervisor is disabled', async () => {
+    const session = auth('yux_admin')
+    app = await buildServer({ ...env, MISSION_SUPERVISOR_ENABLED: false }, { authStore: session.store, pool: new Pool() as never, jobQueue: queue })
+    const response = await app.inject({ method: 'POST', url: '/api/action-engine/mission-conversations',
+      headers: { ...session.headers, 'idempotency-key': 'disabled-supervisor' },
+      payload: { organizationId: orgA, message: 'Quero conversar sobre a estratégia', clientMessageId: 'message-disabled' },
+    })
+    expect(response.statusCode).toBe(503)
+    expect(response.json()).toEqual({ error: 'mission_supervisor_disabled' })
+  })
+
+  it('explains an ambiguous commercial campaign instead of selecting a paid advertising pack', async () => {
+    const session = auth('yux_admin')
+    app = await buildServer(env, { authStore: session.store, pool: new Pool() as never, jobQueue: queue })
+    const response = await app.inject({
+      method: 'POST', url: '/api/action-engine/missions/intents', headers: { ...session.headers, 'idempotency-key': 'generic-campaign' },
+      payload: { organizationId: orgA, objective: 'Criar uma campanha comercial para o representante de massas', mode: 'assisted',
+        deadlineAt: '2027-01-01T00:00:00.000Z', allowedModules: ['crm'], maxTotalCostBrl: '0', maxHumanHours: '0' },
+    })
+    expect(response.statusCode).toBe(409)
+    expect(response.json()).toMatchObject({ error: 'mission_pack_selection_invalid', message: expect.stringContaining('conversa com o agente') })
+  })
+
   it('accepts a Mission conversation, persists the first message and queues processing', async () => {
     const session = auth('yux_admin')
     const added: Array<{ name: string; data: Record<string, unknown>; options?: { jobId?: string } }> = []

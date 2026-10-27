@@ -33,6 +33,34 @@ function scriptedPool(steps: Step[]) {
 }
 
 describe('Mission conversation conversion', () => {
+  it.each(['0', '0.00', 0])('preserves explicit zero limits (%s) in parameters, envelope and budget', async zero => {
+    const zeroBrief = { ...brief, maxTotalCostBrl: zero, maxHumanHours: zero, maxExternalContacts: 0 }
+    const fake = conversionPool(zeroBrief)
+    await confirmMissionConversationBrief(fake.pool, { organizationId: orgId, conversationId, expectedVersion: 3, briefHash: hashCanonical(zeroBrief), confirmedBy: userId })
+    const insert = fake.calls.find(call => call.sql.includes('INSERT INTO public.action_missions'))!
+    expect(insert.params?.[7]).toMatchObject({ maxTotalCostBrl: String(zero), maxHumanHours: String(zero), maxExternalContacts: 0 })
+    expect(insert.params?.[9]).toMatchObject({ maxTotalCostBrl: String(zero), maxHumanHours: String(zero) })
+    expect(insert.params?.[10]).toMatchObject({ maxTotalCostBrl: String(zero), maxHumanHours: String(zero) })
+    expect(fake.steps).toHaveLength(0)
+  })
+
+  it('does not invent spending or contact authorization when limits are absent', async () => {
+    const absentBrief = { ...brief, maxTotalCostBrl: undefined, maxHumanHours: null }
+    const fake = conversionPool(absentBrief)
+    await confirmMissionConversationBrief(fake.pool, { organizationId: orgId, conversationId, expectedVersion: 3, briefHash: hashCanonical(absentBrief), confirmedBy: userId })
+    const insert = fake.calls.find(call => call.sql.includes('INSERT INTO public.action_missions'))!
+    expect(insert.params?.[7]).toMatchObject({ maxTotalCostBrl: '0', maxHumanHours: '0', maxExternalContacts: 0 })
+  })
+
+  it.each([
+    ['maxTotalCostBrl', '-1'], ['maxTotalCostBrl', 'invalid'], ['maxHumanHours', '-1'], ['maxExternalContacts', -1],
+  ])('rejects invalid %s=%s before creating a mission', async (field, value) => {
+    const invalidBrief = { ...brief, [field]: value }
+    const fake = conversionPool(invalidBrief)
+    await expect(confirmMissionConversationBrief(fake.pool, { organizationId: orgId, conversationId, expectedVersion: 3, briefHash: hashCanonical(invalidBrief), confirmedBy: userId })).rejects.toThrow('mission_conversation_limit_invalid')
+    expect(fake.calls.some(call => call.sql.includes('INSERT INTO public.action_missions'))).toBe(false)
+  })
+
   it('pins the confirmed brief and creates exactly one planning Mission in the same transaction', async () => {
     const planningMission = missionRow({ status: 'planning', version: 2 })
     const fake = scriptedPool([
@@ -79,3 +107,21 @@ describe('Mission conversation conversion', () => {
     expect(fake.calls.some(call => call.sql.includes('INSERT INTO public.action_missions'))).toBe(false)
   })
 })
+
+function conversionPool(currentBrief: Record<string, unknown>) {
+  const attached = conversationRow({ current_brief: currentBrief, mission_id: missionId, status: 'planning', version: 4 })
+  return scriptedPool([
+    { match: 'FOR UPDATE', rows: [conversationRow({ current_brief: currentBrief })] },
+    { match: 'FROM public.action_pack_versions', rows: [{ id: packVersionId, key: 'funnel_nurture', semantic_version: FUNNEL_NURTURE_PACK_V1.semanticVersion, content_hash: FUNNEL_NURTURE_PACK_V1.contentHash }] },
+    { match: 'FROM public.organizations organization', rows: [{ kind: 'yux', module_keys: [] }] },
+    { match: 'INSERT INTO public.action_missions', rows: [missionRow()] },
+    { match: 'INSERT INTO public.domain_events', rows: [eventRow('mission.created')] },
+    { match: 'FROM public.action_missions', rows: [missionRow()] },
+    { match: 'UPDATE public.action_missions', rows: [missionRow({ status: 'planning', version: 2 })] },
+    { match: 'INSERT INTO public.domain_events', rows: [eventRow('mission.status_changed')] },
+    { match: 'UPDATE public.action_mission_conversations', rows: [attached] },
+    { match: 'INSERT INTO public.domain_events', rows: [eventRow('mission.conversation_brief_confirmed')] },
+    { match: 'WHERE id = $1 AND organization_id = $2', rows: [attached] },
+    { match: 'ORDER BY sequence ASC', rows: [messageRow()] },
+  ])
+}

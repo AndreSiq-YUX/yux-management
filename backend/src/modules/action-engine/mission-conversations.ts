@@ -197,8 +197,9 @@ export async function confirmMissionConversationBrief(pool: Connectable, input: 
     const deadlineAt = requiredDeadline(currentBrief.deadlineAt)
     const mode = missionMode(currentBrief.mode)
     const objective = requiredBriefString(currentBrief.objective, 'mission_conversation_objective_required')
-    const maxTotalCostBrl = positiveDecimal(currentBrief.maxTotalCostBrl, '1000')
-    const maxHumanHours = positiveDecimal(currentBrief.maxHumanHours, '8')
+    const maxTotalCostBrl = confirmedDecimalLimit(currentBrief.maxTotalCostBrl)
+    const maxHumanHours = confirmedDecimalLimit(currentBrief.maxHumanHours)
+    const maxExternalContacts = confirmedContactLimit(currentBrief.maxExternalContacts)
     const allowedModules = [...new Set(selected.flatMap(item => item.allowedModules))].sort()
     const parameters = conversationMissionParameters(currentBrief, selected.map(item => item.key), deadlineAt, maxTotalCostBrl, maxHumanHours)
     const mission = await createMissionInTransaction(client, {
@@ -224,7 +225,7 @@ export async function confirmMissionConversationBrief(pool: Connectable, input: 
         allowedCapabilityKeys: [],
         maxTotalCostBrl,
         maxHumanHours,
-        ...(positiveInteger(currentBrief.maxExternalContacts) ? { maxExternalContacts: positiveInteger(currentBrief.maxExternalContacts) } : {}),
+        maxExternalContacts,
         expiresAt: deadlineAt,
         alwaysRequireApprovalFor: ['external', 'irreversible', 'destructive'],
       },
@@ -791,6 +792,19 @@ function optionalBriefString(value: unknown): string | undefined {
 function positiveDecimal(value: unknown, fallback: string): string {
   const candidate = typeof value === 'number' || typeof value === 'string' ? String(value) : fallback
   return /^\d+(?:\.\d{1,6})?$/.test(candidate) && Number(candidate) > 0 ? candidate : fallback
+}
+
+function confirmedDecimalLimit(value: unknown): string {
+  if (value == null) return '0'
+  const candidate = typeof value === 'number' || typeof value === 'string' ? String(value) : ''
+  if (!/^\d+(?:\.\d{1,6})?$/.test(candidate)) throw new Error('mission_conversation_limit_invalid')
+  return candidate
+}
+
+function confirmedContactLimit(value: unknown): number {
+  if (value == null) return 0
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw new Error('mission_conversation_limit_invalid')
+  return value
 }
 
 function positiveInteger(value: unknown): number | undefined {

@@ -35,14 +35,26 @@ describe('MissionsWorkspace', () => {
     act(() => root.unmount())
   })
 
-  it('opens the legacy intake only when the backend context declares form mode', async () => {
+  it('explains a legacy form context instead of replacing the conversation with a form', async () => {
     vi.spyOn(actionEngineService, 'listMissions').mockResolvedValue([])
     vi.spyOn(actionEngineService, 'listMissionConversations').mockResolvedValue([])
     const { root } = await renderWorkspace({ mode: 'form', reasonCode: 'mission_conversation_disabled' })
     expect(document.body.textContent).not.toContain('Conversar com o agente')
-    await click('Criar missão')
-    expect(document.body.textContent).toContain('Descreva o resultado desejado')
+    expect(document.body.textContent).toContain('A conversa com o agente está temporariamente indisponível')
+    expect(document.body.textContent).not.toContain('Criar missão')
+    expect(document.body.textContent).not.toContain('Descreva o resultado desejado')
     expect(document.body.textContent).not.toContain('Pode explicar do seu jeito')
+    act(() => root.unmount())
+  })
+
+  it('explains that the conversation has not been released for this workspace without showing a limited alternative', async () => {
+    vi.spyOn(actionEngineService, 'listMissions').mockResolvedValue([])
+    vi.spyOn(actionEngineService, 'listMissionConversations').mockResolvedValue([activeConversation()])
+    const { root } = await renderWorkspace({ mode: 'unavailable', reasonCode: 'mission_conversation_not_allowlisted' })
+    expect(document.body.textContent).toContain('A conversa com o agente ainda não foi liberada para este workspace')
+    expect(document.body.textContent).toContain('Campanha para Londrina')
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.body.textContent).not.toContain('Criar missão')
     act(() => root.unmount())
   })
 

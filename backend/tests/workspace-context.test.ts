@@ -160,10 +160,10 @@ describe('WorkspaceContextV1', () => {
   it('computes the flag and allowlist matrix on the backend', () => {
     expect(resolveMissionCreation(env, internalOrganizationId, true, true).mode).toBe('conversation')
     expect(resolveMissionCreation(env, clientOrganizationId, true, true)).toEqual({
-      mode: 'form', reasonCode: 'mission_conversation_not_allowlisted',
+      mode: 'unavailable', reasonCode: 'mission_conversation_not_allowlisted',
     })
     expect(resolveMissionCreation({ ...env, MISSION_CONVERSATIONS_ENABLED: false }, internalOrganizationId, true, true)).toEqual({
-      mode: 'form', reasonCode: 'mission_conversation_disabled',
+      mode: 'unavailable', reasonCode: 'mission_conversation_disabled',
     })
     expect(resolveMissionCreation({ ...env, MISSION_SUPERVISOR_ENABLED: false }, internalOrganizationId, true, true)).toEqual({
       mode: 'unavailable', reasonCode: 'mission_supervisor_disabled',

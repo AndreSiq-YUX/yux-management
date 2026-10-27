@@ -11,6 +11,28 @@ const flush = () => new Promise(resolve => setTimeout(resolve, 0))
 afterEach(() => { document.body.innerHTML = ''; vi.restoreAllMocks() })
 
 describe('MissionIntake', () => {
+  it('accepts a zero execution budget without changing the submitted limit', async () => {
+    const create = vi.spyOn(actionEngineService, 'createMissionIntent').mockResolvedValue({ id: 'mission-zero' } as ActionMission)
+    const { root } = await renderIntake(true)
+    await click('Recuperação de receita'); await click('Definir limites')
+    await change('input[type="number"]', '0')
+    await click('Criar missão')
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ maxTotalCostBrl: '0' }))
+    act(() => root.unmount())
+  })
+
+  it('rejects an empty or negative execution budget instead of treating it as zero', async () => {
+    const create = vi.spyOn(actionEngineService, 'createMissionIntent')
+    const { root } = await renderIntake(true)
+    await click('Recuperação de receita'); await click('Definir limites')
+    for (const value of ['', '-1']) {
+      await change('input[type="number"]', value)
+      expect(findButton('Criar missão')?.hasAttribute('disabled')).toBe(true)
+    }
+    expect(create).not.toHaveBeenCalled()
+    act(() => root.unmount())
+  })
+
   it('shows one Radar entry only when the organization catalog enables it',async()=>{
     vi.spyOn(actionEngineService,'listPacks').mockResolvedValue([{key:'radar_prospecting'}] as never)
     const {root}=await renderIntake(true)
