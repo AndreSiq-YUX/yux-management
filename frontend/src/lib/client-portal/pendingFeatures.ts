@@ -1,5 +1,5 @@
 export type PendingCode =
-  | 'B1' | 'B2' | 'B3' | 'B4' | 'B5'
+  | 'B1' | 'B2' | 'B3' | 'B5'
   | 'B6' | 'B7' | 'B8' | 'B9' | 'B10'
   | 'B11' | 'B12' | 'B13' | 'B14' | 'B15'
   | 'B16' | 'B17' | 'B18' | 'B19' | 'B20' | 'B21' | 'B22' | 'B23' | 'B24' | 'B25' | 'B26'
@@ -32,12 +32,6 @@ export const PENDING_FEATURES: Record<PendingCode, PendingFeature> = {
     title: 'Aprovação de sugestões criativas',
     clientMessage: 'A aprovação e o pedido de ajuste de sugestões criativas estão em implantação e serão liberados em breve.',
     screens: ['/portal/marketing/criativos'],
-  },
-  B4: {
-    code: 'B4',
-    title: 'Gestão de usuários do portal',
-    clientMessage: 'A gestão de usuários do portal está em implantação e será liberada em breve.',
-    screens: ['/portal/empresa/usuarios'],
   },
   B5: {
     code: 'B5',

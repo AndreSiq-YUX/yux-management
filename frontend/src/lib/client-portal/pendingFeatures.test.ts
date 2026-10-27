@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { PENDING_FEATURES, getPendingFeature, listPendingFeatures, type PendingCode } from './pendingFeatures'
 
-const EXPECTED_CODES = Array.from({ length: 26 }, (_, index) => `B${index + 1}`) as PendingCode[]
+const EXPECTED_CODES = Array.from({ length: 26 }, (_, index) => `B${index + 1}`) .filter(code => code !== 'B4') as PendingCode[]
 
 describe('pendingFeatures', () => {
-  it('registers every code from B1 to B26 with complete fields', () => {
+  it('registers the remaining pending features with complete fields', () => {
     expect(Object.keys(PENDING_FEATURES).sort()).toEqual([...EXPECTED_CODES].sort())
     for (const code of EXPECTED_CODES) {
       const feature = getPendingFeature(code)
@@ -23,6 +23,6 @@ describe('pendingFeatures', () => {
   it('prints the current pending checklist', () => {
     const lines = listPendingFeatures().map(feature => `${feature.code} - ${feature.title} (${feature.screens.join(', ')})`)
     console.info(`Pendências do portal:\n${lines.join('\n')}`)
-    expect(lines).toHaveLength(26)
+    expect(lines).toHaveLength(25)
   })
 })
