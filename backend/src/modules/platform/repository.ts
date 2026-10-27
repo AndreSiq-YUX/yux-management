@@ -749,7 +749,9 @@ export async function syncCrmInstanceEntitlement(
        organization_id = EXCLUDED.organization_id,
        status = CASE
          WHEN crm_instances.status = 'archived' THEN crm_instances.status
-         WHEN crm_instances.blueprint_id IS NOT NULL
+         WHEN (crm_instances.blueprint_id IS NOT NULL OR crm_instances.status = 'active'
+           OR EXISTS (SELECT 1 FROM public.crm_configuration_publications publication
+                      WHERE publication.crm_instance_id = crm_instances.id AND publication.status = 'published'))
            AND EXISTS (
              SELECT 1
              FROM public.crm_pipelines pipeline

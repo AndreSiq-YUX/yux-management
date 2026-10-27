@@ -16,7 +16,7 @@ import {radarPublicPresenceFromDossier} from './public-presence.js'
 import {projectRadarCommercialFacts,radarCommercialFactsSchemaForCompany,radarCommercialText,radarCommercialUrl} from './commercial-view.js'
 
 export type RadarCrmDestination={crmInstanceId:string;pipelineId:string;stageId:string}
-type DeliveryInput={organizationId:string;campaignId:string;configurationRevision:number;candidateIds:string[];destination:RadarCrmDestination;requestId:string}
+type DeliveryInput={organizationId:string;campaignId:string;configurationRevision:number;candidateIds:string[];destination:RadarCrmDestination;requestId:string;deliveryMode?:'qualified'|'discovery_triage'}
 type DeliveryItem={candidateId:string;status:'created'|'already_linked'|'blocked';leadId?:string;pipelineId?:string;reason?:string}
 const failure=(code:string,statusCode=409)=>Object.assign(new Error(code),{statusCode})
 
@@ -66,6 +66,8 @@ export async function listRadarCrmDestinations(pool:pg.Pool,user:AuthUser,organi
 }
 
 export async function deliverRadarCompaniesToCrm(pool:pg.Pool,user:AuthUser,input:DeliveryInput){
+  const triage=input.deliveryMode==='discovery_triage'
+  if(triage&&user.role!=='yux_admin')throw failure('radar_crm_triage_forbidden',403)
   await requireRadarScope(pool,user,{organizationId:input.organizationId,campaignId:input.campaignId},true,true)
   if(!await isRadarEnabledOrganization(pool,input.organizationId))throw failure('radar_forbidden',403)
   const client=await pool.connect(),items:DeliveryItem[]=[]
@@ -78,6 +80,10 @@ export async function deliverRadarCompaniesToCrm(pool:pg.Pool,user:AuthUser,inpu
     // Revalidate the full destination inside this transaction; client-provided IDs are not authorization.
     const destinations=await listRadarCrmDestinations(client as unknown as pg.Pool,user,input.organizationId)
     if(!destinations.some(item=>item.crmInstanceId===input.destination.crmInstanceId&&item.pipelineId===input.destination.pipelineId&&item.stageId===input.destination.stageId))throw failure('radar_crm_destination_invalid',403)
+    if(triage){
+      const first=(await client.query(`SELECT id FROM public.crm_pipeline_stages WHERE pipeline_id=$1 AND is_active=TRUE ORDER BY order_index,id LIMIT 1`,[input.destination.pipelineId])).rows[0]
+      if(first?.id!==input.destination.stageId)throw failure('radar_crm_triage_stage_invalid')
+    }
     const providers=(await client.query(`SELECT provider_key,public_config FROM public.platform_provider_connections WHERE environment='production' AND is_default=TRUE AND provider_key IN ('cnpja','brave_place','serper','perplexity')`)).rows
     for(const candidateId of [...new Set(input.candidateIds)].sort()){
       const candidate=(await client.query(`SELECT candidate.*,review.approved_at,review.configuration_revision AS review_revision,
@@ -90,13 +96,14 @@ export async function deliverRadarCompaniesToCrm(pool:pg.Pool,user:AuthUser,inpu
       if(candidate.status==='discarded'||isRadarSemanticallyOutside(candidate.research_output)||await isRadarCampaignExcluded(client,{organizationId:input.organizationId,campaignId:input.campaignId,identity:{candidateId},criteriaRevision:input.configurationRevision})){block('radar_candidate_excluded');continue}
       if(candidate.crm_lead_id){const linked=(await client.query('SELECT pipeline_id FROM public.leads WHERE id=$1 AND organization_id=$2',[candidate.crm_lead_id,input.organizationId])).rows[0];items.push({candidateId,status:'already_linked',leadId:candidate.crm_lead_id,pipelineId:linked?.pipeline_id});continue}
       const payload=candidate.normalized_payload as Record<string,unknown>
+      if(triage&&(payload.targetStatus==='not_target'||candidate.target_status==='not_target')){block('radar_candidate_excluded');continue}
       const presence=candidate.research_output&&radarPublicPresenceFromDossier(candidate.research_output,input.configurationRevision,{name:String(payload.tradeName||candidate.title),legalName:typeof payload.legalName==='string'?payload.legalName:undefined,cnpj:typeof payload.cnpj==='string'?payload.cnpj:undefined})
       const data=projectRadarCompanyFacts({...payload,...(presence?{publicPresence:presence}: {})},candidate.title)
       const research=resolveRadarSearchConfiguration(campaign.search_configuration).research
-      if(research.completion.enabled&&!radarQualityFromPayload(data,research,input.configurationRevision).readyForReview){block('radar_crm_completion_requirements_missing');continue}
-      if(data.researchAssociationNeedsReview===true&&candidate.verification_method!=='manual'){block('radar_crm_review_required');continue}
-      if(candidate.status!=='pending_review'||!candidate.approved_at||candidate.target_status!=='confirmed'||candidate.review_revision!==input.configurationRevision
-        ||![Number(data.researchRevision??0),Number(data.discoveryRevision??1)].includes(input.configurationRevision)){
+      if(!triage&&research.completion.enabled&&!radarQualityFromPayload(data,research,input.configurationRevision).readyForReview){block('radar_crm_completion_requirements_missing');continue}
+      if(!triage&&data.researchAssociationNeedsReview===true&&candidate.verification_method!=='manual'){block('radar_crm_review_required');continue}
+      if(!triage&&(candidate.status!=='pending_review'||!candidate.approved_at||candidate.target_status!=='confirmed'||candidate.review_revision!==input.configurationRevision
+        ||![Number(data.researchRevision??0),Number(data.discoveryRevision??1)].includes(input.configurationRevision))){
         block('radar_crm_review_required');continue
       }
       try{assertB2bDeliveryRights(candidate.source_type.startsWith('cnpja')?providers.find(row=>row.provider_key==='cnpja')?.public_config??{}:{clientDeliveryLicensed:true},
@@ -116,8 +123,11 @@ export async function deliverRadarCompaniesToCrm(pool:pg.Pool,user:AuthUser,inpu
         .map(row=>({value:row.value,sourceUrl:row.source_url,observedAt:row.observed_at}))
       const lead=(await client.query(`INSERT INTO public.leads(organization_id,crm_instance_id,pipeline_id,stage_id,name,email,phone,company,source,source_kind,status,score,notes,last_activity_at,attribution_context,stage)
         VALUES($1,$2,$3,$4,$5,$6,$7,$5,'Radar Comercial','manual','open',0,$8,NOW(),$9::jsonb,'NEW') RETURNING id`,
-        [input.organizationId,input.destination.crmInstanceId,input.destination.pipelineId,input.destination.stageId,facts.name,facts.email,facts.phone,facts.notes,
-          JSON.stringify({...facts.attribution,radarCandidateId:candidateId,radarCampaignId:input.campaignId,evidence,reviewedBy:user.id,deliveryRequestId:input.requestId,configurationRevision:input.configurationRevision})])).rows[0]
+        [input.organizationId,input.destination.crmInstanceId,input.destination.pipelineId,input.destination.stageId,facts.name,facts.email,facts.phone,
+          triage?`Descoberta importada para qualificação. Importação não aprova aderência, contatos ou consentimento.\n${facts.notes}`:facts.notes,
+          JSON.stringify({...facts.attribution,radarCandidateId:candidateId,radarCampaignId:input.campaignId,evidence,
+            ...(triage?{qualificationStatus:'pending',importedBy:user.id}:{reviewedBy:user.id}),
+            deliveryMode:input.deliveryMode??'qualified',deliveryRequestId:input.requestId,configurationRevision:input.configurationRevision})])).rows[0]
       await client.query(`UPDATE public.radar_candidate_records SET crm_lead_id=$3::uuid,normalized_payload=normalized_payload||jsonb_build_object('crmLeadId',($3::uuid)::text),updated_at=NOW() WHERE id=$1 AND organization_id=$2`,[candidateId,input.organizationId,lead.id])
       items.push({candidateId,status:'created',leadId:lead.id,pipelineId:input.destination.pipelineId})
     }

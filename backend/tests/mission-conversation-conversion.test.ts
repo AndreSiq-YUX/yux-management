@@ -34,6 +34,26 @@ function scriptedPool(steps: Step[]) {
 }
 
 describe('Mission conversation conversion', () => {
+  it('resumes the same blocked mission before a plan exists instead of confirming in a loop', async () => {
+    const blocked=missionRow({status:'blocked',version:3})
+    const attached=conversationRow({mission_id:missionId,version:11})
+    const planning=missionRow({status:'planning',version:4})
+    const fake=scriptedPool([
+      {match:'FOR UPDATE',rows:[attached]},
+      {match:'FROM public.action_missions',rows:[blocked]},
+      {match:'FROM public.action_missions',rows:[blocked]},
+      {match:'UPDATE public.action_missions',rows:[planning]},
+      {match:'INSERT INTO public.domain_events',rows:[eventRow('mission.status_changed')]},
+      {match:'UPDATE public.action_mission_conversations',rows:[]},
+      {match:'WHERE id = $1 AND organization_id = $2',rows:[{...attached,status:'planning',version:12}]},
+      {match:'ORDER BY sequence ASC',rows:[messageRow()]},
+    ])
+    const result=await confirmMissionConversationBrief(fake.pool,{organizationId:orgId,conversationId,expectedVersion:11,briefHash:hashCanonical(brief),confirmedBy:userId})
+    expect(result.mission).toMatchObject({id:missionId,status:'planning',version:4})
+    expect(result.conversation.status).toBe('planning')
+    expect(fake.calls.some(call=>call.sql.includes('INSERT INTO public.action_missions'))).toBe(false)
+    expect(fake.steps).toHaveLength(0)
+  })
   it.each(['icp', 'offer'])('still rejects an empty structured %s instead of inventing business context', async key => {
     const prep = { ...brief, packKeys: ['crm_preparation'], mode: 'prepare', deadlineAt: null,
       constraints: { icp: 'Cozinhas industriais', offer: 'Linha de alimentos', [key]: {} } }

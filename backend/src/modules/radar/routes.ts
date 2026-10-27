@@ -636,7 +636,8 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply
     const params=z.object({id:uuid}).safeParse(request.params)
     const body=z.object({organizationId:uuid,configurationRevision:z.number().int().positive(),candidateIds:z.array(uuid).min(1).max(25),
-      destination:z.object({crmInstanceId:uuid,pipelineId:uuid,stageId:uuid}).strict(),requestId:uuid}).strict().safeParse(request.body)
+      destination:z.object({crmInstanceId:uuid,pipelineId:uuid,stageId:uuid}).strict(),requestId:uuid,
+      deliveryMode:z.enum(['qualified','discovery_triage']).optional()}).strict().safeParse(request.body)
     if(!params.success||!body.success)return reply.code(400).send({error:'invalid_radar_crm_payload'})
     return deliverRadarCompaniesToCrm(app.pg,user,{...body.data,campaignId:params.data.id})
   })

@@ -76,6 +76,10 @@ def test_generates_grounded_typed_artifacts_without_tools() -> None:
     assert len(client.calls) == 4
     assert all("tools" not in call for call in client.calls)
     assert all("NO TOOLS" in call["messages"][0]["content"] for call in client.calls)
+    for call, (node, contract) in zip(client.calls, subject.NODES):
+        envelope = json.loads(call['messages'][1]['content'])
+        assert envelope['specialist'] == node
+        assert envelope['responseSchema'] == contract.model_json_schema()
 
 
 def test_requires_icp_before_spending_specialist_calls() -> None:

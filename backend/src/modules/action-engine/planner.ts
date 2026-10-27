@@ -123,7 +123,12 @@ export async function requestMissionPlan(
     method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${env.YUX_AGENT_RUNTIME_TOKEN}` },
     body: JSON.stringify(wire), signal: AbortSignal.timeout(60_000),
   })
-  if (!response.ok) throw new Error(`agent_harness_plan_failed:${response.status}`)
+  if (!response.ok) {
+    // Retain only a bounded machine code; runtime bodies can contain private data.
+    const body=await response.json().catch(()=>null) as {detail?:unknown}|null
+    const detail=typeof body?.detail==='string'&&/^[a-z][a-z0-9_]{2,100}$/.test(body.detail)?body.detail:undefined
+    throw new Error(`agent_harness_plan_failed:${response.status}${detail?`:${detail}`:''}`)
+  }
   const body = await response.json() as { plan?: unknown; outcome?: string; kind?: string }
   if (body.outcome === 'planning_budget_exhausted') throw new Error('planning_budget_exhausted')
   if (!body.kind && !body.plan) throw new Error('agent_harness_plan_missing')

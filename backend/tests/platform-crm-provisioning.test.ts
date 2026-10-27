@@ -29,6 +29,9 @@ describe('platform CRM provisioning', () => {
     expect(executor.calls[0].sql).toContain('INSERT INTO public.crm_instances')
     expect(executor.calls[0].sql).toContain("SELECT target_organization.id, target_contract.id, 'draft'")
     expect(executor.calls[0].sql).toContain('ON CONFLICT (contract_id) DO UPDATE')
+    expect(executor.calls[0].sql).toContain("OR crm_instances.status = 'active'")
+    expect(executor.calls[0].sql).toContain("publication.status = 'published'")
+    expect(executor.calls[0].sql).toContain('pipeline.is_active = TRUE')
     expect(executor.calls[0].params).toEqual(['contract-1'])
   })
 

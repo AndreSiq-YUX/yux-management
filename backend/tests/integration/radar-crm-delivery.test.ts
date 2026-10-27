@@ -32,6 +32,20 @@ describe.skipIf(!url)('Radar regional delivery to real CRM',()=>{
     await pool.end()
   })
   const input=()=>({organizationId,campaignId,configurationRevision:1,candidateIds:[candidateId],destination:{crmInstanceId:instanceId,pipelineId,stageId},requestId:randomUUID()})
+  it('imports discoveries into triage without fabricating approval and keeps delivery idempotent',async()=>{
+    const id=(await pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'manual','Descoberta para qualificar',$3,$4::jsonb) RETURNING id`,[organizationId,campaignId,randomUUID(),JSON.stringify({targetStatus:'review',productFit:'unknown'})])).rows[0].id
+    const request={...input(),candidateIds:[id],deliveryMode:'discovery_triage' as const}
+    for(const role of ['yux_operator','client_admin','client_member'])await expect(deliverRadarCompaniesToCrm(pool,{...admin,role},request)).rejects.toThrow('radar_crm_triage_forbidden')
+    expect((await deliverRadarCompaniesToCrm(pool,admin,{...request,deliveryMode:'qualified'})).items[0].status).toBe('blocked')
+    const result=await deliverRadarCompaniesToCrm(pool,admin,request)
+    expect(result.items[0].status).toBe('created');extraLeadIds.push(result.items[0].leadId!)
+    const lead=(await pool.query('SELECT notes,attribution_context FROM public.leads WHERE id=$1',[result.items[0].leadId])).rows[0]
+    expect(lead.notes).toContain('Descoberta importada para qualificação')
+    expect(lead.attribution_context).toMatchObject({qualificationStatus:'pending',consent:'not_established',targetStatus:'review'})
+    expect(lead.attribution_context).not.toHaveProperty('reviewedBy')
+    expect((await pool.query('SELECT candidate_id FROM public.radar_b2b_reviews WHERE candidate_id=$1',[id])).rows).toHaveLength(0)
+    expect((await deliverRadarCompaniesToCrm(pool,admin,request)).items[0].status).toBe('already_linked')
+  })
   it('persists only projected commercial attribution even with malformed legacy fields',async()=>{
     const id=(await pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'manual','Brave Transportes',$3,$4::jsonb) RETURNING id`,[organizationId,campaignId,randomUUID(),JSON.stringify({researchRevision:1,websiteUrl:'https://brave.com.br/?api_key=private',websiteStatus:'verified_present',phoneRaw:{provider:'OpenRouter',costUsd:2},targetStatus:{provider:'Brave'},productFit:{model:'private-model'},companyProfile:{summary:{value:'Brave Transportes atende fabricantes',sourceUrl:'https://brave.com.br/'}},publicContacts:[{kind:'email',value:'compras@brave.com.br',association:'confirmed',sourceUrl:'https://brave.com.br/',observedAt:'2026-10-15',provider:'OpenRouter'}]})])).rows[0].id
     await pool.query(`INSERT INTO public.radar_b2b_reviews(candidate_id,organization_id,campaign_id,target_status,product_fit,configuration_revision,verification_method,approved_by,approved_at) VALUES($1,$2,$3,'confirmed','high',1,'manual',$4,NOW())`,[id,organizationId,campaignId,admin.id])

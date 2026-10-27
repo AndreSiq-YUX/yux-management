@@ -187,7 +187,15 @@ export async function confirmMissionConversationBrief(pool: Connectable, input: 
   return inTransaction(pool, async (client) => {
     const current = await lockConversation(client, input.conversationId, input.organizationId)
     if (current.mission_id) {
-      const mission = await getAttachedMission(client, current.mission_id, input.organizationId)
+      let mission = await getAttachedMission(client, current.mission_id, input.organizationId)
+      if(mission.status==='blocked'&&!mission.activePlanId){
+        if(current.version!==input.expectedVersion)throw new Error('mission_conversation_version_conflict')
+        if(hashCanonical(current.current_brief??{})!==input.briefHash)throw new Error('mission_conversation_brief_changed')
+        mission=await transitionMission(client,{missionId:mission.id,organizationId:input.organizationId,expectedVersion:mission.version,
+          toStatus:'planning',actor:{type:'user',id:input.confirmedBy},reason:'conversation_planning_retry'})
+        await client.query(`UPDATE public.action_mission_conversations SET status='planning',version=version+1,updated_at=NOW()
+          WHERE id=$1 AND organization_id=$2`,[current.id,input.organizationId])
+      }
       return { conversation: await getRequiredMissionConversation(client, input.conversationId, input.organizationId), mission }
     }
     if (current.version !== input.expectedVersion) throw new Error('mission_conversation_version_conflict')

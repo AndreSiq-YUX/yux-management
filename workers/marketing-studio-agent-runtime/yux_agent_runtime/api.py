@@ -530,6 +530,9 @@ def create_app(
             )
         except MissionSupervisorError as error:
             status_code = 503 if str(error) == "mission_supervisor_model_unavailable" else 422
+            logger.error("%s", json.dumps(mission_failure_diagnostic(
+                error, stage="planning", status=status_code, context=request.model_dump(),
+            )))
             raise HTTPException(status_code=status_code, detail=str(error)) from error
 
     @app.post("/missions/conversations/turn", dependencies=[Depends(require_runtime_token)])

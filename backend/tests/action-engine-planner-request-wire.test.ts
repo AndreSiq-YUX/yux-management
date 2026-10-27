@@ -28,6 +28,12 @@ function payload(pack: ActionPackVersion & { parameters?: unknown } = RADAR_PROS
 }
 
 describe('real backend catalogs crossing the strict Harness request contract', () => {
+  it.each([
+    ['crm_preparation_scope_invalid', 'agent_harness_plan_failed:422:crm_preparation_scope_invalid'],
+    ['private response https://secret.example/token', 'agent_harness_plan_failed:422'],
+  ])('retains safe diagnostics without exposing a raw response (%s)',async(detail,expected)=>{
+    await expect(requestMissionPlan(env,payload(),async()=>new Response(JSON.stringify({detail}),{status:422}))).rejects.toThrow(expected)
+  })
   for (const pack of [RADAR_PROSPECTING_PACK_V1, REVENUE_RECOVERY_PACK_V0, FUNNEL_NURTURE_PACK_V1, CAMPAIGN_LAUNCH_PACK_V1]) {
     it(`sends ${pack.key} accepted by the exported Python request schema`, async () => {
       const input = payload(pack)
