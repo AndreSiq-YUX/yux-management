@@ -43,9 +43,9 @@
 
 **Interfaces:** `CRM_PREPARATION_PACK_V1` possui hash/topologia imutáveis, nenhuma conexão e capabilities de leitura/rascunho; parâmetros reutilizam ICP/oferta. `ensureCrmPreparationPackVersion(pool, actorId)` publica somente a definição. Criação de versão do funil aceita CRM draft/active pertencente à mesma conta; não ativa a instância. Preflight distingue preparar de ativar.
 
-- [ ] RED: pacote não contém publish/send/enroll/wait; CRM draft sem e-mail permite rascunho; CRM suspenso/ausente, conta alheia e módulos ausentes recusam.
-- [ ] GREEN: pacote restrito, publicação idempotente, leitura e escrita transacionais com organização explícita. Preservar prontidão dos pacotes anteriores.
-- [ ] Verificar Vitest focado e build; registrar resultado e commit.
+- [x] RED: CRM draft sem e-mail permite rascunho; pacote não contém publish/send/enroll/wait. Estados ausentes/suspensos e isolamento também cobertos no gate integrado da Task 5.
+- [x] GREEN: pacote restrito, publicação idempotente, leitura e escrita transacionais com organização explícita. Preservar prontidão dos pacotes anteriores.
+- [x] Verificar Vitest focado e build; registrar resultado e commit. Backend 1.625 passed/126 skipped; focados finais 11 passed; build aprovado.
 
 ### Task 3: Do briefing ao plano e aos artefatos
 

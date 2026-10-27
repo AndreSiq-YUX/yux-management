@@ -3,7 +3,7 @@ import { ACTIVE_MISSION_CHANNELS_SQL } from './channel-readiness-source.js'
 import type { AppJobQueue } from '../../server.js'
 import type { CapabilityContext, CapabilityDefinition, CapabilityRegistry } from './capability-registry.js'
 import { createActionRuns, getMission, recordApproval, recordEvaluation, transitionMission, type Connectable, type Queryable } from './repository.js'
-import type { ActionRunStatus } from './types.js'
+import type { ActionRunStatus, MissionMode } from './types.js'
 import { recordDomainEvent } from '../events/repository.js'
 import {
   collectAutonomyUsage,
@@ -248,6 +248,7 @@ export async function executeActionRun(
   const radarDurable=['radar.capture.start','radar.capture.resume','radar.research.request'].includes(capability.key)
   let fencingToken: string | undefined
   let executionActorId: string | undefined
+  let executionMissionMode: MissionMode | undefined
   let issuedExternalEffect: ExternalEffect | null = null
   let dryRun = false
   try {
@@ -258,6 +259,7 @@ export async function executeActionRun(
       )
       const currentMission = await getMission(client, claimed.action.mission_id, input.organizationId)
       if (!currentMission) throw new Error('mission_not_found')
+      executionMissionMode = currentMission.mode
       const grounding = readGroundingMetadata(claimed.action.compiled_payload)
       if ((capability.effect === 'external' || capability.effect === 'destructive') && grounding) {
         await revalidateMissionGrounding(client, {
@@ -525,7 +527,7 @@ export async function executeActionRun(
     const result = await registry.invoke(claimed.action.capability_key, Number(claimed.action.capability_version), {
       organizationId: input.organizationId, missionId: claimed.action.mission_id,
       actionRunId: input.actionRunId, actor: executionActorId ? { type: 'user', id: executionActorId } : { type: 'system' },
-      idempotencyKey: claimed.action.idempotency_key, dryRun,
+      idempotencyKey: claimed.action.idempotency_key, dryRun, missionMode: executionMissionMode,
       ...(mutationLease ? { mutationLease } : {}), ...(fencingToken ? { fencingToken } : {}),
       query: pool.query.bind(pool), commands: input.commands,
     }, claimed.action.input)

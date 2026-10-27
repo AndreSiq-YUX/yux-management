@@ -1,6 +1,7 @@
 import { REVENUE_RECOVERY_PACK_V0 } from './packs/revenue-recovery-v0.js'
 import { ACTIVE_MISSION_CHANNELS_SQL } from './channel-readiness-source.js'
 import { FUNNEL_NURTURE_PACK_V1 } from './packs/funnel-nurture-v1.js'
+import { CRM_PREPARATION_PACK_V1 } from './packs/crm-preparation-v1.js'
 import { CAMPAIGN_LAUNCH_PACK_V1 } from './packs/campaign-launch-v1.js'
 import { RADAR_PROSPECTING_PACK_V1 } from './packs/radar-prospecting-v1.js'
 import { isRadarEnabledOrganization } from '../radar/repository.js'
@@ -108,13 +109,16 @@ export async function evaluateMissionReadiness(
     agentHarnessHealthy: boolean
     mutationLeaseReady: boolean
     missionId?: string
-    packKey?: 'revenue_recovery' | 'funnel_nurture' | 'campaign_launch' | 'radar_prospecting'
-    packKeys?: Array<'revenue_recovery' | 'funnel_nurture' | 'campaign_launch' | 'radar_prospecting'>
+    mode?: MissionMode
+    packKey?: 'revenue_recovery' | 'funnel_nurture' | 'campaign_launch' | 'radar_prospecting' | 'crm_preparation'
+    packKeys?: Array<'revenue_recovery' | 'funnel_nurture' | 'campaign_launch' | 'radar_prospecting' | 'crm_preparation'>
   },
 ): Promise<MissionReadinessReport> {
   const checks: ReadinessCheck[] = []
   const selectedPackKeys = new Set(input.packKeys ?? (input.packKey ? [input.packKey] : [REVENUE_RECOVERY_PACK_V0.key]))
   const funnelNurture = selectedPackKeys.has(FUNNEL_NURTURE_PACK_V1.key)
+  const preparation = selectedPackKeys.has(CRM_PREPARATION_PACK_V1.key)
+  if (preparation) checks.push(check(input.mode === 'prepare' && selectedPackKeys.size === 1, 'crm_preparation_scope', 'crm_preparation_scope_invalid', 'Somente preparação de rascunhos.', 'A preparação deve usar modo Preparar e não pode incluir outros fluxos.'))
   const campaignLaunch = selectedPackKeys.has(CAMPAIGN_LAUNCH_PACK_V1.key)
   const radar=selectedPackKeys.has(RADAR_PROSPECTING_PACK_V1.key)
   if(radar)checks.push(check(await isRadarEnabledOrganization(client,input.organizationId),'radar_entitled','radar_not_entitled','Radar habilitado.','Radar não habilitado nesta organização.'))
@@ -126,15 +130,18 @@ export async function evaluateMissionReadiness(
   let contractValid = organization.rows[0]?.kind === 'yux' && !input.contractId
   let moduleEnabled = contractValid
   let automationsEnabled = contractValid
+  let crmEnabled = contractValid
   let funnelNurtureEnabled = contractValid
   let campaignsEnabled = contractValid
   let landingPagesEnabled = contractValid
   let campaignLaunchEnabled = contractValid
   if (input.contractId) {
-    const contract = await client.query<{ id: string; action_engine_enabled: boolean; automations_enabled: boolean; funnel_nurture_enabled: boolean; campaigns_enabled: boolean; landing_pages_enabled: boolean; campaign_launch_enabled: boolean }>(
+    const contract = await client.query<{ id: string; action_engine_enabled: boolean; crm_enabled: boolean; automations_enabled: boolean; funnel_nurture_enabled: boolean; campaigns_enabled: boolean; landing_pages_enabled: boolean; campaign_launch_enabled: boolean }>(
       `SELECT contract.id,
               EXISTS (SELECT 1 FROM public.contract_modules module
                       WHERE module.contract_id = contract.id AND module.module_key = 'action_engine' AND module.enabled = TRUE) AS action_engine_enabled
+              ,EXISTS (SELECT 1 FROM public.contract_modules module
+                      WHERE module.contract_id = contract.id AND module.module_key = 'crm' AND module.enabled = TRUE) AS crm_enabled
               ,EXISTS (SELECT 1 FROM public.contract_modules module
                       WHERE module.contract_id = contract.id AND module.module_key = 'automations' AND module.enabled = TRUE) AS automations_enabled
               ,EXISTS (SELECT 1 FROM public.contract_modules module
@@ -153,6 +160,7 @@ export async function evaluateMissionReadiness(
     contractValid = Boolean(contract.rows[0])
     moduleEnabled = contract.rows[0]?.action_engine_enabled ?? false
     automationsEnabled = contract.rows[0]?.automations_enabled ?? false
+    crmEnabled = contract.rows[0]?.crm_enabled ?? false
     funnelNurtureEnabled = contract.rows[0]?.funnel_nurture_enabled ?? false
     campaignsEnabled = contract.rows[0]?.campaigns_enabled ?? false
     landingPagesEnabled = contract.rows[0]?.landing_pages_enabled ?? false
@@ -160,6 +168,10 @@ export async function evaluateMissionReadiness(
   }
   checks.push(check(contractValid, 'contract_valid', 'contract_invalid', 'Contrato ativo e compatível.', 'Contrato ativo não encontrado para a organização.', '/platform/contracts'))
   checks.push(check(moduleEnabled, 'action_engine_enabled', 'action_engine_disabled', 'Action Engine habilitado.', 'Módulo Action Engine não habilitado no contrato.', '/platform/contracts'))
+  if (preparation) {
+    checks.push(check(crmEnabled, 'crm_enabled', 'crm_disabled', 'CRM habilitado.', 'Módulo CRM não habilitado.', '/platform/contracts'))
+    checks.push(check(automationsEnabled, 'automations_enabled', 'automations_disabled', 'Automações habilitadas.', 'Módulo Automações não habilitado.', '/platform/contracts'))
+  }
   if (funnelNurture) {
     checks.push(check(automationsEnabled, 'automations_enabled', 'automations_disabled', 'Automações habilitadas.', 'Módulo Automações não habilitado no contrato.', '/platform/contracts'))
     checks.push(check(funnelNurtureEnabled, 'funnel_nurture_entitled', 'funnel_nurture_not_entitled', 'Agente Funil + Nutrição habilitado.', 'Agente Funil + Nutrição não habilitado no contrato.', '/platform/contracts'))
@@ -171,12 +183,12 @@ export async function evaluateMissionReadiness(
   }
 
   const crm = await client.query<{ id: string }>(
-    `SELECT id FROM public.crm_instances WHERE organization_id = $1 AND status = 'active' LIMIT 1`, [input.organizationId],
+    `SELECT id FROM public.crm_instances WHERE organization_id = $1 AND (status = 'active' OR ($2::boolean AND status = 'draft')) LIMIT 1`, [input.organizationId, preparation],
   )
-  if (funnelNurture || !campaignLaunch&&!radar) checks.push(check(Boolean(crm.rows[0]), 'crm_available', 'crm_unavailable', 'CRM ativo.', 'Nenhuma instância CRM ativa.', '/crm/settings'))
+  if (funnelNurture || !campaignLaunch&&!radar) checks.push(check(Boolean(crm.rows[0]), 'crm_available', 'crm_unavailable', preparation ? 'CRM disponível para rascunhos.' : 'CRM ativo.', preparation ? 'CRM precisa estar provisionado para preparar rascunhos.' : 'Nenhuma instância CRM ativa.', '/crm/settings'))
 
   const claimTargets = [
-    ...(funnelNurture ? [{ resourceKey: 'crm.funnel_nurture_configuration', scope: 'organization_funnel_nurture' }] : []),
+    ...(funnelNurture || preparation ? [{ resourceKey: 'crm.funnel_nurture_configuration', scope: 'organization_funnel_nurture' }] : []),
     ...(campaignLaunch ? [{ resourceKey: 'campaign.provider_account', scope: 'organization_campaign_launch' }] : []),
     ...(!funnelNurture && !campaignLaunch && !radar ? [{ resourceKey: 'crm.lead_population', scope: 'inactive_revenue_recovery' }] : []),
   ]
@@ -198,7 +210,7 @@ export async function evaluateMissionReadiness(
     } : null))
   }
 
-  if (!funnelNurture && !campaignLaunch && !radar) {
+  if (!funnelNurture && !campaignLaunch && !radar && !preparation) {
     const eligible = await client.query<{ count: number | string }>(
     `SELECT COUNT(*)::INT AS count FROM public.leads
      WHERE organization_id = $1 AND COALESCE(last_activity_at, updated_at, created_at) < NOW() - INTERVAL '7 days'`,
@@ -219,7 +231,7 @@ export async function evaluateMissionReadiness(
   )
   checks.push(check(Boolean(owner.rows[0]), 'mission_owner_available', 'mission_owner_missing', 'Responsável disponível.', 'A organização não possui responsável elegível.', '/platform/users'))
 
-  const validEconomics = (radar||positiveDecimal(input.targetRevenueBrl))
+  const validEconomics = (radar||preparation||positiveDecimal(input.targetRevenueBrl))
     && nonnegativeDecimal(input.maxTotalCostBrl)
     && nonnegativeDecimal(input.maxHumanHours)
     && nonnegativeDecimal(input.humanHourlyRateBrl)
@@ -241,7 +253,7 @@ export async function evaluateMissionReadiness(
   }
   if (funnelNurture) {
     checks.push(check(connected.has('email'), 'email_connected', 'email_unavailable', 'Conexão de e-mail ativa.', 'Conecte um provedor de e-mail antes de preparar a nutrição.', '/omnichannel/settings'))
-  } else if (!campaignLaunch&&!radar) {
+  } else if (!campaignLaunch&&!radar&&!preparation) {
     checks.push(channelCheck(connected.has('email'), 'email', '/omnichannel/settings'))
     checks.push(channelCheck(connected.has('whatsapp'), 'whatsapp', '/omnichannel/settings'))
   }
@@ -254,7 +266,7 @@ export async function evaluateMissionReadiness(
   checks.push(check(input.agentHarnessHealthy, 'agent_harness_healthy', 'agent_harness_unavailable', 'Agent Harness disponível para planejamento.', 'Agent Harness indisponível; a missão não pode ser planejada.'))
   checks.push(check(input.mutationLeaseReady, 'mutation_lease_ready', 'mutation_lease_unavailable', 'Assinatura de mutações configurada.', 'A chave isolada de autorização de mutações não está configurada.'))
 
-  const definitions = [REVENUE_RECOVERY_PACK_V0, FUNNEL_NURTURE_PACK_V1, CAMPAIGN_LAUNCH_PACK_V1,RADAR_PROSPECTING_PACK_V1]
+  const definitions = [REVENUE_RECOVERY_PACK_V0, FUNNEL_NURTURE_PACK_V1, CAMPAIGN_LAUNCH_PACK_V1,RADAR_PROSPECTING_PACK_V1, CRM_PREPARATION_PACK_V1]
   for (const expectedPack of definitions.filter((item) => selectedPackKeys.has(item.key))) {
     const pack = await client.query<{ content_hash: string }>(
       `SELECT version.content_hash FROM public.action_pack_versions version
@@ -266,7 +278,7 @@ export async function evaluateMissionReadiness(
     checks.push(check(pack.rows[0]?.content_hash === expectedPack.contentHash, `${expectedPack.key}_pack_ready`, `${expectedPack.key}_pack_missing_or_changed`, 'Action Pack publicado com hash esperado.', 'Pack publicado ausente ou com hash divergente.'))
   }
 
-  const availableChannels: MissionReadinessReport['availableChannels'] = campaignLaunch||radar ? [] : funnelNurture ? ['email'] : ['human_task']
+  const availableChannels: MissionReadinessReport['availableChannels'] = campaignLaunch||radar||preparation ? [] : funnelNurture ? ['email'] : ['human_task']
   return { ready: checks.every((item) => item.status !== 'block'), checks, availableChannels }
 }
 
