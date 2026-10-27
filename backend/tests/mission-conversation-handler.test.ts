@@ -81,6 +81,21 @@ const response = {
 } as MissionConversationTurnResponseWire
 
 describe('Mission conversation job handler', () => {
+  it.each([
+    ['mission_conversation_output_truncated', 'harness_response_incomplete'],
+    ['mission_conversation_runtime_422', 'harness_response_invalid'],
+    ['mission_conversation_runtime_contract_invalid', 'harness_response_invalid'],
+    ['mission_conversation_wire_response_invalid', 'harness_response_invalid'],
+  ])('keeps %s visible and recoverable without appending an invented reply', async (failure, reason) => {
+    const pool = new Pool()
+    const result = await handleActionEngineProcessMissionConversation(pool as never, { MISSION_CONVERSATIONS_ENABLED: true } as AppEnv,
+      { conversationId, organizationId, requestedVersion: 2, audience: 'client_user' },
+      { invokeTurn: async () => { throw new Error(failure) } })
+    expect(result).toMatchObject({ skipped: false, blocked: true, reason })
+    expect(pool.messages).toHaveLength(1)
+    expect(pool.status).toBe('blocked')
+  })
+
   it('builds context, calls Harness once and atomically completes the accepted turn', async () => {
     const pool = new Pool()
     const invokeTurn = vi.fn(async (_env: AppEnv, _request: import('../src/modules/action-engine/generated/mission-wire.js').MissionConversationTurnRequestWire) => response)

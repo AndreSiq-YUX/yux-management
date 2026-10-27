@@ -173,6 +173,24 @@ describe('MissionConversationWorkspace', () => {
     act(() => root.unmount())
   })
 
+  it.each([
+    ['harness_response_incomplete', 'A resposta do agente foi interrompida antes de terminar'],
+    ['harness_response_invalid', 'A resposta do agente não pôde ser validada'],
+  ])('explains %s and keeps a single explicit retry of the saved message', async (code, description) => {
+    const data = conversation({ status: 'blocked' })
+    data.contextReadiness.processingError = code
+    vi.spyOn(actionEngineService, 'getMissionConversation').mockResolvedValue(data)
+    const append = vi.spyOn(actionEngineService, 'appendMissionConversationMessage')
+    const retry = vi.spyOn(actionEngineService, 'retryMissionConversationProcessing').mockResolvedValue({ conversation: { ...data, status: 'collecting_context', contextReadiness: {} }, jobId: 'retry' })
+    const { root } = await renderWorkspace()
+    expect(document.body.textContent).toContain(description)
+    expect(retry).not.toHaveBeenCalled()
+    await click('Tentar novamente sem reenviar')
+    expect(retry).toHaveBeenCalledTimes(1)
+    expect(append).not.toHaveBeenCalled()
+    act(() => root.unmount())
+  })
+
   it('explains exhausted credits and retries processing without resending the message', async () => {
     const data = conversation({ status: 'blocked' })
     data.contextReadiness.processingError = 'insufficient_ai_credits'

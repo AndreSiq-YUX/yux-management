@@ -4,6 +4,7 @@ from copy import deepcopy
 from uuid import UUID
 
 from pydantic import ValidationError
+from yux_agent_runtime.contracts import AgentContractError
 
 from yux_agent_runtime.mission_contracts import MissionConversationTurnRequestWire, MissionConversationTurnResponseWire
 from yux_agent_runtime.mission_conversation import (
@@ -492,6 +493,43 @@ class MissionConversationWorkflowTest(unittest.TestCase):
                     check_references(child)
 
         check_references(schema)
+
+    def test_conversation_output_contract_is_a_system_instruction_not_retrieved_data(self):
+        captured = []
+        self.make_workflow(captured).respond(request())
+        system = captured[0]['messages'][0]['content']
+        user = captured[0]['messages'][1]['content']
+        self.assertIn('Contrato de saída desta tarefa', system)
+        self.assertIn("reply:'texto'", system)
+        self.assertIn('JSON Schema do contrato de saída', system)
+        self.assertIn('resposta compacta e completa', system)
+        self.assertNotIn('JSON Schema do contrato de saída', user)
+        self.assertNotIn('yux:card-growth', system)
+        self.assertNotIn('Diagnóstico antes do canal', system)
+        self.assertIn('yux:card-growth', user)
+        self.assertIn('Empresa A', user)
+        self.assertEqual(captured[0]['max_completion_tokens'], 2200)
+        self.assertEqual(len(captured), 1)
+
+    def test_truncated_output_never_becomes_a_nested_brief_or_triggers_a_paid_repair(self):
+        captured = []
+        def transport(_url, _headers, payload, _method):
+            captured.append(payload)
+            return {'model': payload['model'], 'choices': [{'message': {'content': '{"reply":"Análise inicial", "understood":{"primaryObjective":"Captar clientes"}, "brief":'}, 'finish_reason': 'length'}], 'usage': {'prompt_tokens': 100, 'completion_tokens': 2200, 'total_tokens': 2300}}
+        workflow = MissionConversationWorkflow(build_strategy_workflow_engine(self.make_store(), OpenRouterClient(api_key='test', transport=transport)))
+        with self.assertRaisesRegex(AgentContractError, 'mission_conversation_output_truncated'):
+            workflow.respond(request())
+        self.assertEqual(len(captured), 1)
+
+    def test_empty_truncated_output_is_incomplete_instead_of_an_unavailable_provider(self):
+        captured = []
+        def transport(_url, _headers, payload, _method):
+            captured.append(payload)
+            return {'model': payload['model'], 'choices': [{'message': {'content': ''}, 'finish_reason': 'length'}], 'usage': {'prompt_tokens': 100, 'completion_tokens': 2200, 'total_tokens': 2300}}
+        workflow = MissionConversationWorkflow(build_strategy_workflow_engine(self.make_store(), OpenRouterClient(api_key='test', transport=transport)))
+        with self.assertRaisesRegex(AgentContractError, 'mission_conversation_output_truncated'):
+            workflow.respond(request())
+        self.assertEqual(len(captured), 1)
 
     def test_reuses_harness_strategy_company_brand_product_and_curated_context(self):
         captured = []

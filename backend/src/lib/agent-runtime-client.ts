@@ -47,6 +47,7 @@ export async function invokeMissionConversationTurn(
   } catch (error) {
     const message = error instanceof Error ? error.message : ''
     const status = /^agent_runtime_(\d{3})/.exec(message)?.[1]
+    if (message === 'agent_runtime_422:mission_conversation_output_truncated') throw new Error('mission_conversation_output_truncated')
     if (status) throw new Error(`mission_conversation_runtime_${status}`)
     throw error
   }

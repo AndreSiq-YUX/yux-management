@@ -117,6 +117,16 @@ Rollback imediato se ocorrer qualquer um destes eventos:
 
 ## Recuperação para frente
 
+### Resposta do agente incompleta ou fora do contrato
+
+O formato JSON da conversa é uma instrução confiável do workflow, enviada ao provedor na mensagem de sistema. O catálogo de fontes e o contexto da empresa continuam sendo dados não confiáveis, separados das instruções. O contrato não aumenta o limite configurado de saída: pede uma resposta compacta, sem repetir uma estratégia extensa em `reply`, `understood`, `brief` e `strategyProposal`. Uma proposta grande pode ser desenvolvida em etapas, sem alegar que foi salva.
+
+O leitor aceita somente a primeira raiz JSON completa. Uma explicação ou rascunho repetido após uma raiz completa continua compatível; um objeto interno de uma raiz quebrada não é promovido a resposta. `finish_reason=length` é recusado antes da interpretação. Não há tentativa paga adicional automática nem reparador por LLM.
+
+O runtime retorna apenas códigos seguros para essas falhas. O worker registra `harness_response_incomplete` ou `harness_response_invalid`; a interface explica o impedimento e mantém a mensagem salva. “Tentar novamente sem reenviar” reprocessa explicitamente a mesma mensagem, com a versão atual, sem criar outra mensagem do usuário. A nova tentativa pode consumir IA e depende da autorização de consumo correspondente.
+
+Na falha de 27/10/2026, a resposta recebida pelo validador não continha `reply` e apresentava cinco campos de entendimento na raiz. O defeito de leitura de objetos internos foi reproduzido localmente com essa mesma classe de erro. O conteúdo bruto e o motivo de término daquela chamada não foram preservados: truncamento é uma hipótese compatível, não uma causa comprovada para a chamada histórica. Não alterar o histórico nem inventar uma resposta para suprir a saída ausente.
+
 ### Erro temporário 502/503/504 no envio
 
 O frontend aguarda `yux-backend-api` saudável no Compose. O healthcheck consulta `/api/health/ready`, que exige banco e Redis disponíveis. Isso reduz a janela de início sem backend pronto; não é uma promessa de deploy sem interrupção de conexões já abertas.

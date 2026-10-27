@@ -18,6 +18,9 @@ _WIRE_FIELDS = {"body"} | {
     for field in model.model_fields
 }
 _CONTRACT_CODES = {
+    "mission_conversation_output_truncated",
+    "agent_output_invalid_json",
+    "agent_output_object_required",
     "mission_conversation_unknown_source_ref",
     "mission_conversation_usage_total_invalid",
     "mission_source_governed_identity_incomplete",

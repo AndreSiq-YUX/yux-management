@@ -15,6 +15,25 @@ from yux_agent_runtime.runtime_store import InMemoryAgentRuntimeStore
 
 
 class MissionDiagnosticsTest(unittest.TestCase):
+    def test_truncated_output_has_a_safe_public_code_and_no_raw_response(self):
+        class Workflow:
+            def respond(self, _request):
+                raise ValueError('mission_conversation_output_truncated')
+        response, diagnostic = self.post(Workflow())
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()['detail'], 'mission_conversation_output_truncated')
+        self.assertEqual(diagnostic['code'], 'mission_conversation_output_truncated')
+
+    def test_invalid_response_returns_a_safe_code_without_validation_input(self):
+        class Workflow:
+            def respond(self, request):
+                return MissionConversationTurnResponseWire.model_validate({'privateField': request.user_message})
+        response, _diagnostic = self.post(Workflow())
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()['detail'], 'mission_conversation_response_invalid')
+        self.assertNotIn('privateField', response.text)
+        self.assertNotIn('private-client@example.com', response.text)
+
     def setUp(self):
         self.env = patch.dict(os.environ, {"YUX_AGENT_RUNTIME_TOKEN": "test-token"})
         self.env.start()

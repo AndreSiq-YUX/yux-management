@@ -200,6 +200,8 @@ function stringArray(value: unknown): string[] {
 
 function safeConversationError(error: unknown): string {
   const message = error instanceof Error ? error.message : 'unknown'
+  if (message === 'mission_conversation_output_truncated') return 'harness_response_incomplete'
+  if (['mission_conversation_runtime_contract_invalid', 'mission_conversation_wire_response_invalid', 'mission_conversation_runtime_422'].includes(message)) return 'harness_response_invalid'
   if (message.includes('timeout') || message.includes('aborted')) return 'harness_timeout'
   if (message.includes('mission_conversation_runtime_402')) return 'insufficient_ai_credits'
   if (message.includes('mission_conversation_runtime_503')) return 'harness_unavailable'

@@ -353,18 +353,17 @@ def parse_json_object(content: str) -> dict[str, Any]:
         # repeated draft after the first complete object. Decode the first
         # complete object deterministically; the selected object still passes
         # the same strict downstream contract validation.
-        value = None
-        decoder = json.JSONDecoder()
-        for match in re.finditer(r"\{", text):
-            try:
-                candidate, _end = decoder.raw_decode(text[match.start():])
-            except json.JSONDecodeError:
-                continue
-            if isinstance(candidate, dict):
-                value = candidate
-                break
-        if value is None:
+        # Never search inside a broken root: a complete nested object is not
+        # a response and can bypass the intended downstream contract.
+        start = next((index for index, char in enumerate(text) if char in "[{"), -1)
+        if start < 0:
             raise AgentContractError("agent_output_invalid_json") from error
+        if text[start] == "[":
+            raise AgentContractError("agent_output_object_required") from error
+        try:
+            value, _end = json.JSONDecoder().raw_decode(text[start:])
+        except json.JSONDecodeError as root_error:
+            raise AgentContractError("agent_output_invalid_json") from root_error
     if not isinstance(value, dict):
         raise AgentContractError("agent_output_object_required")
     return value

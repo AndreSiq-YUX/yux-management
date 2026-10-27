@@ -558,7 +558,10 @@ def create_app(
             logger.error("%s", json.dumps(mission_failure_diagnostic(
                 error, stage="processing", status=422, context=request.model_dump(),
             )))
-            raise HTTPException(status_code=422, detail=str(error)) from error
+            code = ("mission_conversation_output_truncated"
+                    if str(error) == "mission_conversation_output_truncated"
+                    else "mission_conversation_response_invalid")
+            raise HTTPException(status_code=422, detail=code) from error
         except ProviderRequestError as error:
             logger.error("%s", json.dumps(mission_failure_diagnostic(
                 error, stage="provider", status=503, context=request.model_dump(),

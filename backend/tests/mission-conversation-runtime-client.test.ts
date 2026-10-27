@@ -22,6 +22,20 @@ const valid = {
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 
 describe('Mission conversation runtime client', () => {
+  it('preserves only the allowlisted incomplete-output code without adding a paid retry', async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ detail: 'mission_conversation_output_truncated' }), { status: 422 }))
+    vi.stubGlobal('fetch', fetch)
+    await expect(invokeMissionConversationTurn(env, request)).rejects.toThrow('mission_conversation_output_truncated')
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('classifies invalid response schemas without propagating raw provider content', async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ detail: 'private-provider-content' }), { status: 422 }))
+    vi.stubGlobal('fetch', fetch)
+    await expect(invokeMissionConversationTurn(env, request)).rejects.toThrow('mission_conversation_runtime_422')
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
   it('uses the typed endpoint, bearer token and exactly one HTTP call', async () => {
     const fetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify(valid), { status: 200 }))
     vi.stubGlobal('fetch', fetch)

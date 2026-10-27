@@ -61,6 +61,8 @@ export function MissionConversationThread({ strategyHref, conversation, processi
 }
 
 function processingErrorMessage(code: string) {
+  if (code === 'harness_response_incomplete') return 'A resposta do agente foi interrompida antes de terminar. Sua mensagem foi salva; tente novamente sem reenviar.'
+  if (code === 'harness_response_invalid') return 'A resposta do agente não pôde ser validada. Sua mensagem foi salva; tente novamente sem reenviar.'
   if (code === 'insufficient_ai_credits') return 'Os créditos de IA deste contrato acabaram. Sua mensagem foi salva; recarregue os créditos e tente novamente sem reenviar.'
   if (code === 'harness_unavailable') return 'O agente de estratégia está temporariamente indisponível. Sua mensagem foi salva.'
   if (code === 'harness_timeout' || code === 'conversation_processing_stalled') return 'A análise demorou mais do que o esperado. Sua mensagem foi salva.'
