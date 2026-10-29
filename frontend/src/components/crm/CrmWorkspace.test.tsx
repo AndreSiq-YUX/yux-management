@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CrmWorkspace } from './CrmWorkspace'
 import { crmGovernanceService } from '@/services/crmGovernanceService'
 import { crmService } from '@/services/crmService'
+import { crmRecordProfileService } from '@/services/crmRecordProfileService'
 import { usePlatformStore } from '@/stores/platformStore'
 import type { CrmLead, CrmPipeline } from '@/types/crm'
 
@@ -38,6 +39,21 @@ vi.mock('@/services/crmGovernanceService', () => ({
     getGovernanceContext: vi.fn(),
   },
 }))
+
+vi.mock('@/services/crmRecordProfileService', () => ({
+  crmRecordProfileService: { getConfiguration: vi.fn() },
+}))
+
+const customerProfileConfiguration = {
+  canConfigure: true, maxFieldCount: 20,
+  recordTypes: [{ id: 'kitchen', crmInstanceId: 'crm-instance-1', name: 'Cozinha industrial', isActive: true }],
+  fields: [{ id: 'meals-field', stableKey: 'meals', crmInstanceId: 'crm-instance-1', recordTypeId: 'kitchen',
+    label: 'Refeições diárias', fieldType: 'number' as const, required: true, options: [], isActive: true, orderIndex: 0 }],
+}
+
+beforeEach(() => {
+  vi.mocked(crmRecordProfileService.getConfiguration).mockResolvedValue(customerProfileConfiguration)
+})
 
 const pipeline: CrmPipeline = {
   id: 'pipeline-1',
@@ -440,6 +456,29 @@ describe('CrmWorkspace (variante portal)', () => {
     })
     return { container, root }
   }
+
+  it('inclui os campos personalizados no formulário atual do portal e envia o perfil com o lead', async () => {
+    vi.mocked(crmService.getPipelines).mockResolvedValue([{ ...pipeline, crmInstanceId: 'crm-instance-1' }])
+    vi.mocked(crmService.createLead).mockResolvedValue(leads[0])
+    const { container, root } = await renderPortal()
+    expect(container.textContent).toContain('Tipos e campos')
+    await act(async () => click([...container.querySelectorAll('button')].find(button => button.textContent === 'Novo lead')))
+    const form = document.querySelector('form')!
+    await act(async () => {
+      setNativeInput(document.querySelector('#new-lead-name')!, 'Cozinha São Lucas')
+      setNativeInput(document.querySelector('#new-lead-email')!, 'cozinha@example.com')
+    })
+    const typeLabel = [...form.querySelectorAll('label')].find(label => label.textContent === 'Tipo de cliente')!
+    const selector = document.getElementById(typeLabel.htmlFor) as HTMLSelectElement
+    await act(async () => { selector.value = 'kitchen'; selector.dispatchEvent(new Event('change', { bubbles: true })) })
+    const mealsLabel = [...form.querySelectorAll('label')].find(label => label.textContent === 'Refeições diárias *')!
+    await act(async () => setNativeInput(document.getElementById(mealsLabel.htmlFor)!, '0'))
+    await act(async () => { form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await flush() })
+    expect(crmService.createLead).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Cozinha São Lucas', profile: { recordTypeId: 'kitchen', values: { meals: 0 } },
+    }))
+    act(() => root.unmount())
+  })
 
   it('usa o vocabulário do cliente: Leads, Funil, análise recolhida e filtros recolhidos', async () => {
     const { container, root } = await renderPortal()

@@ -81,6 +81,7 @@ type LeadRow = {
   id: string
   organization_id: string
   crm_instance_id: string | null
+  record_type_id?: string | null
   pipeline_id: string
   stage_id: string
   team_id: string | null
@@ -313,7 +314,7 @@ export async function listPipelines(pool: pg.Pool, user: AuthUser, organizationI
   return hydratePipelines(pool, result.rows)
 }
 
-export async function createLead(pool: pg.Pool, user: AuthUser, input: CrmLeadInput) {
+export async function createLead(pool: Pick<pg.Pool, 'query'>, user: AuthUser, input: CrmLeadInput) {
   await requireOrganizationAccess(pool, user, input.organizationId)
 
   const result = await pool.query<LeadRow>(
@@ -339,8 +340,8 @@ export async function createLead(pool: pg.Pool, user: AuthUser, input: CrmLeadIn
       input.ownerMemberId ?? null,
       input.pipelineVersionId ?? null,
       input.stageVersionId ?? null,
-      input.assignmentState ?? (input.ownerMemberId ? 'assigned' : null),
-      input.assignmentMode ?? null,
+      input.assignmentState ?? (input.ownerMemberId ? 'assigned' : 'in_queue'),
+      input.assignmentMode ?? 'queue',
       input.name,
       input.email,
       input.phone ?? null,
@@ -726,7 +727,7 @@ async function getLeadForAccess(pool: pg.Pool, user: AuthUser, leadId: string) {
   return lead
 }
 
-async function requireOrganizationAccess(pool: pg.Pool, user: AuthUser, organizationId: string) {
+async function requireOrganizationAccess(pool: Pick<pg.Pool, 'query'>, user: AuthUser, organizationId: string) {
   if (isInternal(user)) return
 
   const result = await pool.query<{ ok: number }>(
@@ -893,6 +894,7 @@ function mapLead(row: LeadRow) {
     id: row.id,
     organizationId: row.organization_id,
     crmInstanceId: row.crm_instance_id ?? undefined,
+    recordTypeId: row.record_type_id ?? undefined,
     pipelineId: row.pipeline_id,
     stageId: row.stage_id,
     teamId: row.team_id ?? undefined,

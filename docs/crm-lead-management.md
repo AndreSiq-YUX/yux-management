@@ -1,6 +1,58 @@
 # CRM e Gestao de Leads
 
-Atualizado em: 2026-06-04
+Atualizado em: 2026-10-29
+
+## Tipos de cliente e campos personalizados
+
+No cockpit de leads, administradores autorizados usam **Tipos e campos** para
+cadastrar tipos de cliente por instância CRM (por exemplo, Cozinha industrial,
+Mercado e Hotel). Um campo pode pertencer a um tipo específico ou ser comum a
+todos os tipos daquela instância. As configurações não são compartilhadas entre
+clientes/contratos.
+
+Formatos disponíveis: texto curto, texto longo, número, data, seleção e sim/não.
+Cada campo tem nome e opção de preenchimento obrigatório. Seleções são criadas
+com uma opção por linha. A administração permite renomear, alterar
+obrigatoriedade, arquivar e restaurar; formato e opções de um campo existente
+permanecem imutáveis para preservar o significado das respostas anteriores.
+
+O formulário **Novo lead** inclui o seletor **Tipo de cliente** e os campos
+correspondentes. Na ficha existente, a aba **Perfil do cliente** permite
+selecionar outro tipo, editar respostas e salvar. A troca de tipo não apaga
+respostas: somente os campos aplicáveis são exibidos e validados. Campos comuns
+continuam disponíveis em leads sem tipo. Campos e tipos arquivados preservam
+os dados; um tipo arquivado continua editável nos leads que já o utilizam,
+mas não pode ser escolhido em novos leads.
+
+A API valida o escopo da organização, instância, tipo e acesso ao lead. A gestão
+requer administrador CRM ativo e `allow_client_field_customization` (ou acesso
+interno YUX). O limite `max_custom_field_count` contabiliza campos ativos. Zero
+e falso são valores válidos em campos obrigatórios. A criação do lead com
+`profile: { recordTypeId, values }` é transacional e reverte integralmente se a
+validação do perfil falhar. Integrações legadas que não enviam `profile` mantêm
+o contrato anterior de criação.
+
+Dados extras recebidos por formulários sem definição cadastrada aparecem como
+consulta em **Outros dados recebidos por formulário**. Na configuração de cada
+campo, **Chave para formulários externos** mostra a chave estável para os
+mapeamentos existentes. A captura externa não seleciona automaticamente o tipo
+de cliente.
+
+Persistência: migration `backend/src/db/migrations/0179_crm_record_types.sql`;
+nova tabela `crm_record_types`, vínculo `record_type_id` em leads/definições e
+reutilização de `lead_custom_field_values`. Aplicar a migration no banco alvo
+antes de publicar o backend e o frontend desta funcionalidade.
+
+Endpoints autenticados sob `/api/crm`:
+
+- `GET /record-profile/configuration?crmInstanceId=...`
+- `POST /record-types`, `PATCH /record-types/:id`
+- `POST /custom-fields`, `PATCH /custom-fields/:id`
+- `GET /leads/:id/profile`, `PUT /leads/:id/profile`
+
+Cobertura: testes de domínio/rotas em `backend/tests/crm-record-profile.test.ts`,
+testes com PostgreSQL/RLS em `backend/tests/integration/crm-record-profile.test.ts`
+e componentes em `frontend/src/components/crm/LeadProfile.test.tsx`.
 
 ## Integracao com YUX Strategy Engine
 

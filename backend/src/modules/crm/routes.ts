@@ -44,6 +44,8 @@ import {
 import { combinedScore, matchesScoringRule } from './scoring-engine.js'
 import { recordDomainEvent } from '../events/repository.js'
 import { DOMAIN_EVENT_TYPES } from '../events/catalog.js'
+import { registerRecordProfileRoutes } from './record-profile-routes.js'
+import { inProfileTransaction, profileInputSchema, saveLeadProfile } from './record-profile.js'
 
 const conversationAllowedTables = new Set([
   'leads',
@@ -136,9 +138,10 @@ const leadInputSchema = z.object({
   lastActivityAt: z.string().optional(),
   nextFollowUpAt: z.string().optional(),
   attributionContext: z.record(z.string(), z.unknown()).optional(),
+  profile: profileInputSchema.optional(),
 })
 
-const leadPatchSchema = leadInputSchema.partial().extend({
+const leadPatchSchema = leadInputSchema.omit({ profile: true }).partial().extend({
   stage: z.string().optional(),
   lostReason: z.string().nullable().optional(),
   wonAt: z.string().nullable().optional(),
@@ -292,6 +295,7 @@ async function getAuthenticatedUser(request: FastifyRequest, reply: FastifyReply
 }
 
 export async function registerCrmRoutes(app: FastifyInstance) {
+  await registerRecordProfileRoutes(app, getAuthenticatedUser)
   app.post('/conversation-query', async (request, reply) => {
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
@@ -549,7 +553,17 @@ export async function registerCrmRoutes(app: FastifyInstance) {
     const parsed = leadInputSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_lead_payload' })
 
-    return reply.code(201).send(await createLead(app.pg, user, parsed.data))
+    const input = parsed.data
+    const profile = input.profile
+    if (profile) {
+      const lead = await inProfileTransaction(app.pg, async db => {
+        const created = await createLead(db, user, input)
+        await saveLeadProfile(db, user, created.id, profile, true)
+        return { ...created, recordTypeId: profile.recordTypeId }
+      })
+      return reply.code(201).send(lead)
+    }
+    return reply.code(201).send(await createLead(app.pg, user, input))
   })
 
   app.patch('/leads/:id', async (request, reply) => {

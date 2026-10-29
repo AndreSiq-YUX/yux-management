@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -25,21 +25,27 @@ export function LeadCreateDialog({
   open,
   onOpenChange,
   onCreate,
+  children,
+  disabled = false,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCreate: (values: NewLeadValues) => Promise<void>
+  children?: ReactNode
+  disabled?: boolean
 }) {
   const [values, setValues] = useState<NewLeadValues>(emptyValues)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const set = (key: keyof NewLeadValues) => (event: { target: { value: string } }) => setValues(current => ({ ...current, [key]: event.target.value }))
 
-  const submit = async (event: FormEvent) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (disabled || saving) return
     if (!values.name.trim()) return setError('Informe o nome do lead.')
     if (!emailPattern.test(values.email.trim())) return setError('Informe um e-mail válido. Ele é obrigatório para cadastrar o lead.')
     if (values.value && (!Number.isFinite(Number(values.value)) || Number(values.value) < 0)) return setError('O valor estimado deve ser um número maior ou igual a zero.')
+    if (!event.currentTarget.reportValidity()) return
     setSaving(true)
     setError(null)
     try {
@@ -48,7 +54,7 @@ export function LeadCreateDialog({
       onOpenChange(false)
     } catch (createError) {
       console.error('Erro ao criar lead:', createError)
-      setError('Não foi possível criar o lead. Tente novamente.')
+      setError(createError instanceof Error ? createError.message : 'Não foi possível criar o lead. Tente novamente.')
     } finally {
       setSaving(false)
     }
@@ -91,10 +97,11 @@ export function LeadCreateDialog({
               <Input id="new-lead-value" className="mt-1" type="number" min="0" step="0.01" inputMode="decimal" value={values.value} onChange={set('value')} />
             </div>
           </div>
+          <fieldset disabled={saving}>{children}</fieldset>
           {error && <p role="alert" className="rounded-lg border border-yx-crit-line bg-yx-crit-soft px-3 py-2 text-[13px] text-yx-crit">{error}</p>}
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>Cancelar</Button>
-            <Button type="submit" disabled={saving}>{saving ? 'Criando...' : 'Criar lead'}</Button>
+            <Button type="submit" disabled={saving || disabled}>{saving ? 'Criando...' : 'Criar lead'}</Button>
           </div>
         </form>
       </DialogContent>

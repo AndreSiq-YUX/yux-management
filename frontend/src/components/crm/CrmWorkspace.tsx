@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef,useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useRef,useState, type ReactNode } from 'react'
 import { leadSourceLabel } from '@/lib/crm/leadSourceLabel'
 import { AlertCircle, Pause, Play, Plus, RefreshCw, Upload, UserRoundCheck } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -20,6 +20,12 @@ import { LeadAdvancedFilters } from '@/components/crm/LeadAdvancedFilters'
 import { LeadAnalysisRequest } from '@/components/crm/LeadAnalysisRequest'
 import { LeadCreateDialog, type NewLeadValues } from '@/components/crm/LeadCreateDialog'
 import { Lead360Panel } from '@/components/crm/Lead360Panel'
+import { LeadProfileFields } from '@/components/crm/LeadProfileFields'
+import { LeadProfilePanel } from '@/components/crm/LeadProfilePanel'
+import { CrmRecordConfiguration } from '@/components/crm/CrmRecordConfiguration'
+import { useCrmProfileConfiguration } from '@/hooks/useCrmProfileConfiguration'
+import { applicableProfileValues } from '@/types/crmRecordProfile'
+import type { CustomFieldValues } from '@/types/crmRecordProfile'
 import { LeadSourcesDashboard } from '@/components/crm/LeadSourcesDashboard'
 import { LeadKanbanBoard } from '@/components/crm/LeadKanbanBoard'
 import { LeadTaskPanel } from '@/components/crm/LeadTaskPanel'
@@ -74,11 +80,21 @@ export function CrmWorkspace({ initialPipelineId, initialLeadId, profile = 'inte
   const [selectedLead, setSelectedLead] = useState<CrmLead>()
   const [createOpen, setCreateOpen] = useState(false)
   const [leadForm, setLeadForm] = useState(initialLeadForm)
+  const [recordTypeId, setRecordTypeId] = useState<string | null>(null)
+  const [customValues, setCustomValues] = useState<CustomFieldValues>({})
+  const [configurationOpen, setConfigurationOpen] = useState(false)
+  const [creatingLead, setCreatingLead] = useState(false)
+  const [createError, setCreateError] = useState('')
   const [activeTab, setActiveTab] = useState<CockpitTab>(() => (isPortal && prefersListView() ? 'list' : 'kanban'))
   const [filters, setFilters] = useState<CrmCockpitFilterState>(() => (isPortal && initialSearch?.trim() ? { search: initialSearch.trim() } : {}))
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const pipeline = pipelines.find(item => item.id === pipelineId)
+  const crmInstanceId = governance?.instance.id || pipeline?.crmInstanceId
+  const profileConfiguration = useCrmProfileConfiguration(crmInstanceId)
+  useEffect(() => {
+    setRecordTypeId(null); setCustomValues({}); setCreateError(''); setConfigurationOpen(false)
+  }, [crmInstanceId])
   const stages = useMemo(() => sortPipelineStages(pipeline?.stages || []), [pipeline])
   const stageById = useMemo(() => new Map(stages.map(stage => [stage.id, stage])), [stages])
   const sources = useMemo(() => Array.from(new Set(leads.map(lead => lead.source).filter(Boolean))).sort(), [leads])
@@ -173,7 +189,9 @@ export function CrmWorkspace({ initialPipelineId, initialLeadId, profile = 'inte
 
   const createLead = async (event: FormEvent) => {
     event.preventDefault()
-    if (!organization?.id || !pipelineId || !stages[0]) return
+    if (!organization?.id || !pipelineId || !stages[0] || creatingLead) return
+    if (crmInstanceId && !profileConfiguration.configuration) return
+    setCreatingLead(true); setCreateError('')
     try {
       const baseLead = {
         organizationId: organization.id, pipelineId, stageId: stages[0].id,
@@ -181,6 +199,10 @@ export function CrmWorkspace({ initialPipelineId, initialLeadId, profile = 'inte
         phone: leadForm.phone.trim() || undefined, company: leadForm.company.trim() || undefined,
         source: leadForm.source.trim() || 'Manual', score: Number(leadForm.score),
         value: leadForm.value ? Number(leadForm.value) : undefined,
+        ...(crmInstanceId && profileConfiguration.configuration ? {
+          crmInstanceId,
+          profile: { recordTypeId, values: applicableProfileValues(profileConfiguration.configuration.fields, recordTypeId, customValues) },
+        } : {}),
       }
 
       if (governance?.instance.id) {
@@ -192,21 +214,28 @@ export function CrmWorkspace({ initialPipelineId, initialLeadId, profile = 'inte
       } else {
         await crmService.createLead(baseLead)
       }
-      setLeadForm(initialLeadForm); setCreateOpen(false); toast.success('Lead criado'); loadLeads()
+      setLeadForm(initialLeadForm); setRecordTypeId(null); setCustomValues({}); setCreateOpen(false); toast.success('Lead criado'); loadLeads()
     } catch (error) {
-      console.error('Erro ao criar lead:', error); toast.error('Erro ao criar lead')
+      console.error('Erro ao criar lead:', error); setCreateError(error instanceof Error ? error.message : 'Erro ao criar lead'); toast.error('Erro ao criar lead')
+    } finally {
+      setCreatingLead(false)
     }
   }
 
   /** Variante portal: o diálogo valida e mostra o erro; aqui só enviamos (a pontuação nasce das regras). */
   const createPortalLead = async (values: NewLeadValues) => {
     if (!organization?.id || !pipelineId || !stages[0]) throw new Error('funnel_required')
+    if (crmInstanceId && !profileConfiguration.configuration) throw new Error('Aguarde o carregamento dos campos personalizados.')
     const baseLead = {
       organizationId: organization.id, pipelineId, stageId: stages[0].id,
       name: values.name.trim(), email: values.email.trim(),
       phone: values.phone.trim() || undefined, company: values.company.trim() || undefined,
       source: values.source.trim() || 'Manual', score: 0,
       value: values.value ? Number(values.value) : undefined,
+      ...(crmInstanceId && profileConfiguration.configuration ? {
+        crmInstanceId,
+        profile: { recordTypeId, values: applicableProfileValues(profileConfiguration.configuration.fields, recordTypeId, customValues) },
+      } : {}),
     }
     if (governance?.instance.id) {
       await crmService.createGovernedLead({
@@ -217,6 +246,7 @@ export function CrmWorkspace({ initialPipelineId, initialLeadId, profile = 'inte
     } else {
       await crmService.createLead(baseLead)
     }
+    setRecordTypeId(null); setCustomValues({})
     toast.success('Lead criado.')
     void loadLeads()
   }
@@ -230,6 +260,23 @@ export function CrmWorkspace({ initialPipelineId, initialLeadId, profile = 'inte
       console.error('Erro ao mover lead:', error); toast.error('Erro ao atualizar etapa')
     }
   }
+
+  const configurationAction = crmInstanceId && profileConfiguration.configuration?.canConfigure
+    ? <Button type="button" variant="outline" onClick={() => setConfigurationOpen(true)}>Tipos e campos</Button>
+    : null
+  const configurationDialog = crmInstanceId ? (
+    <Dialog open={configurationOpen} onOpenChange={setConfigurationOpen}>
+      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+        <DialogHeader><DialogTitle>Tipos de cliente e campos personalizados</DialogTitle></DialogHeader>
+        <CrmRecordConfiguration key={crmInstanceId} crmInstanceId={crmInstanceId} onChanged={profileConfiguration.reload} />
+      </DialogContent>
+    </Dialog>
+  ) : null
+  const customProfileFields = <>
+    {profileConfiguration.loading && <p role="status" className="text-sm">Carregando campos personalizados...</p>}
+    {profileConfiguration.error && <div className="flex flex-col gap-2"><p role="alert" className="text-sm text-destructive">{profileConfiguration.error}</p><Button type="button" variant="outline" onClick={profileConfiguration.reload}>Tentar carregar campos novamente</Button></div>}
+    {profileConfiguration.configuration && <LeadProfileFields configuration={profileConfiguration.configuration} recordTypeId={recordTypeId} values={customValues} onTypeChange={setRecordTypeId} onValuesChange={setCustomValues} disabled={creatingLead} />}
+  </>
 
   if (isPortal) {
     return <PortalLeadsView
@@ -262,6 +309,11 @@ export function CrmWorkspace({ initialPipelineId, initialLeadId, profile = 'inte
       createOpen={createOpen}
       onCreateOpenChange={setCreateOpen}
       onCreateLead={createPortalLead}
+      customProfileFields={customProfileFields}
+      profileCreateDisabled={Boolean(crmInstanceId && !profileConfiguration.configuration)}
+      configurationAction={configurationAction}
+      configurationDialog={configurationDialog}
+      crmInstanceId={crmInstanceId}
       organizationId={organization?.id || ''}
       selectedLead={selectedLead}
       onCloseLead={() => setSelectedLead(undefined)}
@@ -295,8 +347,9 @@ export function CrmWorkspace({ initialPipelineId, initialLeadId, profile = 'inte
   return <div className="space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div><h1 className="text-2xl font-bold text-gray-900">{workspaceTitle}</h1><p className="text-gray-600">Pipeline comercial de {organization.name}</p></div>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Select value={pipelineId} onValueChange={setPipelineId}><SelectTrigger className="w-52"><SelectValue placeholder="Pipeline" /></SelectTrigger><SelectContent>{pipelines.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
+        {configurationAction}
         <PendingAction code="B2"><Upload className="h-4 w-4" />Importar CSV</PendingAction>
         <Button onClick={() => setCreateOpen(true)}><Plus className="mr-2 h-4 w-4" />Novo lead</Button>
       </div>
@@ -327,17 +380,25 @@ export function CrmWorkspace({ initialPipelineId, initialLeadId, profile = 'inte
     {activeTab === 'today' && <TodayWorkQueue leads={filteredLeads} onSelectLead={setSelectedLead} />}
     {activeTab === 'calendar' && <CalendarView leads={filteredLeads} onSelectLead={setSelectedLead} />}
     {activeTab === 'sources' && <LeadSourcesDashboard dashboard={sourceDashboard} />}
-    <Dialog open={createOpen} onOpenChange={setCreateOpen}><DialogContent><DialogHeader><DialogTitle>Novo lead</DialogTitle></DialogHeader><form className="space-y-3" onSubmit={createLead}>
+    {configurationDialog}
+    <Dialog open={createOpen} onOpenChange={open => { if (!creatingLead) setCreateOpen(open) }}><DialogContent className="max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle>Novo lead</DialogTitle></DialogHeader><form className="space-y-3" onSubmit={createLead}>
       <Input placeholder="Nome" required value={leadForm.name} onChange={event => setLeadForm({ ...leadForm, name: event.target.value })} /><Input placeholder="Email" required type="email" value={leadForm.email} onChange={event => setLeadForm({ ...leadForm, email: event.target.value })} />
       <div className="grid grid-cols-2 gap-3"><Input placeholder="Telefone" value={leadForm.phone} onChange={event => setLeadForm({ ...leadForm, phone: event.target.value })} /><Input placeholder="Empresa" value={leadForm.company} onChange={event => setLeadForm({ ...leadForm, company: event.target.value })} /></div>
       <div className="grid grid-cols-3 gap-3"><Input placeholder="Origem" value={leadForm.source} onChange={event => setLeadForm({ ...leadForm, source: event.target.value })} /><Input placeholder="Score" type="number" min="0" max="100" value={leadForm.score} onChange={event => setLeadForm({ ...leadForm, score: Number(event.target.value) })} /><Input placeholder="Valor" type="number" min="0" value={leadForm.value} onChange={event => setLeadForm({ ...leadForm, value: event.target.value })} /></div>
-      <Button type="submit">Criar lead</Button>
+      {customProfileFields}
+      {createError && <p role="alert" className="text-sm text-destructive">{createError}</p>}
+      <Button type="submit" disabled={creatingLead || Boolean(crmInstanceId && !profileConfiguration.configuration)}>{creatingLead ? 'Criando...' : 'Criar lead'}</Button>
     </form></DialogContent></Dialog>
-    <LeadOperationsModal organizationId={organization.id} lead={selectedLead} onClose={() => setSelectedLead(undefined)} />
+    <LeadOperationsModal organizationId={organization.id} crmInstanceId={crmInstanceId} lead={selectedLead} onClose={() => setSelectedLead(undefined)} />
   </div>
 }
 
 interface PortalLeadsViewProps {
+  customProfileFields?: ReactNode
+  profileCreateDisabled?: boolean
+  configurationAction?: ReactNode
+  configurationDialog?: ReactNode
+  crmInstanceId?: string
   organizationName?: string
   organizationOk: boolean
   platformLoading: boolean
@@ -378,7 +439,8 @@ function PortalLeadsView(props: PortalLeadsViewProps) {
     organizationName, organizationOk, platformLoading, platformError, loading, loadError, onRetry, crmUnavailable, crmContracted,
     pipelines, pipelineId, onPipelineChange, pipelineName, stages, leads, filteredLeads, sources, summary, sourceDashboard, governance,
     filters, onFiltersChange, activeTab, onTabChange, onSelectLead, onMoveLead, createOpen, onCreateOpenChange, onCreateLead,
-    organizationId, selectedLead, onCloseLead,
+    organizationId, selectedLead, onCloseLead, customProfileFields, profileCreateDisabled,
+    configurationAction, configurationDialog, crmInstanceId,
   } = props
 
   const role = governance?.currentMember?.role
@@ -447,6 +509,7 @@ function PortalLeadsView(props: PortalLeadsViewProps) {
       help={help}
       primaryAction={
         <div className="flex flex-wrap items-start gap-2">
+          {configurationAction}
           <PendingAction code="B2"><Upload className="h-4 w-4" />Importar CSV</PendingAction>
           <button type="button" onClick={() => onCreateOpenChange(true)} className={portalButtonClasses('primary')}>
             <Plus aria-hidden="true" />
@@ -494,8 +557,9 @@ function PortalLeadsView(props: PortalLeadsViewProps) {
       {activeTab === 'today' && <TodayWorkQueue leads={filteredLeads} onSelectLead={onSelectLead} />}
       {activeTab === 'calendar' && <CalendarView profile="portal" leads={filteredLeads} onSelectLead={onSelectLead} />}
       {activeTab === 'sources' && <LeadSourcesDashboard dashboard={sourceDashboard} />}
-      <LeadCreateDialog open={createOpen} onOpenChange={onCreateOpenChange} onCreate={onCreateLead} />
-      <LeadOperationsModal organizationId={organizationId} lead={selectedLead} onClose={onCloseLead} />
+      {configurationDialog}
+      <LeadCreateDialog open={createOpen} onOpenChange={onCreateOpenChange} onCreate={onCreateLead} disabled={profileCreateDisabled}>{customProfileFields}</LeadCreateDialog>
+      <LeadOperationsModal organizationId={organizationId} crmInstanceId={crmInstanceId} lead={selectedLead} onClose={onCloseLead} />
     </PortalPage>
   )
 }
@@ -647,7 +711,7 @@ function CalendarView({ leads, onSelectLead, profile = 'internal' }: { leads: Cr
   )
 }
 
-function LeadOperationsModal({ organizationId, lead, onClose }: { organizationId: string; lead?: CrmLead; onClose: () => void }) {
+function LeadOperationsModal({ organizationId, crmInstanceId, lead, onClose }: { organizationId: string; crmInstanceId?: string; lead?: CrmLead; onClose: () => void }) {
   const [interactions, setInteractions] = useState<CrmInteraction[]>([]), [tasks, setTasks] = useState<CrmTask[]>([]), [sequences, setSequences] = useState<CrmSequence[]>([]), [enrollments, setEnrollments] = useState<CrmSequenceEnrollment[]>([]), [executions, setExecutions] = useState<AutomationExecution[]>([])
   const [crmConversations, setCrmConversations] = useState<LeadConversationView[]>([]), [aiInsights, setAiInsights] = useState<LeadAiInsight[]>([]), [fieldSuggestions, setFieldSuggestions] = useState<LeadAiFieldSuggestion[]>([]), [responseSuggestions, setResponseSuggestions] = useState<LeadResponseSuggestion[]>([]), [slaEvents, setSlaEvents] = useState<LeadSlaEvent[]>([]), [quickReplies, setQuickReplies] = useState<CrmQuickReply[]>([]), [templates, setTemplates] = useState<CrmMessageTemplate[]>([])
   const [note, setNote] = useState(''), [taskTitle, setTaskTitle] = useState(''), [dueAt, setDueAt] = useState(''), [sequenceId, setSequenceId] = useState<string>(), [rescheduleAt, setRescheduleAt] = useState('')
@@ -680,7 +744,8 @@ function LeadOperationsModal({ organizationId, lead, onClose }: { organizationId
   const reschedule = async (item: CrmSequenceEnrollment) => { if (!rescheduleAt) return; await crmService.updateEnrollment(item.id, { status: 'active', nextExecutionAt: new Date(rescheduleAt).toISOString() }); setRescheduleAt(''); toast.success('Follow-up reagendado'); refresh() }
   const sendSuggestion = async (suggestionId: string) => { await crmConversationService.sendSuggestedReply({ suggestionId }); toast.success('Resposta enviada'); refresh() }
   return <Dialog open={Boolean(lead)} onOpenChange={open => !open && onClose()}><DialogContent className="max-h-[90vh] max-w-7xl overflow-y-auto"><DialogHeader><DialogTitle>{lead?.name}</DialogTitle></DialogHeader>{lead && <Tabs defaultValue="follow-up">
-    <TabsList className="flex w-full justify-start overflow-x-auto"><TabsTrigger value="follow-up">Follow-up</TabsTrigger><TabsTrigger value="history">Histórico</TabsTrigger><TabsTrigger value="tasks">Tarefas</TabsTrigger><TabsTrigger value="automations">Execuções</TabsTrigger><TabsTrigger value="commercial">Comercial</TabsTrigger></TabsList>
+    <TabsList className="flex h-auto w-full flex-wrap justify-start"><TabsTrigger value="follow-up">Follow-up</TabsTrigger>{(lead.crmInstanceId || crmInstanceId) && <TabsTrigger value="profile">Perfil do cliente</TabsTrigger>}<TabsTrigger value="history">Histórico</TabsTrigger><TabsTrigger value="tasks">Tarefas</TabsTrigger><TabsTrigger value="automations">Execuções</TabsTrigger><TabsTrigger value="commercial">Comercial</TabsTrigger></TabsList>
+    {(lead.crmInstanceId || crmInstanceId) && <TabsContent value="profile"><LeadProfilePanel key={lead.id} leadId={lead.id} /></TabsContent>}
     <TabsContent value="follow-up" className="space-y-4"><Lead360Panel lead={lead} interactions={interactions} tasks={tasks} conversations={crmConversations} aiInsights={aiInsights} fieldSuggestions={fieldSuggestions} responseSuggestions={responseSuggestions} slaEvents={slaEvents} quickReplies={quickReplies} templates={templates} onSendSuggestion={sendSuggestion} taskTitle={taskTitle} dueAt={dueAt} onTaskTitleChange={setTaskTitle} onDueAtChange={setDueAt} onCreateTask={addTask} onCompleteTask={completeTask} onMarkWon={markWon} onMarkLost={markLost} /><div className="flex gap-2"><Select value={sequenceId} onValueChange={setSequenceId}><SelectTrigger><SelectValue placeholder="Escolha uma sequência" /></SelectTrigger><SelectContent>{sequences.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><Button disabled={!sequenceId} onClick={enroll}>Iniciar sequência</Button></div>{sequences.length === 0 && <p className="text-sm text-gray-500">Nenhuma sequência configurada.</p>}{enrollments.map(item => <div key={item.id} className="space-y-3 rounded-md border p-3"><div className="flex items-center justify-between gap-2"><span className="text-sm">{item.status}{item.nextExecutionAt ? ` - próximo envio ${new Date(item.nextExecutionAt).toLocaleString('pt-BR')}` : ''}</span><div className="flex gap-2"><Button size="sm" variant="outline" title="Pausar automacao" onClick={() => setStatus(item, 'paused')}><Pause className="h-3 w-3" /></Button><Button size="sm" variant="outline" title="Retomar automacao" onClick={() => setStatus(item, 'active')}><Play className="h-3 w-3" /></Button><Button size="sm" variant="outline" onClick={() => setStatus(item, 'manual')}><UserRoundCheck className="mr-1 h-3 w-3" />Assumir</Button></div></div><div className="flex gap-2"><Input type="datetime-local" value={rescheduleAt} onChange={event => setRescheduleAt(event.target.value)} /><Button size="sm" variant="outline" disabled={!rescheduleAt} onClick={() => reschedule(item)}>Reagendar</Button></div></div>)}</TabsContent>
     <TabsContent value="history" className="space-y-3"><div className="flex gap-2"><Textarea placeholder="Registrar atualização" value={note} onChange={event => setNote(event.target.value)} /><Button onClick={addNote}>Registrar</Button></div><LeadTimeline interactions={interactions} /></TabsContent>
     <TabsContent value="tasks" className="space-y-3"><LeadTaskPanel tasks={tasks} taskTitle={taskTitle} dueAt={dueAt} onTaskTitleChange={setTaskTitle} onDueAtChange={setDueAt} onCreateTask={addTask} onCompleteTask={completeTask} /></TabsContent>

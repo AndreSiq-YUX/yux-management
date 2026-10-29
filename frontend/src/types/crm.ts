@@ -1,4 +1,5 @@
 import type { AttributionContext, LeadSourceKind } from './commercial'
+import type { LeadProfileInput } from './crmRecordProfile'
 
 export type CrmActionType = 'whatsapp' | 'email' | 'internal_task'
 export type CrmEnrollmentStatus = 'active' | 'paused' | 'manual' | 'completed' | 'cancelled'
@@ -150,6 +151,8 @@ export interface CrmLead {
   id: string
   organizationId: string
   crmInstanceId?: string
+  recordTypeId?: string | null
+  profile?: LeadProfileInput
   pipelineId: string
   stageId: string
   teamId?: string
