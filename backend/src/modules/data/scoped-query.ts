@@ -31,6 +31,11 @@ export async function executeScopedDataQuery(
 ) {
   const rule = tables[query.table]
   if (!rule) throw forbidden()
+  if (query.table === 'leads') {
+    if (query.operation === 'delete') throw forbidden()
+    if (normalizeRows(query.values).some(row => 'deleted_at' in row || 'deleted_by' in row)) throw forbidden()
+    query = { ...query, filters: [...query.filters, { op: 'is', column: 'deleted_at', value: null }] }
+  }
   assertClientGenericMutationAllowed(ctx, query.table, query.operation, query.values, moduleKey)
 
   if (ctx.role === 'yux_admin' || ctx.role === 'yux_operator') {

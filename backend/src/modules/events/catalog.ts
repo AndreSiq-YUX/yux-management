@@ -1,5 +1,8 @@
 export const DOMAIN_EVENT_TYPES = [
   'lead.created',
+  'lead.deleted',
+  'lead.restored',
+  'lead.response_received',
   'form.submitted',
   'lead.pipeline_changed',
   'lead.stage_changed',

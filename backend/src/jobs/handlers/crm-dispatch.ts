@@ -28,7 +28,7 @@ export async function handleCrmSequenceDeliveryRequested(
   const execution = await pool.query<{ id: string; organization_id: string; lead_id: string; status: string }>(
     `SELECT id, organization_id, lead_id, status
        FROM public.automation_executions
-      WHERE id = $1 AND organization_id = $2
+      WHERE id = $1 AND organization_id = $2 AND EXISTS (SELECT 1 FROM public.leads l WHERE l.id=automation_executions.lead_id AND l.deleted_at IS NULL)
       LIMIT 1`,
     [executionId, event.organizationId],
   )

@@ -1,5 +1,7 @@
+import { ActivateQualification } from '@/components/crm/scoring/ActivateQualification'
+import { QualificationSettings } from '@/components/crm/scoring/QualificationSettings'
 import { Gauge, RefreshCw } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { PortalPage } from '@/components/client-portal/PortalPage'
 import { EmptyState, ErrorState, ResponsiveTable, SectionCard, SkeletonCard, portalButtonClasses, type ResponsiveTableColumn } from '@/components/portal-ui'
@@ -14,7 +16,7 @@ import type { CrmGovernanceContext, CrmLead, LeadScoringModel, LeadScoringRule }
 const EDITOR_ROLES = ['client_admin', 'manager', 'yux_admin', 'yux_operator', 'yux_manager']
 
 export function canEditLeadScoring(governanceRole?: string | null, platformRole?: string | null) {
-  return EDITOR_ROLES.includes(governanceRole || platformRole || '')
+  return ['yux_admin', 'yux_operator'].includes(platformRole || '') || EDITOR_ROLES.includes(governanceRole || '')
 }
 
 /** Pontuação final = perfil e interesse combinados pelos pesos do modelo. */
@@ -37,6 +39,7 @@ const MAX_LEADS_LISTED = 50
 
 export function PortalLeadScoringPage() {
   const { organization, role, leads, pipelines } = usePortalCrmContext()
+  const [creating,setCreating] = useState(false)
   const [governance, setGovernance] = useState<CrmGovernanceContext | null>(null)
   const [model, setModel] = useState<LeadScoringModel | null>(null)
   const [rules, setRules] = useState<LeadScoringRule[]>([])
@@ -48,11 +51,11 @@ export function PortalLeadScoringPage() {
   const [simulation, setSimulation] = useState<Simulation | null>(null)
   const [simulationError, setSimulationError] = useState<string | null>(null)
   const crmInstanceId = governance?.instance.id || pipelines.find(pipeline => pipeline.crmInstanceId)?.crmInstanceId
-  const canEdit = canEditLeadScoring(governance?.currentMember?.role, role?.key)
+  const canEdit = canEditLeadScoring(governance?.currentMember?.status === 'active' ? governance.currentMember.role : undefined, role?.key)
   const activeRules = useMemo(() => rules.filter(rule => rule.isActive), [rules])
   const rankedLeads = useMemo(() => [...leads].sort((a, b) => b.score - a.score), [leads])
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!organization?.id) return
     setLoading(true); setError(null)
     try {
@@ -63,8 +66,8 @@ export function PortalLeadScoringPage() {
       const response = await crmScoringService.getModel(instance.id)
       setModel(response.model); setRules(response.rules)
     } catch (loadError) { console.error(loadError); setError('Não foi possível carregar a pontuação de leads.') } finally { setLoading(false) }
-  }
-  useEffect(() => { void load() }, [organization?.id])
+  }, [organization?.id])
+  useEffect(() => { void load() }, [load])
 
   const simulate = async () => {
     if (!selectedLeadId || !crmInstanceId) return
@@ -100,7 +103,11 @@ export function PortalLeadScoringPage() {
         'Quem pode editar as regras também consegue simular o efeito de uma ação antes de salvar.',
       ]}
       primaryAction={{ label: 'Ver leads', href: '/portal/comercial/leads' }}
-      metrics={model ? [
+      metrics={model?.calculationMode === 'sum' ? [
+        { label: 'Pontuação', value: '0–100', detail: 'Soma do perfil e das atividades.' },
+        { label: 'Morno a partir de', value: String(model.warmThreshold ?? 40), detail: 'Limite configurável.' },
+        { label: 'Quente a partir de', value: String(model.hotThreshold ?? 70), detail: 'Priorize o contato comercial.' },
+      ] : model ? [
         { label: 'Peso do perfil', value: `${model.fitWeight}%`, detail: 'Na pontuação final.' },
         { label: 'Peso do interesse', value: `${model.intentWeight}%`, detail: 'Na pontuação final.' },
         { label: 'Regras ativas', value: String(activeRules.length), detail: 'Ações que mudam a pontuação.' },
@@ -118,10 +125,19 @@ export function PortalLeadScoringPage() {
         <EmptyState
           icon={Gauge}
           title="A pontuação ainda não foi configurada"
-          description="Quando o modelo de pontuação do CRM da sua empresa estiver ativo, você verá aqui como cada lead ganha pontos. Fale com a equipe YUX para ativar."
+          description="Configure regras por perfil, campos personalizados e atividades para priorizar seus leads."
+          action={canEdit && crmInstanceId ? {label: creating ? 'Configurando...' : 'Configurar pontuação', onClick: async () => { if(creating) return; setCreating(true); try { await crmScoringService.createModel(crmInstanceId); await load() } catch { setError('Não foi possível configurar a pontuação.') } finally { setCreating(false) } }} : undefined}
         />
+      ) : model.calculationMode === 'sum' ? (
+        <>
+          <SectionCard title="Qualificação por perfil e atividades" description="Configure condições e faixas numéricas, acompanhe a temperatura e explique cada ponto.">
+            {canEdit && crmInstanceId ? <QualificationSettings key={crmInstanceId} crmInstanceId={crmInstanceId} warmThreshold={model.warmThreshold} hotThreshold={model.hotThreshold} onChanged={() => { void crmScoringService.getModel(crmInstanceId).then(response => { setModel(response.model); setRules(response.rules) }).catch(() => setError('Não foi possível atualizar a pontuação.')) }} /> : <p className="text-sm">A pontuação soma o perfil e as atividades. Administradores do CRM podem configurar as regras.</p>}
+          </SectionCard>
+          <SectionCard title="Pontuação dos seus leads" description="Do maior para o menor."><ResponsiveTable caption="Pontuação dos leads" columns={leadColumns} rows={rankedLeads.slice(0,MAX_LEADS_LISTED)} getRowKey={lead => lead.id} empty={<p>Nenhum lead cadastrado.</p>} /></SectionCard>
+        </>
       ) : (
         <>
+          {canEdit && crmInstanceId && <ActivateQualification crmInstanceId={crmInstanceId} onChanged={() => void load()} />}
           <SectionCard title="Como a pontuação funciona" description="Em linguagem simples.">
             <div className="max-w-[70ch] space-y-3 text-[14px] leading-relaxed text-yx-fg-2">
               <p><strong className="text-yx-fg">Perfil</strong> mede se o lead se parece com o cliente que você quer atender (setor, porte, região). <strong className="text-yx-fg">Interesse</strong> mede o que ele faz: abrir e-mails, responder, enviar um formulário.</p>
@@ -145,7 +161,7 @@ export function PortalLeadScoringPage() {
             />
           </SectionCard>
 
-          {canEdit ? (
+          {canEdit && model.calculationMode !== "sum" ? (
             <>
               <SectionCard
                 title="Modelo de pontuação"
@@ -191,11 +207,11 @@ export function PortalLeadScoringPage() {
                 ) : null}
               </SectionCard>
             </>
-          ) : (
+          ) : !canEdit ? (
             <p className="rounded-[10px] border border-yx-line bg-yx-surface-2 px-4 py-3 text-sm text-yx-fg-2">
               Seu perfil pode consultar a pontuação, mas não alterar as regras. Para mudar como os leads ganham pontos, fale com um administrador da sua empresa ou com a equipe YUX.
             </p>
-          )}
+          ) : null}
         </>
       )}
     </PortalPage>

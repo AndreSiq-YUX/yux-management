@@ -5,6 +5,7 @@ export type ScoringModelResponse = { model: LeadScoringModel | null; rules: Lead
 export type ScoringRuleInput = Omit<LeadScoringRule, 'id' | 'createdAt' | 'updatedAt' | 'isActive' | 'modelId'> & { modelId: string }
 
 export const crmScoringService = {
+  async createModel(crmInstanceId: string) { return apiRequest<LeadScoringModel>('/crm/scoring/model', {method:'POST',body:{crmInstanceId}}) },
   async getModel(crmInstanceId: string) {
     return apiRequest<ScoringModelResponse>(`/crm/scoring/model?crmInstanceId=${encodeURIComponent(crmInstanceId)}`)
   },

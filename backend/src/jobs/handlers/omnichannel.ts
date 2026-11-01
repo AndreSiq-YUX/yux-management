@@ -1,3 +1,4 @@
+import { recordDomainEvent } from '../../modules/events/repository.js'
 import type pg from 'pg'
 import type { AppEnv } from '../../config/env.js'
 import { invokeAgentRuntime } from '../../lib/agent-runtime-client.js'
@@ -424,6 +425,10 @@ async function persistInboundWhatsAppMessage(
         WHERE id = $1`,
       [conversation.id, input.occurredAt],
     )
+    if (inserted.rows[0]) {
+      const linked = await client.query<{id:string;crm_instance_id:string}>(`SELECT l.id,l.crm_instance_id FROM public.conversations c JOIN public.leads l ON l.id=c.lead_id AND l.organization_id=c.organization_id WHERE c.id=$1 AND l.deleted_at IS NULL AND l.crm_instance_id IS NOT NULL`,[conversation.id])
+      if(linked.rows[0]) await recordDomainEvent(client,{eventId:inboundMessageId,eventType:'lead.response_received',organizationId:input.organizationId,crmInstanceId:linked.rows[0].crm_instance_id,leadId:linked.rows[0].id,aggregateType:'message',aggregateId:inboundMessageId,actor:{type:'lead',id:linked.rows[0].id},payload:{channel:'whatsapp',messageId:inboundMessageId,text:(input.body||'').slice(0,10000)}})
+    }
     await client.query('COMMIT')
     return {
       conversationId: conversation.id,
@@ -497,7 +502,7 @@ export async function handleOutboundMessage(
        JOIN public.conversations c ON c.id = m.conversation_id
        JOIN public.omnichannel_contacts contact ON contact.id = c.contact_id
        LEFT JOIN public.channel_connections connection ON connection.id = c.connection_id
-      WHERE m.id = $1 LIMIT 1`, [messageId])
+      WHERE m.id = $1 AND NOT EXISTS(SELECT 1 FROM public.leads removed WHERE removed.id=c.lead_id AND removed.deleted_at IS NOT NULL) LIMIT 1`, [messageId])
   const row = message.rows[0]; if (!row) throw new Error('outbound_message_not_found')
   if (row.direction !== 'outbound') throw new Error('outbound_message_direction_required')
   if (row.author_type === 'ai' && row.metadata?.approvalStatus !== 'approved') throw new Error('ai_message_approval_required')

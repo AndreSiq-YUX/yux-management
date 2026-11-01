@@ -201,3 +201,12 @@ describe('CRM record profile validation', () => {
     expect(fieldInputSchema.safeParse({ ...base, options: ['A', 'B'] }).success).toBe(true)
   })
 })
+
+
+describe('highlight configuration', () => {
+  it('accepts the highlight flag explicitly and defaults it to false', () => {
+    const input = { crmInstanceId: ids.instance, label: 'Refeições', fieldType: 'number' };
+    expect(fieldInputSchema.parse({ ...input, isHighlighted: true }).isHighlighted).toBe(true)
+    expect(fieldInputSchema.parse(input).isHighlighted).toBe(false)
+  })
+})

@@ -15,6 +15,7 @@ class FakeOmnichannelPool {
     const normalized = sql.replace(/\s+/g, ' ').trim()
     if (normalized.includes("SET status = 'processing'")) return { rows: [{ id: 'event-1' }] }
     if (normalized.includes('FROM public.omnichannel_contacts')) return { rows: [{ id: 'contact-1' }] }
+    if (normalized.includes('FROM public.conversations c JOIN public.leads')) return { rows: [] }
     if (normalized.includes('FROM public.conversations')) return { rows: [{ id: 'conversation-1', response_mode: this.responseMode }] }
     if (normalized.includes("'inbound','contact'")) return { rows: [{ id: 'inbound-1' }] }
     if (normalized.includes('FROM public.organizations organization')) return { rows: this.assistantContext ? [this.assistantContext] : [] }

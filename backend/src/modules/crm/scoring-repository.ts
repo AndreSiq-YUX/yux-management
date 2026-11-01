@@ -5,6 +5,9 @@ export type ScoringModel = {
   id: string
   crmInstanceId: string
   name: string
+  calculationMode?: string
+  warmThreshold?: number
+  hotThreshold?: number
   fitWeight: number
   intentWeight: number
   thresholds: number[]
@@ -54,6 +57,9 @@ type ModelRow = {
   id: string
   crm_instance_id: string
   name: string
+  calculation_mode?: string
+  warm_threshold?: number
+  hot_threshold?: number
   fit_weight: number
   intent_weight: number
   thresholds: unknown
@@ -95,7 +101,7 @@ type ScoreEventRow = {
   occurred_at: string | Date
 }
 
-const MODEL_COLUMNS = `
+const MODEL_COLUMNS = `calculation_mode, warm_threshold, hot_threshold,
   id, crm_instance_id, name, fit_weight, intent_weight, thresholds,
   is_active, created_by, created_at, updated_at
 `
@@ -150,7 +156,7 @@ export async function updateScoringModel(
          thresholds = COALESCE($5, thresholds), updated_at = NOW()
      WHERE id = $1
      RETURNING ${MODEL_COLUMNS}`,
-    [modelId, input.name?.trim(), fitWeight, intentWeight, input.thresholds ?? null],
+    [modelId, input.name?.trim(), fitWeight, intentWeight, input.thresholds === undefined ? null : JSON.stringify(input.thresholds)],
   )
   if (!result.rows[0]) throw new Error('lead_scoring_model_update_failed')
   return mapModel(result.rows[0])
@@ -218,7 +224,7 @@ export async function createScoringModel(
       input.name.trim(),
       input.fitWeight,
       input.intentWeight,
-      input.thresholds ?? [],
+      JSON.stringify(input.thresholds ?? []),
       input.createdBy ?? null,
     ],
   )
@@ -310,7 +316,7 @@ export function mapModel(row: ModelRow): ScoringModel {
     id: row.id,
     crmInstanceId: row.crm_instance_id,
     name: row.name,
-    fitWeight: Number(row.fit_weight),
+    calculationMode: row.calculation_mode ?? 'weighted', warmThreshold: row.warm_threshold ?? 40, hotThreshold: row.hot_threshold ?? 70, fitWeight: Number(row.fit_weight),
     intentWeight: Number(row.intent_weight),
     thresholds: normalizeThresholds(row.thresholds),
     isActive: row.is_active,

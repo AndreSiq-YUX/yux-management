@@ -429,7 +429,7 @@ function buildConditionContext(event: DomainEventEnvelope, lead: AutomationLead 
 async function loadLead(db: RuntimeDb, organizationId: string, leadId: string): Promise<AutomationLead | null> {
   const result = await db.query<AutomationLead>(
     `SELECT id, organization_id, crm_instance_id, email, name, phone, owner_id, assigned_to, pipeline_id, stage_id, status, score, fit_score, intent_score
-     FROM public.leads WHERE id = $1 AND organization_id = $2 LIMIT 1`,
+     FROM public.leads WHERE deleted_at IS NULL AND id = $1 AND organization_id = $2 LIMIT 1`,
     [leadId, organizationId],
   )
   return result.rows[0] ?? null

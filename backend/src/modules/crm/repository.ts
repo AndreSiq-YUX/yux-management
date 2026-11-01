@@ -1,3 +1,4 @@
+import { loadProfileSummaries } from './profile-summary.js'
 import type pg from 'pg'
 import type { AuthUser } from '../../auth/routes.js'
 import { recordDomainEvent } from '../events/repository.js'
@@ -78,6 +79,8 @@ type StageRow = {
 }
 
 type LeadRow = {
+  qualification_temperature?: string
+  can_delete?: boolean
   id: string
   organization_id: string
   crm_instance_id: string | null
@@ -281,9 +284,11 @@ export async function listLeads(
   filters: { organizationId?: string; pipelineId?: string; crmInstanceId?: string },
 ) {
   const result = await pool.query<LeadRow>(
-    `SELECT *
+    `SELECT l.*, CASE WHEN sm.calculation_mode='sum' THEN CASE WHEN l.score>=sm.hot_threshold THEN 'hot' WHEN l.score>=sm.warm_threshold THEN 'warm' ELSE 'cold' END END AS qualification_temperature,
+       ($5::boolean OR EXISTS (SELECT 1 FROM public.crm_instance_members m WHERE m.crm_instance_id=l.crm_instance_id AND m.user_id=$1 AND m.status='active' AND m.role IN ('client_admin','yux_admin'))) AS can_delete
      FROM public.leads l
-     WHERE ($2::uuid IS NULL OR l.organization_id = $2)
+     LEFT JOIN public.lead_scoring_models sm ON sm.crm_instance_id=l.crm_instance_id AND sm.is_active
+     WHERE l.deleted_at IS NULL AND ($2::uuid IS NULL OR l.organization_id = $2)
        AND ($3::uuid IS NULL OR l.pipeline_id = $3)
        AND ($4::uuid IS NULL OR l.crm_instance_id = $4)
        AND (
@@ -297,7 +302,8 @@ export async function listLeads(
     [user.id, filters.organizationId ?? null, filters.pipelineId ?? null, filters.crmInstanceId ?? null, isInternal(user)],
   )
 
-  return result.rows.map(mapLead)
+  const summaries = await loadProfileSummaries(pool, user, result.rows.map(row => row.id))
+  return result.rows.map(row => ({ ...mapLead(row), profileSummary: summaries.get(row.id) }))
 }
 
 export async function listPipelines(pool: pg.Pool, user: AuthUser, organizationId: string) {
@@ -388,7 +394,7 @@ export async function moveLeadToStage(pool: pg.Pool, user: AuthUser, leadId: str
     const leadResult = await client.query<LeadRow>(
       `SELECT *
        FROM public.leads l
-       WHERE l.id = $2
+       WHERE l.deleted_at IS NULL AND l.id = $2
          AND (
            $3::boolean = TRUE
            OR EXISTS (
@@ -513,7 +519,7 @@ export async function createLeadInteraction(
   input: CrmInteractionInput,
 ) {
   await requireOrganizationAccess(pool, user, input.organizationId)
-  await getLeadForAccess(pool, user, leadId)
+  const lead = await getLeadForAccess(pool, user, leadId)
   const date = input.date ?? new Date().toISOString()
   const result = await pool.query<InteractionRow>(
     `INSERT INTO public.interactions (organization_id, lead_id, type, title, description, date)
@@ -523,6 +529,7 @@ export async function createLeadInteraction(
   )
   await pool.query('UPDATE public.leads SET last_activity_at = $2, updated_at = NOW() WHERE id = $1', [leadId, date])
 
+  await recordDomainEvent(pool, {eventType:'lead.interaction_recorded',organizationId:lead.organization_id,crmInstanceId:lead.crm_instance_id,leadId,aggregateType:'lead',aggregateId:leadId,actor:{type:'user',id:user.id},payload:{interactionId:result.rows[0].id,type:input.type,channel:input.type,text:input.description.slice(0,10000)}})
   return mapInteraction(result.rows[0])
 }
 
@@ -711,7 +718,7 @@ async function getLeadForAccess(pool: pg.Pool, user: AuthUser, leadId: string) {
   const result = await pool.query<LeadRow>(
     `SELECT *
      FROM public.leads l
-     WHERE l.id = $2
+     WHERE l.deleted_at IS NULL AND l.id = $2
        AND (
          $3::boolean = TRUE
          OR EXISTS (
@@ -894,6 +901,8 @@ function mapLead(row: LeadRow) {
     id: row.id,
     organizationId: row.organization_id,
     crmInstanceId: row.crm_instance_id ?? undefined,
+    canDelete: row.can_delete ?? false,
+    temperature: row.qualification_temperature ?? undefined,
     recordTypeId: row.record_type_id ?? undefined,
     pipelineId: row.pipeline_id,
     stageId: row.stage_id,

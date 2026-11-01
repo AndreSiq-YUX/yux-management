@@ -5,7 +5,7 @@ import { applicableProfileValues } from '@/types/crmRecordProfile'
 import type { LeadProfile, LeadProfileInput } from '@/types/crmRecordProfile'
 import { LeadProfileFields } from './LeadProfileFields'
 
-export function LeadProfilePanel({ leadId }: { leadId: string }) {
+export function LeadProfilePanel({ leadId, onSaved }: { leadId: string; onSaved?: () => void }) {
   const [profile, setProfile] = useState<LeadProfile>()
   const [draft, setDraft] = useState<LeadProfileInput>({ recordTypeId: null, values: {} })
   const [error, setError] = useState('')
@@ -30,7 +30,7 @@ export function LeadProfilePanel({ leadId }: { leadId: string }) {
         recordTypeId: draft.recordTypeId,
         values: applicableProfileValues(profile.fields, draft.recordTypeId, draft.values),
       })
-      setDraft(result); setSaved(true)
+      setDraft(result); setSaved(true); onSaved?.()
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível salvar os campos.') }
     finally { setSaving(false) }
   }

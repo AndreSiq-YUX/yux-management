@@ -170,7 +170,7 @@ function renderTabContent(key: string, context: Lead360TabContext) {
         <LeadDetailPanel lead={context.lead} onMarkWon={context.onMarkWon} onMarkLost={context.onMarkLost} />
         <section className="grid gap-3 md:grid-cols-3">
           <Info label="Interesse" value={context.lead.interest || 'Nao informado'} />
-          <Info label="Temperatura" value={context.lead.temperature || 'Nao definida'} />
+          <Info label="Temperatura" value={({hot:'Quente',warm:'Morno',cold:'Frio',unqualified:'Não qualificado'}[context.lead.temperature || 'cold'])} />
           <Info label="Urgencia" value={context.lead.urgency || 'Nao definida'} />
         </section>
         <section className="rounded-md border bg-white p-3">

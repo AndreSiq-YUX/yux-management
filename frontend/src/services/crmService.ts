@@ -217,16 +217,6 @@ const mapExecution = (row: ExecutionRow): AutomationExecution => ({
   completedAt: row.completed_at || undefined,
 })
 
-const toLegacyStage = (stage: Pick<CrmPipelineStage, 'key' | 'isWon' | 'isLost'>) => {
-  if (stage.isWon) return 'WON'
-  if (stage.isLost) return 'LOST'
-  const key = stage.key.toLowerCase()
-  if (key === 'qualified') return 'QUALIFIED'
-  if (key === 'proposal') return 'PROPOSAL'
-  if (key === 'negotiation') return 'NEGOTIATION'
-  return 'NEW'
-}
-
 const buildQuery = (params: Record<string, string | undefined>) => {
   const search = new URLSearchParams()
   Object.entries(params).forEach(([key, value]) => {
@@ -455,18 +445,7 @@ export const crmService = {
   },
 
   async moveLead(leadId: string, stage: CrmPipelineStage) {
-    const legacyStage = toLegacyStage(stage)
-    return apiRequest<CrmLead>(`/crm/leads/${leadId}`, {
-      method: 'PATCH',
-      body: {
-        stageId: stage.id,
-        stage: legacyStage,
-        status: stage.isWon ? 'won' : stage.isLost ? 'lost' : 'open',
-        wonAt: stage.isWon ? new Date().toISOString() : null,
-        lostAt: stage.isLost ? new Date().toISOString() : null,
-        lastActivityAt: new Date().toISOString(),
-      },
-    })
+    return apiRequest<CrmLead>(`/crm/leads/${leadId}/stage`, { method: 'PATCH', body: { stageId: stage.id } })
   },
 
   async moveLeadToStage(leadId: string, stageId: string) {

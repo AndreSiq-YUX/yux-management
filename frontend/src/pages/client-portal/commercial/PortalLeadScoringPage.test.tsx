@@ -8,12 +8,13 @@ import { crmGovernanceService } from '@/services/crmGovernanceService'
 import { crmScoringService } from '@/services/crmScoringService'
 import type { CrmGovernanceContext, CrmInstanceRole, CrmLead, LeadScoringModel, LeadScoringRule } from '@/types/crm'
 
+vi.mock('@/components/crm/scoring/QualificationSettings', () => ({QualificationSettings: () => <div>Editor de campos e faixas</div>}))
 vi.mock('@/hooks/usePortalCrmContext', () => ({ usePortalCrmContext: vi.fn() }))
 vi.mock('@/services/crmGovernanceService', () => ({
   crmGovernanceService: { getActiveInstanceForOrganization: vi.fn(), getGovernanceContext: vi.fn() },
 }))
 vi.mock('@/services/crmScoringService', () => ({
-  crmScoringService: { getModel: vi.fn(), updateModel: vi.fn(), createRule: vi.fn(), deactivateRule: vi.fn(), simulate: vi.fn() },
+  crmScoringService: { getModel: vi.fn(), createModel: vi.fn(), updateModel: vi.fn(), createRule: vi.fn(), deactivateRule: vi.fn(), simulate: vi.fn() },
 }))
 
 const organizationId = '11111111-1111-4111-8111-111111111111'
@@ -60,6 +61,8 @@ describe('PortalLeadScoringPage', () => {
     expect(canEditLeadScoring('client_admin')).toBe(true)
     expect(canEditLeadScoring('manager')).toBe(true)
     expect(canEditLeadScoring('seller')).toBe(false)
+    expect(canEditLeadScoring('seller','client_admin')).toBe(false)
+    expect(canEditLeadScoring('seller','yux_admin')).toBe(true)
     expect(canEditLeadScoring(undefined, 'yux_admin')).toBe(true)
     expect(canEditLeadScoring(undefined, 'client_member')).toBe(false)
     expect(combineScore(80, 60, 50, 50)).toBe(70)
@@ -108,4 +111,18 @@ describe('PortalLeadScoringPage', () => {
     expect(container.textContent).toContain('Resultado previsto: Perfil 90/100 · Interesse 84/100 · Pontuação 87/100')
     act(() => root.unmount())
   })
+  it('offers initial model creation and then renders the field and range editor', async () => {
+    vi.mocked(crmGovernanceService.getGovernanceContext).mockResolvedValue(governanceFor('client_admin'))
+    vi.mocked(crmScoringService.getModel).mockResolvedValueOnce({model:null,rules:[]}).mockResolvedValue({model:{...model,calculationMode:'sum'},rules:[]})
+    vi.mocked(crmScoringService.createModel).mockResolvedValue({...model,calculationMode:'sum'})
+    const {container,root}=await render()
+    const button=Array.from(container.querySelectorAll('button')).find(b=>b.textContent==='Configurar pontuação')
+    expect(button).toBeDefined()
+    await act(async()=>{button!.click();for(let i=0;i<8;i++)await Promise.resolve()})
+    expect(crmScoringService.createModel).toHaveBeenCalledWith('instance-1')
+    expect(container.textContent).toContain('Editor de campos e faixas')
+    expect(container.textContent).not.toContain('Peso do perfil')
+    act(()=>root.unmount())
+  })
+
 })

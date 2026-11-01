@@ -11,10 +11,10 @@ export const crmRecordProfileService = {
   patchRecordType(id: string, patch: { name?: string; isActive?: boolean }) {
     return apiRequest<CrmRecordType>(`/crm/record-types/${id}`, { method: 'PATCH', body: patch })
   },
-  createField(input: Pick<CrmCustomField, 'crmInstanceId' | 'recordTypeId' | 'label' | 'fieldType' | 'options' | 'required' | 'orderIndex'>) {
+  createField(input: Pick<CrmCustomField, 'crmInstanceId' | 'recordTypeId' | 'label' | 'fieldType' | 'options' | 'required' | 'orderIndex'> & { isHighlighted?: boolean }) {
     return apiRequest<CrmCustomField>('/crm/custom-fields', { method: 'POST', body: input })
   },
-  patchField(id: string, patch: { label?: string; required?: boolean; isActive?: boolean; orderIndex?: number }) {
+  patchField(id: string, patch: { isHighlighted?: boolean; label?: string; required?: boolean; isActive?: boolean; orderIndex?: number }) {
     return apiRequest<CrmCustomField>(`/crm/custom-fields/${id}`, { method: 'PATCH', body: patch })
   },
   getProfile(leadId: string) {

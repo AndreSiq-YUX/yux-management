@@ -2,6 +2,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { z } from 'zod'
+import { registerLeadTrashRoutes } from './lead-trash-routes.js'
+import { registerQualificationRoutes } from './qualification-routes.js'
+import { reconcileQualification } from './qualification-repository.js'
 import { hashSessionToken } from '../../auth/session.js'
 import { requireAuth } from '../../http/guards.js'
 import { dataQuerySchema } from '../data/routes.js'
@@ -296,6 +299,8 @@ async function getAuthenticatedUser(request: FastifyRequest, reply: FastifyReply
 
 export async function registerCrmRoutes(app: FastifyInstance) {
   await registerRecordProfileRoutes(app, getAuthenticatedUser)
+  await registerQualificationRoutes(app, getAuthenticatedUser)
+  await registerLeadTrashRoutes(app, getAuthenticatedUser)
   app.post('/conversation-query', async (request, reply) => {
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
@@ -476,7 +481,7 @@ export async function registerCrmRoutes(app: FastifyInstance) {
     if (!model) return { persisted: false, appliedRules: [], resultingFitScore: 0, resultingIntentScore: 0, resultingCombinedScore: 0 }
     const leadResult = await app.pg.query<Record<string, unknown>>(
       `SELECT id, organization_id, crm_instance_id, fit_score, intent_score, score, name, email, phone, company, source, stage, status, attribution_context
-       FROM public.leads WHERE id = $1 AND crm_instance_id = $2 LIMIT 1`,
+       FROM public.leads WHERE deleted_at IS NULL AND id = $1 AND crm_instance_id = $2 LIMIT 1`,
       [parsed.data.leadId, parsed.data.crmInstanceId],
     )
     const lead = leadResult.rows[0]
@@ -563,7 +568,11 @@ export async function registerCrmRoutes(app: FastifyInstance) {
       })
       return reply.code(201).send(lead)
     }
-    return reply.code(201).send(await createLead(app.pg, user, input))
+    return reply.code(201).send(await inProfileTransaction(app.pg, async db => {
+      const created = await createLead(db, user, input)
+      const qualification = await reconcileQualification(db, created.id)
+      return qualification ? { ...created, score: qualification.score, fitScore: qualification.fitScore, intentScore: qualification.intentScore, temperature: qualification.temperature } : created
+    }))
   })
 
   app.patch('/leads/:id', async (request, reply) => {
@@ -574,7 +583,11 @@ export async function registerCrmRoutes(app: FastifyInstance) {
     const parsed = leadPatchSchema.safeParse(request.body)
     if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_lead_patch' })
 
-    return patchLead(app.pg, user, params.data.id, parsed.data)
+    return inProfileTransaction(app.pg, async db => {
+      const updated = await patchLead(db as pg.Pool, user, params.data.id, parsed.data)
+      const qualification = await reconcileQualification(db, updated.id)
+      return qualification ? { ...updated, score: qualification.score, fitScore: qualification.fitScore, intentScore: qualification.intentScore, temperature: qualification.temperature } : updated
+    })
   })
 
   app.patch('/leads/:id/stage', async (request, reply) => {
@@ -748,7 +761,7 @@ async function getScoringRuleAccess(pool: CrmQueryable, ruleId: string) {
 
 async function getLeadScoringAccess(pool: CrmQueryable, leadId: string) {
   const result = await pool.query<{ organization_id: string; crm_instance_id: string | null }>(
-    `SELECT organization_id, crm_instance_id FROM public.leads WHERE id = $1 LIMIT 1`,
+    `SELECT organization_id, crm_instance_id FROM public.leads WHERE deleted_at IS NULL AND id = $1 LIMIT 1`,
     [leadId],
   )
   const row = result.rows[0]
@@ -772,7 +785,7 @@ async function applyManualScoreAdjustment(
       id: string; organization_id: string; crm_instance_id: string; fit_score: number | null; intent_score: number | null; score: number | null
     }>(
       `SELECT id, organization_id, crm_instance_id, fit_score, intent_score, score
-       FROM public.leads WHERE id = $1 AND crm_instance_id = $2 FOR UPDATE`,
+       FROM public.leads WHERE deleted_at IS NULL AND id = $1 AND crm_instance_id = $2 FOR UPDATE`,
       [leadId, access.crmInstanceId],
     )
     const lead = leadResult.rows[0]

@@ -1027,3 +1027,22 @@ Testes:
 - `frontend/src/components/crm/CrmWorkspace.test.tsx`
 - `frontend/src/lib/crm/followUpRules.test.ts`
 - `frontend/src/lib/crm/pipelineRules.test.ts`
+
+
+## Ficha, destaques e qualificação (novembro de 2026)
+
+Ao abrir um lead, **Dados do cliente** mostra seu tipo e os campos aplicáveis na primeira visão. **Editar dados** abre a edição da ficha. Em **Tipos e campos**, marque **Exibir em destaque na lista e no Kanban** nos campos que devem aparecer abaixo do nome. Somente campos ativos do tipo atual aparecem; respostas dos outros tipos ficam preservadas. Zero e Não são respostas válidas.
+
+Em **Pontuação de leads**, administradores e gestores autorizados podem **Configurar pontuação**, inclusive quando não existe modelo. Novos modelos somam perfil e atividades, com nota final de 0 a 100. Modelos ponderados existentes continuam funcionando; a troca para soma exige a ação explícita **Usar regras por campos personalizados e atividades**. As notas do Radar não são importadas.
+
+Escolha um campo comum ou personalizado pelo nome. Campos numéricos aceitam faixas com início incluído e fim não incluído: por exemplo, abaixo de 500, de 500 a 999 e a partir de 1000 refeições. Faixas não podem se sobrepor. Regras diferentes somam; editar a mesma ficha não repete a contribuição. É possível editar/desativar regras e conferir **Ver prévia** antes de **Recalcular pontuação** dos leads existentes, processados em lotes de 50.
+
+Atividades pontuam por ocorrência identificável: a mesma mensagem ou tarefa não conta duas vezes. Defina o limite de contribuição de cada regra. Respostas de WhatsApp são consideradas quando a conversa já está vinculada ao lead. Abertura e clique de e-mail dependem dos eventos reais de rastreamento; **resposta de e-mail é um registro manual em Histórico → Tipo de registro**, pois não existe captura automática de respostas neste módulo. Condições de texto são literais (contém/não contém), sem interpretação por IA.
+
+A ficha explica as regras que contribuíram e mostra a temperatura. Os limites iniciais são frio abaixo de 40, morno de 40 a 69 e quente a partir de 70; os limites podem ser editados. Ações de agendar contato/qualificação e preparar proposta levam aos fluxos existentes. Nenhuma ação contextual envia mensagem, muda etapa ou ativa automação sozinha.
+
+**Excluir** aparece na ficha, no card e na lista para administradores autorizados. Na lista, selecione até 100 leads para excluir de uma vez. A confirmação informa nomes e quantidade; o aviso oferece **Desfazer**. Também é possível recuperar depois em **Leads excluídos**. A exclusão remove da operação sem mudar para perdido/rejeitado, preserva auditoria e documentos, pausa sequências e impede novos jobs/tarefas/pontos. Recuperar não retoma sequências. Uma entrega já iniciada antes da exclusão pode terminar; novas entregas ficam bloqueadas.
+
+### Alterações de banco
+
+Migrations PostgreSQL `0250_crm_profile_highlights`, `0251_crm_qualification_rules` e `0252_crm_lead_trash`. Elas adicionam destaque, configurações/ledger de pontuação e exclusão lógica com guardas de escrita. Aplicação em produção e deploy dependem de pedido específico. Nenhum provedor pago é necessário para configurar, simular ou calcular estas regras.

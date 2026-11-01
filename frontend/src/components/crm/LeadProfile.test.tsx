@@ -112,7 +112,7 @@ describe('CRM type and field configuration', () => {
     await change(container.querySelector<HTMLInputElement>('#crm-field-label')!, 'Refeições diárias')
     await change(container.querySelector<HTMLSelectElement>('#crm-field-type')!, 'number')
     await submit(container.querySelectorAll('form')[1])
-    expect(crmRecordProfileService.createField).toHaveBeenCalledWith({ crmInstanceId: 'crm-1', recordTypeId: 'kitchen', label: 'Refeições diárias', fieldType: 'number', required: false, options: [], orderIndex: 3 })
+    expect(crmRecordProfileService.createField).toHaveBeenCalledWith({ crmInstanceId: 'crm-1', recordTypeId: 'kitchen', label: 'Refeições diárias', fieldType: 'number', isHighlighted: false, required: false, options: [], orderIndex: 3 })
   })
 
   it('hides configuration actions for members without permission', async () => {

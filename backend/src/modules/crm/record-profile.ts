@@ -1,3 +1,4 @@
+import { reconcileQualification } from './qualification-repository.js'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import type { AuthUser } from '../../auth/routes.js'
@@ -10,7 +11,7 @@ export type ProfileDefinition = {
 }
 type DefinitionRow = {
   id: string; crm_instance_id: string; stable_key: string; label: string; field_type: string
-  record_type_id: string | null; required: boolean; options: string[]; order_index: number; is_active: boolean; version_number: number
+  record_type_id: string | null; required: boolean; options: string[]; order_index: number; is_active: boolean; is_highlighted?: boolean; version_number: number
 }
 type TypeRow = { id: string; name: string; crm_instance_id: string; is_active: boolean }
 type InstanceAccess = {
@@ -37,7 +38,7 @@ export const recordTypePatchSchema = z.object({
 export const fieldInputSchema = z.object({
   crmInstanceId: z.string().uuid(), recordTypeId: z.string().uuid().nullable().default(null),
   label: z.string().trim().min(1).max(120), fieldType: fieldTypeSchema,
-  required: z.boolean().default(false), options: z.array(z.string().trim().min(1).max(120)).max(100).default([]),
+  isHighlighted: z.boolean().default(false), required: z.boolean().default(false), options: z.array(z.string().trim().min(1).max(120)).max(100).default([]),
   orderIndex: z.number().int().min(0).max(10000).default(0),
 }).strict().refine(value => value.fieldType !== 'select' || (value.options.length > 0 && new Set(value.options).size === value.options.length), {
   message: 'Informe opções diferentes para o campo de seleção.', path: ['options'],
@@ -45,7 +46,7 @@ export const fieldInputSchema = z.object({
 // Data types and scope are immutable: existing answers must keep their meaning.
 export const fieldPatchSchema = z.object({
   label: z.string().trim().min(1).max(120).optional(), required: z.boolean().optional(),
-  isActive: z.boolean().optional(), orderIndex: z.number().int().min(0).max(10000).optional(),
+  isHighlighted: z.boolean().optional(), isActive: z.boolean().optional(), orderIndex: z.number().int().min(0).max(10000).optional(),
 }).strict().refine(value => Object.keys(value).length > 0)
 
 export function validateProfileValues(definitions: ProfileDefinition[], values: Record<string, unknown>) {
@@ -123,10 +124,10 @@ export async function createProfileField(pool: pg.Pool, user: AuthUser, input: z
     if (input.recordTypeId) await requireRecordType(db, input.crmInstanceId, input.recordTypeId)
     await assertFieldLimit(db, access)
     const result = await db.query<DefinitionRow>(`INSERT INTO public.crm_custom_field_definitions
-      (crm_instance_id, stable_key, label, field_type, options, required, record_type_id, order_index)
-      VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8) RETURNING *`,
+      (crm_instance_id, stable_key, label, field_type, options, required, record_type_id, order_index, is_highlighted)
+      VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9) RETURNING *`,
     [input.crmInstanceId, `custom_${randomUUID()}`, input.label, input.fieldType,
-      JSON.stringify(input.fieldType === 'select' ? input.options : []), input.required, input.recordTypeId, input.orderIndex])
+      JSON.stringify(input.fieldType === 'select' ? input.options : []), input.required, input.recordTypeId, input.orderIndex, input.isHighlighted])
     return mapField(result.rows[0])
   })
 }
@@ -141,8 +142,8 @@ export async function patchProfileField(pool: pg.Pool, user: AuthUser, id: strin
     if (!field.is_active && patch.isActive) await assertFieldLimit(db, access)
     const result = await db.query<DefinitionRow>(`UPDATE public.crm_custom_field_definitions
       SET label = COALESCE($2, label), required = COALESCE($3, required),
-          is_active = COALESCE($4, is_active), order_index = COALESCE($5, order_index), updated_at = NOW()
-      WHERE id = $1 RETURNING *`, [id, patch.label ?? null, patch.required ?? null, patch.isActive ?? null, patch.orderIndex ?? null])
+          is_active = COALESCE($4, is_active), order_index = COALESCE($5, order_index), is_highlighted = COALESCE($6, is_highlighted), updated_at = NOW()
+      WHERE id = $1 RETURNING *`, [id, patch.label ?? null, patch.required ?? null, patch.isActive ?? null, patch.orderIndex ?? null, patch.isHighlighted ?? null])
     return mapField(result.rows[0])
   })
 }
@@ -176,6 +177,7 @@ export async function saveLeadProfile(db: ProfileDb, user: AuthUser, leadId: str
   }
   await db.query(`UPDATE public.leads SET record_type_id = $2, crm_instance_id = $3, updated_at = NOW() WHERE id = $1`,
     [lead.id, input.recordTypeId, instanceId])
+  await reconcileQualification(db,leadId)
   return { recordTypeId: input.recordTypeId, values: { ...previous, ...validated } }
 }
 
@@ -219,7 +221,7 @@ async function getLeadAccess(db: ProfileDb, user: AuthUser, leadId: string, lock
     FROM public.leads l JOIN public.crm_pipelines p ON p.id = l.pipeline_id AND p.organization_id = l.organization_id
     JOIN public.crm_instances ci ON ci.id = COALESCE(l.crm_instance_id, p.crm_instance_id) AND ci.organization_id = l.organization_id
       AND (p.crm_instance_id IS NULL OR l.crm_instance_id IS NULL OR p.crm_instance_id = l.crm_instance_id)
-    WHERE l.id = $1 AND ($3::boolean OR EXISTS (
+    WHERE l.deleted_at IS NULL AND l.id = $1 AND ($3::boolean OR EXISTS (
       SELECT 1 FROM public.crm_instance_members member
       JOIN public.memberships m ON m.user_id = member.user_id AND m.organization_id = l.organization_id
       WHERE member.crm_instance_id = ci.id AND member.user_id = $2 AND member.status = 'active'
@@ -253,7 +255,7 @@ function mapRecordType(row: TypeRow) { return { id: row.id, crmInstanceId: row.c
 function mapField(row: DefinitionRow) {
   return { id: row.id, crmInstanceId: row.crm_instance_id, stableKey: row.stable_key, label: row.label,
     fieldType: row.field_type, recordTypeId: row.record_type_id, options: row.options, required: row.required,
-    orderIndex: row.order_index, isActive: row.is_active }
+    isHighlighted: row.is_highlighted ?? false, orderIndex: row.order_index, isActive: row.is_active }
 }
 function mapConflict(error: unknown) {
   return (error as { code?: string }).code === '23505' ? profileError(409, 'Já existe um tipo de cliente com este nome.') : error

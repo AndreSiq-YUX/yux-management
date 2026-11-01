@@ -97,7 +97,7 @@ export async function listCrmTasks(pool: pg.Pool, user: AuthUser, filters: CrmTa
   const count = await pool.query<{ total: number }>(
     `SELECT COUNT(*)::int AS total
      FROM public.lead_tasks task
-     JOIN public.leads lead ON lead.id = task.lead_id
+     JOIN public.leads lead ON lead.id = task.lead_id AND lead.deleted_at IS NULL
      WHERE ${where}`,
     values,
   )
@@ -109,7 +109,7 @@ export async function listCrmTasks(pool: pg.Pool, user: AuthUser, filters: CrmTa
             pipeline.name AS pipeline_name, stage.name AS stage_name,
             assignee.name AS assigned_to_name
      FROM public.lead_tasks task
-     JOIN public.leads lead ON lead.id = task.lead_id
+     JOIN public.leads lead ON lead.id = task.lead_id AND lead.deleted_at IS NULL
      LEFT JOIN public.crm_pipelines pipeline ON pipeline.id = lead.pipeline_id
      LEFT JOIN public.crm_pipeline_stages stage ON stage.id = lead.stage_id
      LEFT JOIN public.users assignee ON assignee.id = task.assigned_to
@@ -293,7 +293,7 @@ async function getTaskForUpdate(pool: Queryable, user: TaskActor, taskId: string
             assignee.name AS assigned_to_name,
             lead.crm_instance_id, member.role AS member_role, member.status AS member_status
      FROM public.lead_tasks task
-     JOIN public.leads lead ON lead.id = task.lead_id
+     JOIN public.leads lead ON lead.id = task.lead_id AND lead.deleted_at IS NULL
      LEFT JOIN public.crm_pipelines pipeline ON pipeline.id = lead.pipeline_id
      LEFT JOIN public.crm_pipeline_stages stage ON stage.id = lead.stage_id
      LEFT JOIN public.users assignee ON assignee.id = task.assigned_to

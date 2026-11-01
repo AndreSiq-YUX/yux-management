@@ -139,7 +139,7 @@ export async function sendEmailRequest(
   const claim = await pool.query<EmailDeliveryRequestRow>(
     `UPDATE public.email_send_requests
      SET status = 'sending', protected_error = NULL, updated_at = NOW()
-     WHERE id = $1 AND status IN ('queued', 'failed')
+     WHERE id = $1 AND status IN ('queued', 'failed') AND (lead_id IS NULL OR EXISTS(SELECT 1 FROM public.leads l WHERE l.id=email_send_requests.lead_id AND l.deleted_at IS NULL))
      RETURNING id, organization_id, lead_id, template_id, template_version_id,
                email_kind, recipient_email, recipient_opt_in, subject, body_html,
                body_text, rendered_variables, status, provider_message_id,

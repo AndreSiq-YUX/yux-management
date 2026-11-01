@@ -1,3 +1,4 @@
+import { reconcileQualification } from './qualification-repository.js'
 import { recordDomainEvent } from '../events/repository.js'
 import type { DomainEventEnvelope } from '../events/types.js'
 import {
@@ -96,7 +97,7 @@ export async function applyLeadScoringEvent(
       `SELECT id, organization_id, crm_instance_id, fit_score, intent_score, score,
               name, email, phone, company, source, stage, status, attribution_context
        FROM public.leads
-       WHERE id = $1 AND crm_instance_id = $2
+       WHERE deleted_at IS NULL AND id = $1 AND crm_instance_id = $2
        FOR UPDATE`,
       [event.leadId, event.crmInstanceId],
     )
@@ -110,6 +111,11 @@ export async function applyLeadScoringEvent(
     if (!model) {
       await client.query('COMMIT')
       return empty
+    }
+    if (model.calculationMode === 'sum') {
+      const summary = await reconcileQualification(client as never, lead.id, event)
+      await client.query('COMMIT')
+      return { ...empty, leadId: lead.id, fitScore: summary?.fitScore ?? 0, intentScore: summary?.intentScore ?? 0, combinedScore: summary?.score ?? 0, changed: summary?.score !== lead.score }
     }
     const rules = await listActiveScoringRules(client, model.id, event.eventType)
     const context = buildScoringContext(event, lead)

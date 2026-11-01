@@ -17,6 +17,7 @@ export interface CrmCustomField {
   fieldType: CustomFieldType
   recordTypeId: string | null
   options: string[]
+  isHighlighted?: boolean
   required: boolean
   orderIndex: number
   isActive: boolean

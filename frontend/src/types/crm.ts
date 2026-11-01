@@ -148,10 +148,12 @@ export interface CrmPipelineStageMetrics extends CrmPipelineMetrics {
 }
 
 export interface CrmLead {
+  canDelete?: boolean
   id: string
   organizationId: string
   crmInstanceId?: string
   recordTypeId?: string | null
+  profileSummary?: { recordTypeName: string | null; fields: Array<{ key: string; label: string; fieldType: string; value: string | number | boolean | null; isHighlighted: boolean }> }
   profile?: LeadProfileInput
   pipelineId: string
   stageId: string
@@ -278,6 +280,9 @@ export type LeadScoreDimension = 'fit' | 'intent'
 export type LeadScoringOperator = 'equals' | 'not_equals' | 'contains' | 'greater_than' | 'less_than' | 'exists'
 
 export interface LeadScoringModel {
+  calculationMode?: string
+  warmThreshold?: number
+  hotThreshold?: number
   id: string
   crmInstanceId: string
   name: string

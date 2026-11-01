@@ -81,7 +81,7 @@ export async function enqueueMissingDueExecutions(pool: pg.Pool, options: CrmSeq
     `WITH due AS (
        SELECT e.id AS enrollment_id, e.organization_id, e.lead_id, e.sequence_id, e.current_step_index, e.next_execution_at, e.manual_note
        FROM public.crm_sequence_enrollments e
-       WHERE e.status = 'active'
+       WHERE e.status = 'active' AND EXISTS(SELECT 1 FROM public.leads active_lead WHERE active_lead.id=e.lead_id AND active_lead.deleted_at IS NULL)
          AND e.next_execution_at IS NOT NULL
          AND e.next_execution_at <= $1
          AND NOT EXISTS (
@@ -162,9 +162,9 @@ export async function processSequenceExecution(pool: pg.Pool, executionId: strin
     const result = await client.query<ExecutionRow & { lead_name: string | null; lead_email: string | null; lead_phone: string | null }>(
       `SELECT x.*, l.name AS lead_name, l.email AS lead_email, l.phone AS lead_phone
        FROM public.automation_executions x
-       JOIN public.leads l ON l.id = x.lead_id
+       JOIN public.leads l ON l.id = x.lead_id AND l.deleted_at IS NULL
        WHERE x.id = $1
-       FOR UPDATE OF x`,
+       FOR UPDATE OF x, l`,
       [executionId],
     )
     const execution = result.rows[0]

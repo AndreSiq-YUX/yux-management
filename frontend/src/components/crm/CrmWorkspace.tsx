@@ -1,4 +1,11 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef,useState, type ReactNode } from 'react'
+import { apiRequest } from '@/lib/apiClient'
+import { LeadTemperature } from './scoring/LeadTemperature'
+import { LeadDeleteDialog, LeadDeleteButton, requestLeadDeletion } from './LeadDeleteDialog'
+import { LeadTrashPanel } from './LeadTrashPanel'
+import { LeadScoreSummary } from './scoring/LeadScoreSummary'
+import { LeadHighlights } from './LeadHighlights'
+import { LeadProfileSummary } from './LeadProfileSummary'
 import { leadSourceLabel } from '@/lib/crm/leadSourceLabel'
 import { AlertCircle, Pause, Play, Plus, RefreshCw, Upload, UserRoundCheck } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -82,6 +89,9 @@ export function CrmWorkspace({ initialPipelineId, initialLeadId, profile = 'inte
   const [leadForm, setLeadForm] = useState(initialLeadForm)
   const [recordTypeId, setRecordTypeId] = useState<string | null>(null)
   const [customValues, setCustomValues] = useState<CustomFieldValues>({})
+  const [deleteCandidates,setDeleteCandidates] = useState<CrmLead[]>([])
+  const [trashOpen,setTrashOpen] = useState(false)
+  useEffect(() => { const listener = (event: Event) => setDeleteCandidates((event as CustomEvent<CrmLead[]>).detail); window.addEventListener("crm-lead-delete", listener); return () => window.removeEventListener("crm-lead-delete",listener) }, [])
   const [configurationOpen, setConfigurationOpen] = useState(false)
   const [creatingLead, setCreatingLead] = useState(false)
   const [createError, setCreateError] = useState('')
@@ -92,6 +102,9 @@ export function CrmWorkspace({ initialPipelineId, initialLeadId, profile = 'inte
   const pipeline = pipelines.find(item => item.id === pipelineId)
   const crmInstanceId = governance?.instance.id || pipeline?.crmInstanceId
   const profileConfiguration = useCrmProfileConfiguration(crmInstanceId)
+  const leadScope = useRef('')
+  leadScope.current = `${organization?.id || ''}:${crmInstanceId || ''}:${pipelineId || ''}`
+  useEffect(() => { setSelectedLead(undefined); setDeleteCandidates([]); setTrashOpen(false); setConfigurationOpen(false); setLeads([]) }, [organization?.id,crmInstanceId])
   useEffect(() => {
     setRecordTypeId(null); setCustomValues({}); setCreateError(''); setConfigurationOpen(false)
   }, [crmInstanceId])
@@ -169,9 +182,9 @@ export function CrmWorkspace({ initialPipelineId, initialLeadId, profile = 'inte
     }
     try {
       setLoadError(null)
-      setLeads(governance?.instance.id
-        ? await crmService.getLeadsForInstance(governance.instance.id, pipelineId)
-        : await crmService.getLeads(organizationId, pipelineId))
+      const requestScope = leadScope.current
+      const result = governance?.instance.id ? await crmService.getLeadsForInstance(governance.instance.id, pipelineId) : await crmService.getLeads(organizationId, pipelineId)
+      if (requestScope === leadScope.current) setLeads(result)
     } catch (error) {
       console.error('Erro ao carregar leads:', error)
       setLoadError(isPortal ? 'Não foi possível carregar os leads deste funil.' : 'Nao foi possivel carregar os leads deste pipeline.')
@@ -180,7 +193,8 @@ export function CrmWorkspace({ initialPipelineId, initialLeadId, profile = 'inte
   }, [organization?.id, pipelineId, governance?.instance.id, crmUnavailable, isPortal])
 
   useEffect(() => { loadPipelines() }, [loadPipelines])
-  useEffect(() => { loadLeads() }, [loadLeads])
+  useEffect(() => { loadLeads(); const reload = () => { void loadLeads() }; window.addEventListener("crm-leads-changed", reload); return () => window.removeEventListener("crm-leads-changed", reload) }, [loadLeads])
+  useEffect(() => { setSelectedLead(current => current ? leads.find(item => item.id === current.id) : current) }, [leads])
   useEffect(()=>{
     if(!initialLeadId||openedDeepLink.current===initialLeadId)return
     const found=leads.find(lead=>lead.id===initialLeadId)
@@ -262,15 +276,15 @@ export function CrmWorkspace({ initialPipelineId, initialLeadId, profile = 'inte
   }
 
   const configurationAction = crmInstanceId && profileConfiguration.configuration?.canConfigure
-    ? <Button type="button" variant="outline" onClick={() => setConfigurationOpen(true)}>Tipos e campos</Button>
+    ? <><Button type="button" variant="outline" onClick={() => setConfigurationOpen(true)}>Tipos e campos</Button><Button variant="outline" onClick={() => setTrashOpen(true)}>Leads excluídos</Button></>
     : null
   const configurationDialog = crmInstanceId ? (
-    <Dialog open={configurationOpen} onOpenChange={setConfigurationOpen}>
+    <><LeadDeleteDialog leads={deleteCandidates} crmInstanceId={crmInstanceId} onClose={() => setDeleteCandidates([])} onDeleted={() => { setSelectedLead(undefined); void loadLeads(); toast(t => <span className="flex items-center gap-3">Lead excluído.<button type="button" className="font-semibold underline" onClick={async () => { try { await apiRequest("/crm/leads/restore",{method:"POST",body:{crmInstanceId,leadIds:deleteCandidates.map(lead => lead.id)}}); toast.dismiss(t.id); void loadLeads() } catch { toast.error("Não foi possível recuperar. Use Leads excluídos.") } }}>Desfazer</button></span>,{duration:10000}) }} /><LeadTrashPanel crmInstanceId={crmInstanceId} open={trashOpen} onClose={() => setTrashOpen(false)} onRestored={() => { void loadLeads(); toast.success("Lead recuperado.") }} /><Dialog open={configurationOpen} onOpenChange={setConfigurationOpen}>
       <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
         <DialogHeader><DialogTitle>Tipos de cliente e campos personalizados</DialogTitle></DialogHeader>
-        <CrmRecordConfiguration key={crmInstanceId} crmInstanceId={crmInstanceId} onChanged={profileConfiguration.reload} />
+        <CrmRecordConfiguration key={crmInstanceId} crmInstanceId={crmInstanceId} onChanged={() => { profileConfiguration.reload(); void loadLeads() }} />
       </DialogContent>
-    </Dialog>
+    </Dialog></>
   ) : null
   const customProfileFields = <>
     {profileConfiguration.loading && <p role="status" className="text-sm">Carregando campos personalizados...</p>}
@@ -607,6 +621,11 @@ function LeadList({
   profile?: CrmWorkspaceProfile
   empty?: React.ReactNode
 }) {
+  const [selection,setSelection] = useState<string[]>([])
+  const eligible = leads.filter(lead => lead.canDelete)
+  const selected = eligible.filter(lead => selection.includes(lead.id))
+  const selectionBar = eligible.length ? <div className="flex flex-wrap items-center gap-3 border-b p-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" aria-label="Selecionar leads" checked={selected.length > 0 && selected.length === Math.min(100,eligible.length)} onChange={event => setSelection(event.target.checked ? eligible.slice(0,100).map(l => l.id) : [])} />Selecionar até 100 leads</label>{selected.length > 0 && <Button variant="destructive" size="sm" onClick={() => requestLeadDeletion(selected)}>Excluir {selected.length} selecionados</Button>}</div> : null
+  const selectLead = (lead: CrmLead) => lead.canDelete ? <input type="checkbox" aria-label={`Selecionar ${lead.name}`} checked={selection.includes(lead.id)} onChange={event => setSelection(current => event.target.checked ? [...current,lead.id].slice(0,100) : current.filter(id => id!==lead.id))} /> : null
   const stageNameById = new Map((stages || []).map(stage => [stage.id, stage.name]))
 
   if (profile === 'portal') {
@@ -616,14 +635,14 @@ function LeadList({
         header: 'Lead',
         mobileLabel: '',
         render: lead => (
-          <button type="button" className="min-h-10 text-left font-medium text-yx-fg hover:text-yx-blue sm:min-h-0" onClick={() => onSelectLead(lead)}>
+          <div className="flex flex-col gap-2">{selectLead(lead)}<button type="button" className="min-h-10 text-left font-medium text-yx-fg hover:text-yx-blue sm:min-h-0" onClick={() => onSelectLead(lead)}>
             {lead.name}
-            <span className="block text-xs font-normal text-yx-fg-3">{lead.company || lead.email}</span>
-          </button>
+            <span className="block text-xs font-normal text-yx-fg-3">{lead.company || lead.email}</span><LeadHighlights lead={lead} />
+          </button><LeadDeleteButton lead={lead} /></div>
         ),
       },
       { key: 'source', header: 'Origem', render: lead => leadSourceLabel(lead.sourceKind, lead.source) },
-      { key: 'score', header: 'Pontuação', render: lead => lead.score },
+      { key: 'score', header: 'Pontuação', render: lead => <span>{lead.score} <LeadTemperature temperature={lead.temperature} /></span> },
       { key: 'value', header: 'Valor', render: lead => (lead.value !== undefined ? formatCurrency(lead.value) : 'Sem valor') },
       {
         key: 'stage',
@@ -638,13 +657,13 @@ function LeadList({
     ]
     return (
       <div className="rounded-[10px] border border-yx-line bg-yx-surface p-2 sm:p-3">
-        <ResponsiveTable caption="Leads do funil" columns={columns} rows={leads} getRowKey={lead => lead.id} empty={empty} />
+        {selectionBar}<ResponsiveTable caption="Leads do funil" columns={columns} rows={leads} getRowKey={lead => lead.id} empty={empty} />
       </div>
     )
   }
 
   return (
-    <div className="overflow-hidden rounded-md border bg-white">
+    <div className="overflow-hidden rounded-md border bg-white">{selectionBar}
       <div className="grid grid-cols-[1.4fr_1fr_120px_160px_220px] border-b bg-slate-50 px-4 py-2 text-xs font-medium uppercase text-slate-500">
         <span>Lead</span>
         <span>Origem</span>
@@ -654,12 +673,12 @@ function LeadList({
       </div>
       {leads.map(lead => (
         <div key={lead.id} className="grid grid-cols-[1.4fr_1fr_120px_160px_220px] items-center gap-3 border-b px-4 py-3 text-sm last:border-b-0">
-          <button type="button" className="text-left font-medium text-slate-950 hover:text-yux-700" onClick={() => onSelectLead(lead)}>
+          <div className="flex flex-col gap-2">{selectLead(lead)}<button type="button" className="text-left font-medium text-slate-950 hover:text-yux-700" onClick={() => onSelectLead(lead)}>
             {lead.name}
-            <span className="block text-xs font-normal text-slate-500">{lead.company || lead.email}</span>
-          </button>
+            <span className="block text-xs font-normal text-slate-500">{lead.company || lead.email}</span><LeadHighlights lead={lead} />
+          </button><LeadDeleteButton lead={lead} /></div>
           <span>{leadSourceLabel(lead.sourceKind, lead.source)}</span>
-          <span>{lead.score}</span>
+          <span>{lead.score} <LeadTemperature temperature={lead.temperature} /></span>
           <span>{lead.value !== undefined ? lead.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'Sem valor'}</span>
           <Select value={lead.stageId} onValueChange={value => onMoveLead(lead, value)}>
             <SelectTrigger className="h-8 text-xs"><SelectValue placeholder={stageNameById.get(lead.stageId) || 'Etapa'} /></SelectTrigger>
@@ -712,8 +731,13 @@ function CalendarView({ leads, onSelectLead, profile = 'internal' }: { leads: Cr
 }
 
 function LeadOperationsModal({ organizationId, crmInstanceId, lead, onClose }: { organizationId: string; crmInstanceId?: string; lead?: CrmLead; onClose: () => void }) {
+  const [detailTab, setDetailTab] = useState('follow-up')
+  const [profileRevision, setProfileRevision] = useState(0)
+  useEffect(() => { setDetailTab('follow-up') }, [lead?.id])
+  useEffect(() => { if (profileRevision) window.dispatchEvent(new Event('crm-leads-changed')) }, [profileRevision])
   const [interactions, setInteractions] = useState<CrmInteraction[]>([]), [tasks, setTasks] = useState<CrmTask[]>([]), [sequences, setSequences] = useState<CrmSequence[]>([]), [enrollments, setEnrollments] = useState<CrmSequenceEnrollment[]>([]), [executions, setExecutions] = useState<AutomationExecution[]>([])
   const [crmConversations, setCrmConversations] = useState<LeadConversationView[]>([]), [aiInsights, setAiInsights] = useState<LeadAiInsight[]>([]), [fieldSuggestions, setFieldSuggestions] = useState<LeadAiFieldSuggestion[]>([]), [responseSuggestions, setResponseSuggestions] = useState<LeadResponseSuggestion[]>([]), [slaEvents, setSlaEvents] = useState<LeadSlaEvent[]>([]), [quickReplies, setQuickReplies] = useState<CrmQuickReply[]>([]), [templates, setTemplates] = useState<CrmMessageTemplate[]>([])
+  const [interactionType,setInteractionType] = useState<CrmInteraction['type']>('note')
   const [note, setNote] = useState(''), [taskTitle, setTaskTitle] = useState(''), [dueAt, setDueAt] = useState(''), [sequenceId, setSequenceId] = useState<string>(), [rescheduleAt, setRescheduleAt] = useState('')
   const refresh = useCallback(async () => {
     if (!lead) return
@@ -734,20 +758,20 @@ function LeadOperationsModal({ organizationId, crmInstanceId, lead, onClose }: {
     }
   }, [lead, organizationId])
   useEffect(() => { refresh() }, [refresh])
-  const addNote = async () => { if (!lead || !note.trim()) return; await crmService.createInteraction(organizationId, lead.id, { type: 'note', title: 'Atualizacao comercial', description: note.trim() }); setNote(''); refresh() }
+  const addNote = async () => { if (!lead || !note.trim()) return; await crmService.createInteraction(organizationId, lead.id, { type: interactionType, title: interactionType === 'email' ? 'Resposta de e-mail recebida (registro manual)' : 'Atualização comercial', description: note.trim() }); setNote(''); refresh() }
   const addTask = async () => { if (!lead || !taskTitle.trim() || !dueAt) return; await crmService.createTask(organizationId, lead.id, taskTitle.trim(), new Date(dueAt).toISOString()); setTaskTitle(''); setDueAt(''); refresh() }
-  const completeTask = async (taskId: string) => { await crmService.completeLeadTask(taskId); toast.success('Tarefa concluída'); refresh() }
+  const completeTask = async (taskId: string) => { await crmService.completeLeadTask(taskId); toast.success('Tarefa concluída'); window.dispatchEvent(new Event('crm-leads-changed')); refresh() }
   const markWon = async () => { if (!lead) return; await crmService.markLeadWon({ leadId: lead.id, value: lead.value }); toast.success('Lead marcado como ganho'); refresh() }
   const markLost = async () => { if (!lead) return; await crmService.markLeadLost({ leadId: lead.id, lostReason: 'Marcado manualmente no cockpit.' }); toast.success('Lead marcado como perdido'); refresh() }
   const enroll = async () => { if (!lead || !sequenceId) return; await crmService.enrollLead(organizationId, lead.id, sequenceId); toast.success('Sequência iniciada'); refresh() }
   const setStatus = async (item: CrmSequenceEnrollment, status: CrmSequenceEnrollment['status']) => { await crmService.updateEnrollment(item.id, { status, manualNote: status === 'manual' ? 'Atendimento assumido manualmente.' : undefined }); refresh() }
   const reschedule = async (item: CrmSequenceEnrollment) => { if (!rescheduleAt) return; await crmService.updateEnrollment(item.id, { status: 'active', nextExecutionAt: new Date(rescheduleAt).toISOString() }); setRescheduleAt(''); toast.success('Follow-up reagendado'); refresh() }
   const sendSuggestion = async (suggestionId: string) => { await crmConversationService.sendSuggestedReply({ suggestionId }); toast.success('Resposta enviada'); refresh() }
-  return <Dialog open={Boolean(lead)} onOpenChange={open => !open && onClose()}><DialogContent className="max-h-[90vh] max-w-7xl overflow-y-auto"><DialogHeader><DialogTitle>{lead?.name}</DialogTitle></DialogHeader>{lead && <Tabs defaultValue="follow-up">
+  return <Dialog open={Boolean(lead)} onOpenChange={open => !open && onClose()}><DialogContent className="max-h-[90vh] max-w-7xl overflow-y-auto"><DialogHeader><DialogTitle>{lead?.name}</DialogTitle>{lead && <LeadDeleteButton lead={lead} />}</DialogHeader>{lead && <Tabs value={detailTab} onValueChange={setDetailTab}>
     <TabsList className="flex h-auto w-full flex-wrap justify-start"><TabsTrigger value="follow-up">Follow-up</TabsTrigger>{(lead.crmInstanceId || crmInstanceId) && <TabsTrigger value="profile">Perfil do cliente</TabsTrigger>}<TabsTrigger value="history">Histórico</TabsTrigger><TabsTrigger value="tasks">Tarefas</TabsTrigger><TabsTrigger value="automations">Execuções</TabsTrigger><TabsTrigger value="commercial">Comercial</TabsTrigger></TabsList>
-    {(lead.crmInstanceId || crmInstanceId) && <TabsContent value="profile"><LeadProfilePanel key={lead.id} leadId={lead.id} /></TabsContent>}
-    <TabsContent value="follow-up" className="space-y-4"><Lead360Panel lead={lead} interactions={interactions} tasks={tasks} conversations={crmConversations} aiInsights={aiInsights} fieldSuggestions={fieldSuggestions} responseSuggestions={responseSuggestions} slaEvents={slaEvents} quickReplies={quickReplies} templates={templates} onSendSuggestion={sendSuggestion} taskTitle={taskTitle} dueAt={dueAt} onTaskTitleChange={setTaskTitle} onDueAtChange={setDueAt} onCreateTask={addTask} onCompleteTask={completeTask} onMarkWon={markWon} onMarkLost={markLost} /><div className="flex gap-2"><Select value={sequenceId} onValueChange={setSequenceId}><SelectTrigger><SelectValue placeholder="Escolha uma sequência" /></SelectTrigger><SelectContent>{sequences.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><Button disabled={!sequenceId} onClick={enroll}>Iniciar sequência</Button></div>{sequences.length === 0 && <p className="text-sm text-gray-500">Nenhuma sequência configurada.</p>}{enrollments.map(item => <div key={item.id} className="space-y-3 rounded-md border p-3"><div className="flex items-center justify-between gap-2"><span className="text-sm">{item.status}{item.nextExecutionAt ? ` - próximo envio ${new Date(item.nextExecutionAt).toLocaleString('pt-BR')}` : ''}</span><div className="flex gap-2"><Button size="sm" variant="outline" title="Pausar automacao" onClick={() => setStatus(item, 'paused')}><Pause className="h-3 w-3" /></Button><Button size="sm" variant="outline" title="Retomar automacao" onClick={() => setStatus(item, 'active')}><Play className="h-3 w-3" /></Button><Button size="sm" variant="outline" onClick={() => setStatus(item, 'manual')}><UserRoundCheck className="mr-1 h-3 w-3" />Assumir</Button></div></div><div className="flex gap-2"><Input type="datetime-local" value={rescheduleAt} onChange={event => setRescheduleAt(event.target.value)} /><Button size="sm" variant="outline" disabled={!rescheduleAt} onClick={() => reschedule(item)}>Reagendar</Button></div></div>)}</TabsContent>
-    <TabsContent value="history" className="space-y-3"><div className="flex gap-2"><Textarea placeholder="Registrar atualização" value={note} onChange={event => setNote(event.target.value)} /><Button onClick={addNote}>Registrar</Button></div><LeadTimeline interactions={interactions} /></TabsContent>
+    {(lead.crmInstanceId || crmInstanceId) && <TabsContent value="profile"><LeadProfilePanel key={lead.id} leadId={lead.id} onSaved={() => { setProfileRevision(value => value + 1); setDetailTab("follow-up") }} /></TabsContent>}
+    <TabsContent value="follow-up" className="space-y-4">{(lead.crmInstanceId || crmInstanceId) && <LeadProfileSummary lead={lead} onEdit={() => setDetailTab("profile")} />}<LeadScoreSummary leadId={lead.id} onTask={() => setDetailTab("tasks")} onProposal={() => setDetailTab("commercial")} /><Lead360Panel lead={lead} interactions={interactions} tasks={tasks} conversations={crmConversations} aiInsights={aiInsights} fieldSuggestions={fieldSuggestions} responseSuggestions={responseSuggestions} slaEvents={slaEvents} quickReplies={quickReplies} templates={templates} onSendSuggestion={sendSuggestion} taskTitle={taskTitle} dueAt={dueAt} onTaskTitleChange={setTaskTitle} onDueAtChange={setDueAt} onCreateTask={addTask} onCompleteTask={completeTask} onMarkWon={markWon} onMarkLost={markLost} /><div className="flex flex-col gap-2 sm:flex-row"><Select value={sequenceId} onValueChange={setSequenceId}><SelectTrigger><SelectValue placeholder="Escolha uma sequência" /></SelectTrigger><SelectContent>{sequences.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><Button disabled={!sequenceId} onClick={enroll}>Iniciar sequência</Button></div>{sequences.length === 0 && <p className="text-sm text-gray-500">Nenhuma sequência configurada.</p>}{enrollments.map(item => <div key={item.id} className="space-y-3 rounded-md border p-3"><div className="flex items-center justify-between gap-2"><span className="text-sm">{item.status}{item.nextExecutionAt ? ` - próximo envio ${new Date(item.nextExecutionAt).toLocaleString('pt-BR')}` : ''}</span><div className="flex gap-2"><Button size="sm" variant="outline" title="Pausar automacao" onClick={() => setStatus(item, 'paused')}><Pause className="h-3 w-3" /></Button><Button size="sm" variant="outline" title="Retomar automacao" onClick={() => setStatus(item, 'active')}><Play className="h-3 w-3" /></Button><Button size="sm" variant="outline" onClick={() => setStatus(item, 'manual')}><UserRoundCheck className="mr-1 h-3 w-3" />Assumir</Button></div></div><div className="flex gap-2"><Input type="datetime-local" value={rescheduleAt} onChange={event => setRescheduleAt(event.target.value)} /><Button size="sm" variant="outline" disabled={!rescheduleAt} onClick={() => reschedule(item)}>Reagendar</Button></div></div>)}</TabsContent>
+    <TabsContent value="history" className="space-y-3"><label className="flex flex-col gap-1 text-sm">Tipo de registro<select className="h-10 rounded-md border px-3" value={interactionType} onChange={event => setInteractionType(event.target.value as CrmInteraction['type'])}><option value="note">Nota comercial</option><option value="email">Resposta de e-mail recebida (manual)</option><option value="call">Chamada realizada</option></select></label><div className="flex gap-2"><Textarea placeholder="Registrar atualização" value={note} onChange={event => setNote(event.target.value)} /><Button onClick={addNote}>Registrar</Button></div><LeadTimeline interactions={interactions} /></TabsContent>
     <TabsContent value="tasks" className="space-y-3"><LeadTaskPanel tasks={tasks} taskTitle={taskTitle} dueAt={dueAt} onTaskTitleChange={setTaskTitle} onDueAtChange={setDueAt} onCreateTask={addTask} onCompleteTask={completeTask} /></TabsContent>
     <TabsContent value="automations" className="space-y-3">{executions.length === 0 && <p className="text-sm text-gray-500">Nenhuma execução registrada.</p>}{executions.map(item => <div key={item.id} className="flex justify-between gap-3 rounded-md border p-3 text-sm"><div><p>{item.actionType} - {item.status}</p><p className="text-xs text-gray-500">Agendado para {new Date(item.scheduledAt).toLocaleString('pt-BR')}</p>{item.lastError && <p className="mt-1 text-xs text-red-600">{item.lastError}</p>}</div>{item.status === 'failed' && <Button size="sm" variant="outline" onClick={() => crmService.retryExecution(item.id).then(refresh)}><RefreshCw className="mr-1 h-3 w-3" />Tentar novamente</Button>}</div>)}</TabsContent>
     <TabsContent value="commercial"><LeadCommercialPanel lead={lead} /></TabsContent>

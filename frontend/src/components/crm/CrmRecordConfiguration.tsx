@@ -9,7 +9,7 @@ import { customFieldTypeLabels } from '@/types/crmRecordProfile'
 import type { CrmCustomField, CrmRecordType, CustomFieldType } from '@/types/crmRecordProfile'
 
 const selectClass = 'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:opacity-50'
-const emptyField = { label: '', fieldType: 'text' as CustomFieldType, required: false, optionsText: '' }
+const emptyField = { label: '', fieldType: 'text' as CustomFieldType, isHighlighted: false, required: false, optionsText: '' }
 
 export function CrmRecordConfiguration({ crmInstanceId, onChanged }: { crmInstanceId: string; onChanged?: () => void }) {
   const { configuration, loading, error: loadError, reload } = useCrmProfileConfiguration(crmInstanceId)
@@ -41,9 +41,9 @@ export function CrmRecordConfiguration({ crmInstanceId, onChanged }: { crmInstan
       setError('Informe pelo menos uma opção, sem repetir os valores.'); return
     }
     if (await mutate(() => editingField
-      ? crmRecordProfileService.patchField(editingField.id, { label: field.label.trim(), required: field.required })
+      ? crmRecordProfileService.patchField(editingField.id, { label: field.label.trim(), required: field.required, isHighlighted: field.isHighlighted })
       : crmRecordProfileService.createField({ crmInstanceId, recordTypeId: selectedType || null, label: field.label.trim(),
-        fieldType: field.fieldType, required: field.required, options: field.fieldType === 'select' ? options : [],
+        isHighlighted: field.isHighlighted, fieldType: field.fieldType, required: field.required, options: field.fieldType === 'select' ? options : [],
         orderIndex: configuration?.fields.length || 0 }))) {
       setField(emptyField); setEditingField(undefined)
     }
@@ -51,7 +51,7 @@ export function CrmRecordConfiguration({ crmInstanceId, onChanged }: { crmInstan
   const toggleType = (type: CrmRecordType) => mutate(() => crmRecordProfileService.patchRecordType(type.id, { isActive: !type.isActive }))
   const editField = (item: CrmCustomField) => {
     setEditingField(item)
-    setField({ label: item.label, fieldType: item.fieldType, required: item.required, optionsText: (item.options || []).join('\n') })
+    setField({ label: item.label, fieldType: item.fieldType, isHighlighted: item.isHighlighted ?? false, required: item.required, optionsText: (item.options || []).join('\n') })
   }
 
   if (loading) return <p className="text-sm text-muted-foreground">Carregando configuração...</p>
@@ -129,6 +129,7 @@ export function CrmRecordConfiguration({ crmInstanceId, onChanged }: { crmInstan
               <Textarea id="crm-field-options" required disabled={Boolean(editingField)} value={field.optionsText} onChange={event => setField(current => ({ ...current, optionsText: event.target.value }))} />
             </label>}
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={field.required} onChange={event => setField(current => ({ ...current, required: event.target.checked }))} />Preenchimento obrigatório</label>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={field.isHighlighted} onChange={event => setField(current => ({ ...current, isHighlighted: event.target.checked }))} />Exibir em destaque na lista e no Kanban</label>
             {editingField && <p className="text-xs text-muted-foreground">O formato e as opções são preservados para manter o significado das respostas já registradas. Para mudar o formato, crie outro campo.</p>}
             <Button type="submit" className="self-start" disabled={!field.label.trim()}>{busy ? 'Salvando...' : editingField ? 'Salvar campo' : 'Adicionar campo'}</Button>
           </fieldset>
