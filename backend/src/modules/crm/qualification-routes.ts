@@ -65,14 +65,12 @@ export async function registerQualificationRoutes(
         `UPDATE public.lead_scoring_models SET calculation_mode='sum' WHERE id=$1`,
         [model.id],
       )
-      return reply
-        .code(201)
-        .send({
-          ...model,
-          calculationMode: 'sum',
-          warmThreshold: 40,
-          hotThreshold: 70,
-        })
+      return reply.code(201).send({
+        ...model,
+        calculationMode: 'sum',
+        warmThreshold: 40,
+        hotThreshold: 70,
+      })
     })
   })
   app.get('/scoring/fields', async (request, reply) => {
@@ -280,8 +278,17 @@ export async function registerQualificationRoutes(
     return inProfileTransaction(app.pg, async (db) => {
       await scoringAccess(db, user, body.crmInstanceId, true)
       const leads = await db.query<{ id: string }>(
-        `SELECT id FROM public.leads WHERE crm_instance_id=$1 AND deleted_at IS NULL AND ($2::uuid IS NULL OR id>$2) ORDER BY id LIMIT 51`,
-        [body.crmInstanceId, body.afterId ?? null],
+        `SELECT l.id FROM public.leads l WHERE l.crm_instance_id=$1 AND l.deleted_at IS NULL AND ($2::uuid IS NULL OR l.id>$2)
+          AND ($3::boolean OR EXISTS (SELECT 1 FROM public.crm_instance_members m WHERE m.crm_instance_id=l.crm_instance_id AND m.user_id=$4 AND m.status='active'
+            AND (m.role IN ('client_admin','yux_admin') OR l.owner_member_id=m.id OR l.owner_id=$4 OR l.assigned_to=$4
+              OR (m.role='manager' AND EXISTS(SELECT 1 FROM public.crm_team_members tm WHERE tm.team_id=l.team_id AND tm.member_id=m.id AND tm.role='manager')))))
+          ORDER BY l.id LIMIT 51`,
+        [
+          body.crmInstanceId,
+          body.afterId ?? null,
+          ['yux_admin', 'yux_operator'].includes(user.role),
+          user.id,
+        ],
       )
       const results = []
       for (const lead of leads.rows.slice(0, 50))

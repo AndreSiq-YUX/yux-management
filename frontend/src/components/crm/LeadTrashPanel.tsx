@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -24,6 +24,10 @@ export function LeadTrashPanel({
   onClose: () => void
   onRestored: () => void
 }) {
+  const scope = useRef({ key: '', version: 0 })
+  const key = `${crmInstanceId}:${open}`
+  if (scope.current.key !== key)
+    scope.current = { key, version: scope.current.version + 1 }
   const [leads, setLeads] = useState<RemovedLead[]>([]),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
@@ -56,6 +60,7 @@ export function LeadTrashPanel({
     }
   }, [crmInstanceId, open, revision])
   const restore = async (id: string) => {
+    const version = scope.current.version
     setBusy(true)
     setError('')
     try {
@@ -63,16 +68,19 @@ export function LeadTrashPanel({
         method: 'POST',
         body: { crmInstanceId },
       })
+      if (version !== scope.current.version) return
       setLeads((current) => current.filter((l) => l.id !== id))
       onRestored()
     } catch {
-      setError('Não foi possível recuperar este lead.')
+      if (version === scope.current.version)
+        setError('Não foi possível recuperar este lead.')
     } finally {
-      setBusy(false)
+      if (version === scope.current.version) setBusy(false)
     }
   }
   const more = async () => {
     if (!cursor) return
+    const version = scope.current.version
     setBusy(true)
     try {
       const v = await apiRequest<{
@@ -81,12 +89,14 @@ export function LeadTrashPanel({
       }>(
         `/crm/leads/trash?crmInstanceId=${encodeURIComponent(crmInstanceId)}&afterId=${cursor}`,
       )
+      if (version !== scope.current.version) return
       setLeads((current) => [...current, ...v.leads])
       setCursor(v.nextCursor)
     } catch {
-      setError('Não foi possível carregar mais leads.')
+      if (version === scope.current.version)
+        setError('Não foi possível carregar mais leads.')
     } finally {
-      setBusy(false)
+      if (version === scope.current.version) setBusy(false)
     }
   }
   return (

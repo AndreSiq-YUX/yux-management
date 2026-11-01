@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { crmService } from '@/services/crmService'
 import { usePlatformStore } from '@/stores/platformStore'
 import type { CrmLead, CrmPipeline, CrmTaskListItem } from '@/types/crm'
@@ -25,7 +25,10 @@ export function usePortalCrmContext() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  const scope=useRef(organization?.id)
+  scope.current=organization?.id
   const load = useCallback(async () => {
+    const requestScope=organization?.id
     if (isPlatformLoading) {
       setLoading(true)
       return
@@ -56,22 +59,27 @@ export function usePortalCrmContext() {
         limit: 100,
       })))
 
+      if(scope.current!==requestScope)return
       setState({
         pipelines,
         leads,
         tasks: taskPages.flatMap(page => page.items),
       })
     } catch (loadError) {
+      if(scope.current!==requestScope)return
       console.error('Erro ao carregar CRM do portal:', loadError)
       setState(emptyState)
       setError('Nao foi possivel carregar os dados comerciais.')
     } finally {
-      setLoading(false)
+      if(scope.current===requestScope)setLoading(false)
     }
   }, [activeContract, enabledModuleKeys, isPlatformLoading, organization])
 
   useEffect(() => {
-    load()
+    void load()
+    const refresh=()=>{void load()}
+    window.addEventListener('crm-leads-changed',refresh)
+    return ()=>window.removeEventListener('crm-leads-changed',refresh)
   }, [load])
 
   return {

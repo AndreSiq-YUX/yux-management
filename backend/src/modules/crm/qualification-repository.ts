@@ -28,6 +28,7 @@ type LeadRow = {
   crm_instance_id: string
   record_type_id: string | null
   score: number
+  score_model_id: string|null
   fit_score: number
   intent_score: number
   company: string | null
@@ -144,14 +145,16 @@ export async function reconcileQualification(
   )
   const model = models.rows[0]
   if (!model || model.calculation_mode !== 'sum') return null
+  const previousScore = lead.score_model_id === model.id ? lead.score : 0
   const rules = await loadQualificationRules(db, model.id),
     context = await qualificationContext(db, lead)
   const ledger = await db.query<{
     rule_id: string
     source_key: string
     points: number
+    activity_context: Record<string, unknown>
   }>(
-    `SELECT rule_id,source_key,points FROM public.crm_score_contributions WHERE lead_id=$1`,
+    `SELECT rule_id,source_key,points,activity_context FROM public.crm_score_contributions WHERE lead_id=$1 ORDER BY created_at,id`,
     [leadId],
   )
   const contributions: Array<{
@@ -171,45 +174,78 @@ export async function reconcileQualification(
           [lead.organization_id, leadId, rule.id, points],
         )
     } else {
-      points = ledger.rows
-        .filter((c) => c.rule_id === rule.id)
-        .reduce((sum, c) => sum + c.points, 0)
+      const occurrences = ledger.rows.filter(
+        (c) => c.rule_id === rule.id && c.source_key !== 'profile',
+      )
       if (
         event &&
         event.organizationId === lead.organization_id &&
         event.crmInstanceId === lead.crm_instance_id &&
         event.eventType === rule.eventType
       ) {
-        const eventContext = {
-          ...context,
-          'activity.channel': event.payload.channel,
-          'activity.text': event.payload.text,
-          'activity.stageId': event.payload.stageId,
-          'activity.interactionType': event.payload.type,
-        }
         const objectKey =
-          event.payload.messageId || event.payload.taskId || event.eventId
+          event.payload.messageId ||
+          event.payload.taskId ||
+          event.payload.interactionId ||
+          event.eventId
         const sourceKey = `${event.eventType}:${String(objectKey)}`
-        if (
-          !ledger.rows.some(
-            (c) => c.rule_id === rule.id && c.source_key === sourceKey,
-          ) &&
-          matchesQualification(rule, eventContext)
-        ) {
-          const delta = ruleContribution(
-            points,
-            rule.points,
-            rule.maxContribution,
-          )
+        if (!occurrences.some((c) => c.source_key === sourceKey)) {
+          const activityContext: Record<string, unknown> = {
+            'activity.eventType': event.eventType,
+            'activity.channel':
+              typeof event.payload.channel === 'string'
+                ? event.payload.channel
+                : null,
+            'activity.text':
+              typeof event.payload.text === 'string'
+                ? event.payload.text.slice(0, 10000)
+                : null,
+            'activity.stageId':
+              typeof event.payload.stageId === 'string'
+                ? event.payload.stageId
+                : null,
+            'activity.interactionType':
+              typeof event.payload.type === 'string'
+                ? event.payload.type
+                : null,
+          }
+          occurrences.push({
+            rule_id: rule.id,
+            source_key: sourceKey,
+            points: 0,
+            activity_context: activityContext,
+          })
           if (!preview)
             await db.query(
-              `INSERT INTO public.crm_score_contributions(organization_id,lead_id,rule_id,source_key,points) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
-              [lead.organization_id, leadId, rule.id, sourceKey, delta],
+              `INSERT INTO public.crm_score_contributions(organization_id,lead_id,rule_id,source_key,points,activity_context) VALUES($1,$2,$3,$4,0,$5::jsonb) ON CONFLICT DO NOTHING`,
+              [
+                lead.organization_id,
+                leadId,
+                rule.id,
+                sourceKey,
+                JSON.stringify(activityContext),
+              ],
             )
-          points += delta
         }
       }
+      for (const occurrence of occurrences) {
+        const activityContext = occurrence.activity_context || {}
+        const sameEvent =
+          activityContext['activity.eventType'] === rule.eventType
+        const delta =
+          sameEvent &&
+          matchesQualification(rule, { ...context, ...activityContext })
+            ? ruleContribution(points, rule.points, rule.maxContribution)
+            : 0
+        points += delta
+        if (!preview && delta !== occurrence.points)
+          await db.query(
+            `UPDATE public.crm_score_contributions SET points=$4 WHERE lead_id=$1 AND rule_id=$2 AND source_key=$3`,
+            [leadId, rule.id, occurrence.source_key, delta],
+          )
+      }
     }
+
     if (points)
       contributions.push({
         ruleId: rule.id,
@@ -239,15 +275,16 @@ export async function reconcileQualification(
   }
   if (!preview) {
     await db.query(
-      `UPDATE public.leads SET score=$2,fit_score=$3,intent_score=$4,updated_at=CASE WHEN score IS DISTINCT FROM $2 THEN now() ELSE updated_at END WHERE id=$1`,
+      `UPDATE public.leads SET score=$2,fit_score=$3,intent_score=$4,score_model_id=$5,updated_at=CASE WHEN score IS DISTINCT FROM $2 THEN now() ELSE updated_at END WHERE id=$1`,
       [
         leadId,
         score,
         Math.max(0, Math.min(100, fit)),
         Math.max(0, Math.min(100, intent)),
+        model.id,
       ],
     )
-    if (score !== lead.score) {
+    if (score !== previousScore) {
       const changed = await recordDomainEvent(db as never, {
         eventType: 'lead.score_changed',
         organizationId: lead.organization_id,
@@ -257,12 +294,12 @@ export async function reconcileQualification(
         aggregateId: leadId,
         actor: { type: 'system' },
         ...(event ? { parent: event } : {}),
-        payload: { previousCombinedScore: lead.score, combinedScore: score },
+        payload: { previousCombinedScore: previousScore, combinedScore: score },
       })
       for (const threshold of [model.warm_threshold, model.hot_threshold])
         if (
-          (lead.score < threshold && score >= threshold) ||
-          (lead.score >= threshold && score < threshold)
+          (previousScore < threshold && score >= threshold) ||
+          (previousScore >= threshold && score < threshold)
         )
           await recordDomainEvent(db as never, {
             eventType: 'lead.score_threshold_reached',
@@ -277,7 +314,7 @@ export async function reconcileQualification(
               threshold,
               direction: score >= threshold ? 'up' : 'down',
               combinedScore: score,
-              previousCombinedScore: lead.score,
+              previousCombinedScore: previousScore,
             },
           })
     }

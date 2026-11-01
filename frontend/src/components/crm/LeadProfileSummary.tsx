@@ -1,6 +1,6 @@
 import type { CrmLead } from '@/types/crm'
 import { Button } from '@/components/ui/button'
-import { profileValue } from './LeadHighlights'
+import { profileValue } from '@/lib/crm/profileValue'
 
 export function LeadProfileSummary({
   lead,

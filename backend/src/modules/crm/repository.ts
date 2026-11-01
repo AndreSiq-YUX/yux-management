@@ -284,7 +284,10 @@ export async function listLeads(
   filters: { organizationId?: string; pipelineId?: string; crmInstanceId?: string },
 ) {
   const result = await pool.query<LeadRow>(
-    `SELECT l.*, CASE WHEN sm.calculation_mode='sum' THEN CASE WHEN l.score>=sm.hot_threshold THEN 'hot' WHEN l.score>=sm.warm_threshold THEN 'warm' ELSE 'cold' END END AS qualification_temperature,
+    `SELECT l.*, CASE WHEN sm.calculation_mode='sum' AND l.score_model_id IS DISTINCT FROM sm.id THEN 0 ELSE l.score END AS score,
+       CASE WHEN sm.calculation_mode='sum' AND l.score_model_id IS DISTINCT FROM sm.id THEN 0 ELSE l.fit_score END AS fit_score,
+       CASE WHEN sm.calculation_mode='sum' AND l.score_model_id IS DISTINCT FROM sm.id THEN 0 ELSE l.intent_score END AS intent_score,
+       CASE WHEN sm.calculation_mode='sum' THEN CASE WHEN l.score_model_id IS DISTINCT FROM sm.id THEN CASE WHEN sm.warm_threshold=0 THEN 'warm' ELSE 'cold' END WHEN l.score>=sm.hot_threshold THEN 'hot' WHEN l.score>=sm.warm_threshold THEN 'warm' ELSE 'cold' END END AS qualification_temperature,
        ($5::boolean OR EXISTS (SELECT 1 FROM public.crm_instance_members m WHERE m.crm_instance_id=l.crm_instance_id AND m.user_id=$1 AND m.status='active' AND m.role IN ('client_admin','yux_admin'))) AS can_delete
      FROM public.leads l
      LEFT JOIN public.lead_scoring_models sm ON sm.crm_instance_id=l.crm_instance_id AND sm.is_active

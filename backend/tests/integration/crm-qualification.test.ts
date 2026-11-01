@@ -8,6 +8,9 @@ import { createContextAwarePool } from '../../src/db/client.js'
 import { runWithDatabaseRequestContext } from '../../src/db/request-context.js'
 import { createDomainEventEnvelope } from '../../src/modules/events/types.js'
 import pg from 'pg'
+import { crmRecoveryCandidatesSearch } from '../../src/modules/action-engine/capabilities/crm.js'
+import { acquireWhatsAppOutboundAttempt } from '../../src/jobs/handlers/omnichannel.js'
+import { processSequenceExecution } from '../../src/modules/crm/scheduler.js'
 let rig: IntegrationRig,
   fixture: Awaited<ReturnType<typeof createRecordProfileFixture>>
 beforeAll(async () => {
@@ -463,4 +466,319 @@ describe('CRM qualification through scoped HTTP and PostgreSQL', () => {
       await worker.end()
     }
   })
+  it('limits manager recalculation to owned or managed-team leads', async () => {
+    const lead = await rig.request('client_admin_A', 'POST', '/api/crm/leads', {
+      organizationId: fixture.organizationId,
+      crmInstanceId: fixture.instanceId,
+      pipelineId: fixture.pipelineId,
+      stageId: fixture.stageId,
+      name: 'Off-team explanation',
+      email: 'offteam@integration.test',
+      source: 'manual',
+    })
+    await rig.sql(
+      "UPDATE public.crm_instance_members SET role='manager' WHERE crm_instance_id=$1 AND user_id=$2",
+      [fixture.instanceId, fixtureUsers.client_member_A.id],
+    )
+    try {
+      expect(
+        (
+          await rig.request(
+            'client_member_A',
+            'GET',
+            `/api/crm/leads/${lead.body.id}/qualification`,
+          )
+        ).statusCode,
+      ).toBe(404)
+      const preview = await rig.request(
+        'client_member_A',
+        'POST',
+        '/api/crm/scoring/recalculate',
+        { crmInstanceId: fixture.instanceId, preview: true },
+      )
+      expect(preview.statusCode).toBe(200)
+      expect(
+        preview.body.results.some((r: any) => r?.leadId === lead.body.id),
+      ).toBe(false)
+    } finally {
+      await rig.sql(
+        "UPDATE public.crm_instance_members SET role='seller' WHERE crm_instance_id=$1 AND user_id=$2",
+        [fixture.instanceId, fixtureUsers.client_member_A.id],
+      )
+    }
+  })
+  it('reapplies an edited activity cap when recalculating existing contributions', async () => {
+    const current = await rig.sql(
+      "SELECT id,definition FROM public.crm_qualification_rules WHERE crm_instance_id=$1 AND name='Respondeu com interesse' AND is_active ORDER BY created_at DESC LIMIT 1",
+      [fixture.instanceId],
+    )
+    const rule = current.rows[0]
+    const ledger = await rig.sql(
+      'SELECT lead_id FROM public.crm_score_contributions WHERE rule_id=$1 LIMIT 1',
+      [rule.id],
+    )
+    const leadId = ledger.rows[0].lead_id
+    const changed = await rig.request(
+      'client_admin_A',
+      'POST',
+      '/api/crm/scoring/qualification-rules',
+      {
+        id: rule.id,
+        crmInstanceId: fixture.instanceId,
+        rule: { ...rule.definition, maxContribution: 20 },
+      },
+    )
+    expect(changed.statusCode).toBe(200)
+    // Activity test trashes its lead; recovery must preserve the score history.
+    await rig.request(
+      'client_admin_A',
+      'POST',
+      `/api/crm/leads/${leadId}/restore`,
+      { crmInstanceId: fixture.instanceId },
+    )
+    const summary = await rig.request(
+      'client_admin_A',
+      'GET',
+      `/api/crm/leads/${leadId}/qualification`,
+    )
+    expect(
+      summary.body.contributions.find((c: any) => c.ruleId === rule.id).points,
+    ).toBe(20)
+  })
+  it('permanently cancels old pending executions and WhatsApp intents on deletion and recovery', async () => {
+    const created = await rig.request(
+      'client_admin_A',
+      'POST',
+      '/api/crm/leads',
+      {
+        organizationId: fixture.organizationId,
+        crmInstanceId: fixture.instanceId,
+        pipelineId: fixture.pipelineId,
+        stageId: fixture.stageId,
+        name: 'Deleted jobs',
+        email: 'deleted-jobs@integration.test',
+        source: 'manual',
+      },
+    )
+    const leadId = created.body.id
+    const contact = await rig.sql(
+      "INSERT INTO public.omnichannel_contacts(organization_id,display_name,phone) VALUES($1,'Fixture',$2) RETURNING id",
+      [fixture.organizationId, '+55' + Date.now().toString().slice(-11)],
+    )
+    const conversation = await rig.sql(
+      "INSERT INTO public.conversations(organization_id,contact_id,lead_id,channel,status,response_mode) VALUES($1,$2,$3,'whatsapp','open','assisted') RETURNING id",
+      [fixture.organizationId, contact.rows[0].id, leadId],
+    )
+    const message = await rig.sql(
+      "INSERT INTO public.messages(conversation_id,direction,author_type,content_type,body,delivery_status) VALUES($1,'outbound','agent','text','Fixture','queued') RETURNING id",
+      [conversation.rows[0].id],
+    )
+    const execution = await rig.sql(
+      "INSERT INTO public.automation_executions(organization_id,lead_id,action_type,payload) VALUES($1,$2,'internal_task','{}') RETURNING id",
+      [fixture.organizationId, leadId],
+    )
+    const removed = await rig.request(
+      'client_admin_A',
+      'POST',
+      '/api/crm/leads/trash',
+      { crmInstanceId: fixture.instanceId, leadIds: [leadId] },
+    )
+    expect(removed.statusCode).toBe(200)
+    const pool = new pg.Pool({
+      connectionString: process.env.YUX_INTEGRATION_DATABASE_URL,
+    })
+    try {
+      const input = {
+        id: message.rows[0].id,
+        organization_id: fixture.organizationId,
+        conversation_id: conversation.rows[0].id,
+      }
+      await expect(
+        acquireWhatsAppOutboundAttempt(pool, input),
+      ).rejects.toThrow()
+      await rig.request(
+        'client_admin_A',
+        'POST',
+        `/api/crm/leads/${leadId}/restore`,
+        { crmInstanceId: fixture.instanceId },
+      )
+      expect(
+        (
+          await rig.sql(
+            'SELECT status FROM public.automation_executions WHERE id=$1',
+            [execution.rows[0].id],
+          )
+        ).rows[0].status,
+      ).toBe('cancelled')
+      await expect(
+        acquireWhatsAppOutboundAttempt(pool, input),
+      ).rejects.toThrow()
+      expect(
+        await processSequenceExecution(pool, execution.rows[0].id),
+      ).toMatchObject({ skipped: true })
+    } finally {
+      await pool.end()
+    }
+  })
+
+  it('excludes tombstoned leads from operational reports, dashboard counts and recovery search', async () => {
+    const source = 'Deleted review ' + randomUUID()
+    const created = await rig.request(
+      'client_admin_A',
+      'POST',
+      '/api/crm/leads',
+      {
+        organizationId: fixture.organizationId,
+        crmInstanceId: fixture.instanceId,
+        pipelineId: fixture.pipelineId,
+        stageId: fixture.stageId,
+        name: 'Operationally removed',
+        email: 'report-deleted@integration.test',
+        source,
+      },
+    )
+    const leadId = created.body.id
+    await rig.sql(
+      "UPDATE public.leads SET stage='QUALIFIED',last_activity_at='2000-01-01' WHERE id=$1",
+      [leadId],
+    )
+    const before = await rig.request(
+      'yux_admin',
+      'GET',
+      '/api/workspace/dashboard/stats',
+    )
+    expect(before.statusCode).toBe(200)
+    await rig.request('client_admin_A', 'POST', '/api/crm/leads/trash', {
+      crmInstanceId: fixture.instanceId,
+      leadIds: [leadId],
+    })
+    const report = await rig.request(
+      'client_admin_A',
+      'GET',
+      `/api/reports/portal/operational/${fixture.organizationId}`,
+    )
+    expect(report.statusCode).toBe(200)
+    expect(
+      report.body.leadsBySource.some((row: any) => row.source === source),
+    ).toBe(false)
+    const after = await rig.request(
+      'yux_admin',
+      'GET',
+      '/api/workspace/dashboard/stats',
+    )
+    expect(after.body.overview.totalLeads).toBe(
+      before.body.overview.totalLeads - 1,
+    )
+    expect(after.body.overview.qualifiedLeads).toBe(
+      before.body.overview.qualifiedLeads - 1,
+    )
+    const candidates = await crmRecoveryCandidatesSearch.execute(
+      { organizationId: fixture.organizationId, query: rig.sql } as never,
+      {
+        inactiveDays: 1,
+        pipelineIds: [fixture.pipelineId],
+        stageIds: [],
+        excludeLeadIds: [],
+        limit: 100,
+      },
+    )
+    expect(candidates.output.candidates.some((row) => row.id === leadId)).toBe(
+      false,
+    )
+  })
+
+  it('serializes a WhatsApp claim behind deletion before claiming the message', async () => {
+    const created = await rig.request(
+      'client_admin_A',
+      'POST',
+      '/api/crm/leads',
+      {
+        organizationId: fixture.organizationId,
+        crmInstanceId: fixture.instanceId,
+        pipelineId: fixture.pipelineId,
+        stageId: fixture.stageId,
+        name: 'Claim race',
+        email: 'claim-race@integration.test',
+        source: 'manual',
+      },
+    )
+    const leadId = created.body.id
+    const contact = await rig.sql(
+      "INSERT INTO public.omnichannel_contacts(organization_id,display_name,phone) VALUES($1,'Race',$2) RETURNING id",
+      [fixture.organizationId, '+55' + Date.now().toString().slice(-11)],
+    )
+    const conversation = await rig.sql(
+      "INSERT INTO public.conversations(organization_id,contact_id,lead_id,channel,status,response_mode) VALUES($1,$2,$3,'whatsapp','open','assisted') RETURNING id",
+      [fixture.organizationId, contact.rows[0].id, leadId],
+    )
+    const message = await rig.sql(
+      "INSERT INTO public.messages(conversation_id,direction,author_type,content_type,body,delivery_status) VALUES($1,'outbound','agent','text','Fixture','queued') RETURNING id",
+      [conversation.rows[0].id],
+    )
+    const pool = new pg.Pool({
+      connectionString: process.env.YUX_INTEGRATION_DATABASE_URL,
+      application_name: 'qualification-claim-race',
+    })
+    const blocker = await pool.connect()
+    let claim: Promise<{ error?: unknown; value?: unknown }> | undefined
+    try {
+      await blocker.query('BEGIN')
+      await blocker.query(
+        'SELECT id FROM public.leads WHERE id=$1 FOR UPDATE',
+        [leadId],
+      )
+      claim = acquireWhatsAppOutboundAttempt(pool, {
+        id: message.rows[0].id,
+        organization_id: fixture.organizationId,
+        conversation_id: conversation.rows[0].id,
+      }).then(
+        (value) => ({ value }),
+        (error) => ({ error }),
+      )
+      await expect
+        .poll(
+          async () =>
+            Number(
+              (
+                await rig.sql(
+                  "SELECT count(*)::int AS count FROM pg_stat_activity WHERE application_name='qualification-claim-race' AND wait_event_type='Lock'",
+                )
+              ).rows[0].count,
+            ),
+          { timeout: 2000, interval: 20 },
+        )
+        .toBeGreaterThan(0)
+      await blocker.query(
+        "UPDATE public.messages SET cancelled_at=now(),delivery_status='failed' WHERE id=$1",
+        [message.rows[0].id],
+      )
+      await blocker.query(
+        'UPDATE public.leads SET deleted_at=now() WHERE id=$1',
+        [leadId],
+      )
+      await blocker.query('COMMIT')
+      expect((await claim).error).toBeDefined()
+      expect(
+        (
+          await rig.sql(
+            'SELECT count(*)::int AS count FROM public.outbound_message_runs WHERE message_id=$1',
+            [message.rows[0].id],
+          )
+        ).rows[0].count,
+      ).toBe(0)
+    } finally {
+      await blocker.query('ROLLBACK')
+      blocker.release()
+      await claim
+      await pool.end()
+    }
+  })
+  it('never displays an imported Radar score as qualification in the new model',async()=>{
+    const legacy=await rig.sql("INSERT INTO public.leads(organization_id,crm_instance_id,pipeline_id,stage_id,name,email,source,score) VALUES($1,$2,$3,$4,'Importado legado','radar-score@integration.test','Radar Comercial',94) RETURNING id",[fixture.organizationId,fixture.instanceId,fixture.pipelineId,fixture.stageId])
+    const list=await rig.request('client_admin_A','GET',`/api/crm/leads?crmInstanceId=${fixture.instanceId}`)
+    const lead=list.body.find((l:any)=>l.id===legacy.rows[0].id)
+    expect(lead.score).toBe(0);expect(lead.temperature).toBe('cold')
+    expect(lead).not.toHaveProperty('score_model_id')
+  })
+
 })

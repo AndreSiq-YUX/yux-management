@@ -21,6 +21,7 @@ CREATE TABLE public.crm_score_contributions (
   rule_id UUID NOT NULL REFERENCES public.crm_qualification_rules(id),
   source_key TEXT NOT NULL,
   points INTEGER NOT NULL,
+  activity_context JSONB NOT NULL DEFAULT '{}'::jsonb CHECK(jsonb_typeof(activity_context)='object'),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE(lead_id,rule_id,source_key)
 );
@@ -33,3 +34,5 @@ DO $$ DECLARE t TEXT; BEGIN
     EXECUTE format('CREATE POLICY qualification_scope ON public.%I FOR ALL TO yux_api,yux_worker USING(private.rls_can_access_organization(organization_id)) WITH CHECK(private.rls_can_access_organization(organization_id))',t);
   END LOOP;
 END $$;
+
+ALTER TABLE public.leads ADD COLUMN score_model_id UUID REFERENCES public.lead_scoring_models(id);

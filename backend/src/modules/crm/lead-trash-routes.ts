@@ -82,14 +82,12 @@ export async function registerLeadTrashRoutes(
       [query.crmInstanceId, query.afterId ?? null],
     )
     return {
-      leads: result.rows
-        .slice(0, 100)
-        .map((l) => ({
-          id: l.id,
-          name: l.name,
-          company: l.company,
-          deletedAt: l.deleted_at,
-        })),
+      leads: result.rows.slice(0, 100).map((l) => ({
+        id: l.id,
+        name: l.name,
+        company: l.company,
+        deletedAt: l.deleted_at,
+      })),
       nextCursor: result.rows.length > 100 ? result.rows[99].id : null,
     }
   })

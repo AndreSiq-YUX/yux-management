@@ -1,3 +1,4 @@
+import { requestLeadDeletion } from '@/lib/crm/leadDeletionEvents'
 import { useState } from 'react'
 import {
   Dialog,
@@ -8,8 +9,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { apiRequest } from '@/lib/apiClient'
 import type { CrmLead } from '@/types/crm'
-export const requestLeadDeletion = (leads: CrmLead[]) =>
-  window.dispatchEvent(new CustomEvent('crm-lead-delete', { detail: leads }))
 export function LeadDeleteButton({ lead }: { lead: CrmLead }) {
   if (!lead.canDelete) return null
   return (

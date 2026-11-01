@@ -433,10 +433,10 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
     const [clients, projects, leads, campaigns, activeProjects, qualifiedLeads, recentProjects, campaignRows] = await Promise.all([
       app.pg.query('SELECT COUNT(*)::int AS count FROM public.clients'),
       app.pg.query('SELECT COUNT(*)::int AS count FROM public.projects'),
-      app.pg.query('SELECT COUNT(*)::int AS count FROM public.leads'),
+      app.pg.query('SELECT COUNT(*)::int AS count FROM public.leads WHERE deleted_at IS NULL'),
       app.pg.query('SELECT COUNT(*)::int AS count FROM public.campaigns'),
       app.pg.query("SELECT COUNT(*)::int AS count FROM public.projects WHERE status = 'ACTIVE'"),
-      app.pg.query("SELECT COUNT(*)::int AS count FROM public.leads WHERE stage = ANY($1)", [['QUALIFIED', 'PROPOSAL', 'NEGOTIATION']]),
+      app.pg.query("SELECT COUNT(*)::int AS count FROM public.leads WHERE deleted_at IS NULL AND stage = ANY($1)", [['QUALIFIED', 'PROPOSAL', 'NEGOTIATION']]),
       app.pg.query(`
         SELECT p.id, p.name, p.status, c.company_name
         FROM public.projects p

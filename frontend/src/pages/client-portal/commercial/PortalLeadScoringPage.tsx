@@ -97,7 +97,11 @@ export function PortalLeadScoringPage() {
       eyebrow="Comercial"
       title="Pontuação de leads"
       description="Entenda como cada lead ganha pontos para você saber quem tem mais chance de fechar e atender essas pessoas primeiro."
-      help={[
+      help={model?.calculationMode==='sum' ? [
+        'A pontuação soma regras do perfil e das atividades, limitada a 0 a 100.',
+        'Faixas numéricas usam início incluído e fim não incluído. A mesma mensagem ou tarefa não pontua duas vezes.',
+        'Confira a prévia e recalcule os leads existentes depois de alterar as regras.',
+      ] : [
         'Cada lead tem duas notas: Perfil (o quanto ele se parece com o seu cliente ideal) e Interesse (o quanto ele age: abre e-mails, responde, envia formulário).',
         'A pontuação final combina as duas notas pelos pesos do modelo.',
         'Quem pode editar as regras também consegue simular o efeito de uma ação antes de salvar.',

@@ -1,7 +1,8 @@
+import { requestLeadDeletion } from '@/lib/crm/leadDeletionEvents'
 import { FormEvent, useCallback, useEffect, useMemo, useRef,useState, type ReactNode } from 'react'
 import { apiRequest } from '@/lib/apiClient'
 import { LeadTemperature } from './scoring/LeadTemperature'
-import { LeadDeleteDialog, LeadDeleteButton, requestLeadDeletion } from './LeadDeleteDialog'
+import { LeadDeleteDialog, LeadDeleteButton } from './LeadDeleteDialog'
 import { LeadTrashPanel } from './LeadTrashPanel'
 import { LeadScoreSummary } from './scoring/LeadScoreSummary'
 import { LeadHighlights } from './LeadHighlights'
@@ -279,7 +280,7 @@ export function CrmWorkspace({ initialPipelineId, initialLeadId, profile = 'inte
     ? <><Button type="button" variant="outline" onClick={() => setConfigurationOpen(true)}>Tipos e campos</Button><Button variant="outline" onClick={() => setTrashOpen(true)}>Leads excluídos</Button></>
     : null
   const configurationDialog = crmInstanceId ? (
-    <><LeadDeleteDialog leads={deleteCandidates} crmInstanceId={crmInstanceId} onClose={() => setDeleteCandidates([])} onDeleted={() => { setSelectedLead(undefined); void loadLeads(); toast(t => <span className="flex items-center gap-3">Lead excluído.<button type="button" className="font-semibold underline" onClick={async () => { try { await apiRequest("/crm/leads/restore",{method:"POST",body:{crmInstanceId,leadIds:deleteCandidates.map(lead => lead.id)}}); toast.dismiss(t.id); void loadLeads() } catch { toast.error("Não foi possível recuperar. Use Leads excluídos.") } }}>Desfazer</button></span>,{duration:10000}) }} /><LeadTrashPanel crmInstanceId={crmInstanceId} open={trashOpen} onClose={() => setTrashOpen(false)} onRestored={() => { void loadLeads(); toast.success("Lead recuperado.") }} /><Dialog open={configurationOpen} onOpenChange={setConfigurationOpen}>
+    <><LeadDeleteDialog leads={deleteCandidates} crmInstanceId={crmInstanceId} onClose={() => setDeleteCandidates([])} onDeleted={() => { setSelectedLead(undefined); void loadLeads(); toast(t => <span className="flex items-center gap-3">Lead excluído.<button type="button" className="font-semibold underline" onClick={async () => { try { await apiRequest("/crm/leads/restore",{method:"POST",body:{crmInstanceId,leadIds:deleteCandidates.map(lead => lead.id)}}); toast.dismiss(t.id); void loadLeads() } catch { toast.error("Não foi possível recuperar. Use Leads excluídos.") } }}>Desfazer</button></span>,{duration:10000}) }} /><LeadTrashPanel key={crmInstanceId} crmInstanceId={crmInstanceId} open={trashOpen} onClose={() => setTrashOpen(false)} onRestored={() => { void loadLeads(); toast.success("Lead recuperado.") }} /><Dialog open={configurationOpen} onOpenChange={setConfigurationOpen}>
       <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
         <DialogHeader><DialogTitle>Tipos de cliente e campos personalizados</DialogTitle></DialogHeader>
         <CrmRecordConfiguration key={crmInstanceId} crmInstanceId={crmInstanceId} onChanged={() => { profileConfiguration.reload(); void loadLeads() }} />
@@ -622,6 +623,7 @@ function LeadList({
   empty?: React.ReactNode
 }) {
   const [selection,setSelection] = useState<string[]>([])
+  useEffect(() => { setSelection(current => { const visible=current.filter(id => leads.some(lead => lead.id===id && lead.canDelete)); return visible.length===current.length?current:visible }) }, [leads])
   const eligible = leads.filter(lead => lead.canDelete)
   const selected = eligible.filter(lead => selection.includes(lead.id))
   const selectionBar = eligible.length ? <div className="flex flex-wrap items-center gap-3 border-b p-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" aria-label="Selecionar leads" checked={selected.length > 0 && selected.length === Math.min(100,eligible.length)} onChange={event => setSelection(event.target.checked ? eligible.slice(0,100).map(l => l.id) : [])} />Selecionar até 100 leads</label>{selected.length > 0 && <Button variant="destructive" size="sm" onClick={() => requestLeadDeletion(selected)}>Excluir {selected.length} selecionados</Button>}</div> : null
@@ -758,7 +760,7 @@ function LeadOperationsModal({ organizationId, crmInstanceId, lead, onClose }: {
     }
   }, [lead, organizationId])
   useEffect(() => { refresh() }, [refresh])
-  const addNote = async () => { if (!lead || !note.trim()) return; await crmService.createInteraction(organizationId, lead.id, { type: interactionType, title: interactionType === 'email' ? 'Resposta de e-mail recebida (registro manual)' : 'Atualização comercial', description: note.trim() }); setNote(''); refresh() }
+  const addNote = async () => { if (!lead || !note.trim()) return; await crmService.createInteraction(organizationId, lead.id, { type: interactionType, title: interactionType === 'email' ? 'Resposta de e-mail recebida (registro manual)' : 'Atualização comercial', description: note.trim() }); setNote(''); window.dispatchEvent(new Event('crm-leads-changed')); refresh() }
   const addTask = async () => { if (!lead || !taskTitle.trim() || !dueAt) return; await crmService.createTask(organizationId, lead.id, taskTitle.trim(), new Date(dueAt).toISOString()); setTaskTitle(''); setDueAt(''); refresh() }
   const completeTask = async (taskId: string) => { await crmService.completeLeadTask(taskId); toast.success('Tarefa concluída'); window.dispatchEvent(new Event('crm-leads-changed')); refresh() }
   const markWon = async () => { if (!lead) return; await crmService.markLeadWon({ leadId: lead.id, value: lead.value }); toast.success('Lead marcado como ganho'); refresh() }

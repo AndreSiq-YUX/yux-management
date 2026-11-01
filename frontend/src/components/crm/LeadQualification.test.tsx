@@ -1,10 +1,17 @@
 import { act } from 'react-dom/test-utils'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { LeadScoreSummary } from './scoring/LeadScoreSummary'
+import { crmQualificationService } from '@/services/crmQualificationService'
+import { LeadTrashPanel } from './LeadTrashPanel'
+import { apiRequest } from '@/lib/apiClient'
 import { LeadHighlights } from './LeadHighlights'
 import { LeadProfileSummary } from './LeadProfileSummary'
 import { LeadDeleteDialog } from './LeadDeleteDialog'
 import type { CrmLead } from '@/types/crm'
+vi.mock('@/services/crmQualificationService', () => ({
+  crmQualificationService: { summary: vi.fn() },
+}))
 vi.mock('@/lib/apiClient', () => ({ apiRequest: vi.fn() }))
 const roots: Array<{ root: Root; container: HTMLDivElement }> = []
 async function mount(element: React.ReactNode) {
@@ -90,5 +97,108 @@ describe('visible customer data', () => {
         .click(),
     )
     expect(closed).toHaveBeenCalledOnce()
+  })
+})
+
+describe('trash pagination isolation', () => {
+  it('discards a delayed page when the CRM instance changes', async () => {
+    let finish: (value: unknown) => void = () => {}
+    vi.mocked(apiRequest).mockImplementation((url) => {
+      if (url.includes('afterId='))
+        return new Promise((resolve) => {
+          finish = resolve
+        }) as never
+      return Promise.resolve({
+        leads: [
+          {
+            id: url.includes('crm-B') ? 'B' : 'A',
+            name: url.includes('crm-B') ? 'Empresa B' : 'Empresa A',
+            company: null,
+            deletedAt: '2026-11-01',
+          },
+        ],
+        nextCursor: url.includes('crm-B') ? null : 'next-A',
+      }) as never
+    })
+    await mount(
+      <LeadTrashPanel
+        crmInstanceId="crm-A"
+        open
+        onClose={() => {}}
+        onRestored={() => {}}
+      />,
+    )
+    await act(async () => {
+      Array.from(document.body.querySelectorAll('button'))
+        .find((b) => b.textContent === 'Carregar mais')!
+        .click()
+      await Promise.resolve()
+    })
+    await act(async () => {
+      roots
+        .at(-1)!
+        .root.render(
+          <LeadTrashPanel
+            crmInstanceId="crm-B"
+            open
+            onClose={() => {}}
+            onRestored={() => {}}
+          />,
+        )
+      await Promise.resolve()
+    })
+    await act(async () => {
+      finish({
+        leads: [
+          {
+            id: 'secret-A',
+            name: 'Dados exclusivos de A',
+            company: null,
+            deletedAt: '2026-11-01',
+          },
+        ],
+        nextCursor: null,
+      })
+      await Promise.resolve()
+    })
+    expect(document.body.textContent).toContain('Empresa B')
+    expect(document.body.textContent).not.toContain('Dados exclusivos de A')
+  })
+})
+
+describe('eventual score updates', () => {
+  afterEach(() => vi.useRealTimers())
+  it('refreshes the visible score after asynchronous activity processing', async () => {
+    vi.useFakeTimers()
+    vi.mocked(crmQualificationService.summary)
+      .mockResolvedValueOnce({
+        leadId: 'lead',
+        score: 10,
+        fitScore: 10,
+        intentScore: 0,
+        temperature: 'cold',
+        contributions: [],
+      })
+      .mockResolvedValue({
+        leadId: 'lead',
+        score: 70,
+        fitScore: 10,
+        intentScore: 60,
+        temperature: 'hot',
+        contributions: [],
+      })
+    const view = await mount(
+      <LeadScoreSummary
+        leadId="lead"
+        onTask={() => {}}
+        onProposal={() => {}}
+      />,
+    )
+    expect(view.textContent).toContain('10/100')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000)
+    })
+    expect(view.textContent).toContain('70/100')
+    expect(view.textContent).toContain('Quente')
   })
 })

@@ -502,7 +502,7 @@ export async function handleOutboundMessage(
        JOIN public.conversations c ON c.id = m.conversation_id
        JOIN public.omnichannel_contacts contact ON contact.id = c.contact_id
        LEFT JOIN public.channel_connections connection ON connection.id = c.connection_id
-      WHERE m.id = $1 AND NOT EXISTS(SELECT 1 FROM public.leads removed WHERE removed.id=c.lead_id AND removed.deleted_at IS NOT NULL) LIMIT 1`, [messageId])
+      WHERE m.id = $1 AND m.cancelled_at IS NULL AND NOT EXISTS(SELECT 1 FROM public.leads removed WHERE removed.id=c.lead_id AND removed.deleted_at IS NOT NULL) LIMIT 1`, [messageId])
   const row = message.rows[0]; if (!row) throw new Error('outbound_message_not_found')
   if (row.direction !== 'outbound') throw new Error('outbound_message_direction_required')
   if (row.author_type === 'ai' && row.metadata?.approvalStatus !== 'approved') throw new Error('ai_message_approval_required')
@@ -721,14 +721,17 @@ export async function handleOutboundMessage(
   }
 }
 
-async function acquireWhatsAppOutboundAttempt(pool: Pick<pg.Pool, 'connect'>, message: { id: string; organization_id: string; conversation_id: string }) {
+export async function acquireWhatsAppOutboundAttempt(pool: Pick<pg.Pool, 'connect'>, message: { id: string; organization_id: string; conversation_id: string }) {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
+    // Match deletion's lock order: lead first, message second. Claim is the start of delivery.
+    const lead = await client.query<{deleted_at:string|null}>(`SELECT l.deleted_at FROM public.conversations c JOIN public.leads l ON l.id=c.lead_id AND l.organization_id=c.organization_id WHERE c.id=$1 AND c.organization_id=$2 FOR KEY SHARE OF l`,[message.conversation_id,message.organization_id])
+    if(lead.rows[0]?.deleted_at) throw new Error('outbound_lead_deleted')
     // Lock the message only while acquiring the attempt, never during the
     // provider call. Every competing dispatch/retry rechecks under this lock.
     const locked = await client.query<{ id: string; delivery_status: string }>(
-      `SELECT id, delivery_status FROM public.messages WHERE id=$1 FOR UPDATE`, [message.id])
+      `SELECT id, delivery_status FROM public.messages WHERE id=$1 AND cancelled_at IS NULL FOR UPDATE`, [message.id])
     if (!locked.rows[0]) throw new Error('outbound_message_not_found')
     const latest = await client.query<{ id: string; status: string }>(
       `SELECT id, status FROM public.outbound_message_runs WHERE message_id=$1 ORDER BY attempt_number DESC LIMIT 1`, [message.id])

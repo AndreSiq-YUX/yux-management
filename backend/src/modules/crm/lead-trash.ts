@@ -54,11 +54,15 @@ export async function trashLeads(
         [lead.id],
       )
       await db.query(
-        `UPDATE public.email_send_requests SET status='suppressed',updated_at=now() WHERE lead_id=$1 AND status IN ('queued','failed')`,
+        `UPDATE public.email_send_requests SET status='suppressed',cancelled_at=now(),updated_at=now() WHERE lead_id=$1 AND status IN ('queued','failed')`,
         [lead.id],
       )
       await db.query(
-        `UPDATE public.messages SET delivery_status='failed',updated_at=now() WHERE direction='outbound' AND delivery_status IN ('queued','pending') AND conversation_id IN (SELECT id FROM public.conversations WHERE lead_id=$1)`,
+        `UPDATE public.messages SET delivery_status='failed',cancelled_at=now(),updated_at=now() WHERE direction='outbound' AND delivery_status IN ('queued','pending','failed') AND conversation_id IN (SELECT id FROM public.conversations WHERE lead_id=$1)`,
+        [lead.id],
+      )
+      await db.query(
+        `UPDATE public.automation_executions SET status='cancelled',cancelled_at=now() WHERE lead_id=$1 AND status IN ('pending','failed')`,
         [lead.id],
       )
       await db.query(

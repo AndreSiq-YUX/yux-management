@@ -54,7 +54,7 @@ export const crmRecoveryCandidatesSearch: CapabilityDefinition<z.infer<typeof ca
     const result = await context.query<{ id: string; name: string; company: string | null; value: string | null; stage_id: string | null; last_activity_at: string | Date | null }>(
       `SELECT lead.id, lead.name, lead.company, lead.value::TEXT, lead.stage_id, lead.last_activity_at
        FROM public.leads lead
-       WHERE lead.organization_id = $1
+       WHERE lead.deleted_at IS NULL AND lead.organization_id = $1
          AND COALESCE(lead.last_activity_at, lead.updated_at, lead.created_at) <= NOW() - ($2::INT * INTERVAL '1 day')
          AND (cardinality($3::UUID[]) = 0 OR lead.pipeline_id = ANY($3::UUID[]))
          AND (cardinality($4::UUID[]) = 0 OR lead.stage_id = ANY($4::UUID[]))

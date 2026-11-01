@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { crmQualificationService } from '@/services/crmQualificationService'
 import {
   temperatureLabels,
@@ -17,22 +17,45 @@ export function LeadScoreSummary({
   const [data, setData] = useState<QualificationSummary | null>(null),
     [error, setError] = useState(''),
     [revision, setRevision] = useState(0)
+  const lastScore = useRef<{ leadId: string; score: number } | null>(null)
   useEffect(() => {
     let active = true
-    setData(null)
+    if (lastScore.current?.leadId !== leadId) {
+      setData(null)
+      lastScore.current = null
+    }
     setError('')
-    crmQualificationService
-      .summary(leadId)
-      .then((v) => {
-        if (active) setData(v)
-      })
-      .catch(() => {
-        if (active) setError('Não foi possível consultar a pontuação.')
-      })
+    let pending = false
+    const refreshScore = async () => {
+      if (pending) return
+      pending = true
+      try {
+        const value = await crmQualificationService.summary(leadId)
+        if (!active) return
+        setData(value)
+        setError('')
+        const changed =
+          value &&
+          lastScore.current?.leadId === leadId &&
+          lastScore.current.score !== value.score
+        lastScore.current = value ? { leadId, score: value.score } : null
+        if (changed) window.dispatchEvent(new Event('crm-leads-changed'))
+      } catch {
+        if (active) {
+          setData(null)
+          setError('Não foi possível consultar a pontuação.')
+        }
+      } finally {
+        pending = false
+      }
+    }
+    void refreshScore()
+    const timer = window.setInterval(() => void refreshScore(), 5000)
     const reload = () => setRevision((v) => v + 1)
     window.addEventListener('crm-leads-changed', reload)
     return () => {
       active = false
+      window.clearInterval(timer)
       window.removeEventListener('crm-leads-changed', reload)
     }
   }, [leadId, revision])

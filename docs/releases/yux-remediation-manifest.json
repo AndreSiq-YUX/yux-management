@@ -40,7 +40,7 @@
     "count": 154,
     "first": "0001_auth_core.sql",
     "last": "0252_crm_lead_trash.sql",
-    "aggregateSha256": "2e4997027eee9af7241474f548774e79dfd3ecb0b87e42dbd6fa109c4251e255",
+    "aggregateSha256": "c638ccd45e4f29854a03f09a21f68e0fbd2934beca7e72ed60a1c5d26e063d36",
     "targetVerification": "not_run"
   },
   "contracts": {

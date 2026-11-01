@@ -141,7 +141,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
     const organizationId = params.data.organizationId
 
     const [leads, campaigns, landingPages, proposals, conversations, projects] = await Promise.all([
-      readPortalRows(app.pg, organizationId, `SELECT source, stage, status, last_activity_at FROM public.leads WHERE organization_id = $1`),
+      readPortalRows(app.pg, organizationId, `SELECT source, stage, status, last_activity_at FROM public.leads WHERE deleted_at IS NULL AND organization_id = $1`),
       readPortalRows(app.pg, organizationId, `SELECT id, name, spent, impressions, clicks, conversions, leads, attributed_revenue, cpl, mroi, provider_connection_id FROM public.campaigns WHERE organization_id = $1`),
       readPortalRows(app.pg, organizationId, `SELECT id, name, visits, leads FROM public.landing_pages WHERE organization_id = $1`),
       readPortalRows(app.pg, organizationId, `SELECT status FROM public.proposals WHERE organization_id = $1`),

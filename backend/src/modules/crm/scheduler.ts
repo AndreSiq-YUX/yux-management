@@ -139,7 +139,7 @@ export async function processDueExecutions(pool: pg.Pool, options: CrmSequenceSc
   const due = await pool.query<{ id: string }>(
     `SELECT id
      FROM public.automation_executions
-     WHERE status IN ('pending', 'failed') AND scheduled_at <= $1
+     WHERE status IN ('pending', 'failed') AND scheduled_at <= $1 AND EXISTS(SELECT 1 FROM public.leads l WHERE l.id=automation_executions.lead_id AND l.deleted_at IS NULL)
      ORDER BY scheduled_at ASC
      LIMIT $2`,
     [now.toISOString(), limit],
@@ -159,16 +159,19 @@ export async function processSequenceExecution(pool: pg.Pool, executionId: strin
   let whatsappMessageId: string | null = null
   try {
     await client.query('BEGIN')
-    const result = await client.query<ExecutionRow & { lead_name: string | null; lead_email: string | null; lead_phone: string | null }>(
-      `SELECT x.*, l.name AS lead_name, l.email AS lead_email, l.phone AS lead_phone
+    const binding=await client.query<{lead_id:string}>('SELECT lead_id FROM public.automation_executions WHERE id=$1',[executionId])
+    if(binding.rows[0]) await client.query('SELECT id FROM public.leads WHERE id=$1 FOR KEY SHARE',[binding.rows[0].lead_id])
+    const result = await client.query<ExecutionRow & { lead_name: string | null; lead_email: string | null; lead_phone: string | null; lead_deleted_at?: string | null }>(
+      `SELECT x.*, l.name AS lead_name, l.email AS lead_email, l.phone AS lead_phone, l.deleted_at AS lead_deleted_at
        FROM public.automation_executions x
-       JOIN public.leads l ON l.id = x.lead_id AND l.deleted_at IS NULL
+       JOIN public.leads l ON l.id = x.lead_id
        WHERE x.id = $1
-       FOR UPDATE OF x, l`,
+       FOR UPDATE OF x`,
       [executionId],
     )
     const execution = result.rows[0]
     if (!execution) throw Object.assign(new Error('execution_not_found'), { statusCode: 404 })
+    if (execution.status === 'cancelled' || execution.lead_deleted_at) { await client.query('COMMIT'); return {success:true,skipped:true} }
     if (execution.status === 'completed') {
       await client.query('COMMIT')
       return { success: true, duplicate: true }
