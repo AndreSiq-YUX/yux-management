@@ -1,3 +1,4 @@
+import {projectLeadCommercialProfile} from '../crm/lead-commercial-profile.js'
 import {isRadarCampaignExcluded} from './campaign-exclusions.js'
 import {isRadarSemanticallyOutside} from './semantic-eligibility.js'
 import type pg from 'pg'
@@ -42,7 +43,7 @@ export function buildRadarCrmLeadFacts(candidate:{title:string;normalizedPayload
     activity?`Atividade e evidências: ${JSON.stringify(activity)}`:'',
     'Contatos públicos não comprovam consentimento nem atendimento. Contato comercial manual.'].filter(Boolean).join('\n')
   return {name:candidate.title,email:first('email')??'',phone:first('phone')??first('whatsapp')??null,
-    notes,
+    notes,whatsappPhone:first('whatsapp'),city:commercial.city,state:commercial.state,address:commercial.address,websiteUrl:commercial.websiteUrl,cnpj:commercial.cnpj,commercialProfile:projectLeadCommercialProfile(commercial),
     attribution:attributionSchema.parse({radarCnpj:commercial.cnpj,recommendedOffer:offer,websiteUrl:commercial.websiteUrl,
       contacts:commercial.contacts?.filter(item=>item.association==='confirmed')??[],registryPhone:commercial.registryPhone,companyProfile:commercial.profile,sizeAssessment:commercial.sizeAssessment,activity,
       targetStatus:commercial.targetStatus,productFit:commercial.productFit,triageReasons:reasons,
@@ -121,13 +122,13 @@ export async function deliverRadarCompaniesToCrm(pool:pg.Pool,user:AuthUser,inpu
       const evidence=(await client.query(`SELECT kind,value,source_url,observed_at FROM public.radar_b2b_evidence WHERE candidate_id=$1 AND organization_id=$2 ORDER BY observed_at DESC LIMIT 100`,[candidateId,input.organizationId])).rows
         .filter(row=>radarCommercialUrl(row.source_url)&&radarCommercialText(row.value))
         .map(row=>({value:row.value,sourceUrl:row.source_url,observedAt:row.observed_at}))
-      const lead=(await client.query(`INSERT INTO public.leads(organization_id,crm_instance_id,pipeline_id,stage_id,name,email,phone,company,source,source_kind,status,score,notes,last_activity_at,attribution_context,stage)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$5,'Radar Comercial','manual','open',0,$8,NOW(),$9::jsonb,'NEW') RETURNING id`,
+      const lead=(await client.query(`INSERT INTO public.leads(organization_id,crm_instance_id,pipeline_id,stage_id,name,email,phone,company,source,source_kind,status,score,notes,last_activity_at,attribution_context,stage,website_url,whatsapp_phone,city,state,address,cnpj,commercial_profile)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$5,'Radar Comercial','manual','open',0,$8,NOW(),$9::jsonb,'NEW',$10,$11,$12,$13,$14,$15,$16::jsonb) RETURNING id`,
         [input.organizationId,input.destination.crmInstanceId,input.destination.pipelineId,input.destination.stageId,facts.name,facts.email,facts.phone,
           triage?`Descoberta importada para qualificação. Importação não aprova aderência, contatos ou consentimento.\n${facts.notes}`:facts.notes,
           JSON.stringify({...facts.attribution,radarCandidateId:candidateId,radarCampaignId:input.campaignId,evidence,
             ...(triage?{qualificationStatus:'pending',importedBy:user.id}:{reviewedBy:user.id}),
-            deliveryMode:input.deliveryMode??'qualified',deliveryRequestId:input.requestId,configurationRevision:input.configurationRevision})])).rows[0]
+            deliveryMode:input.deliveryMode??'qualified',deliveryRequestId:input.requestId,configurationRevision:input.configurationRevision}),facts.websiteUrl??null,facts.whatsappPhone??null,facts.city??null,facts.state??null,facts.address??null,facts.cnpj??null,JSON.stringify(facts.commercialProfile)])).rows[0]
       await client.query(`UPDATE public.radar_candidate_records SET crm_lead_id=$3::uuid,normalized_payload=normalized_payload||jsonb_build_object('crmLeadId',($3::uuid)::text),updated_at=NOW() WHERE id=$1 AND organization_id=$2`,[candidateId,input.organizationId,lead.id])
       items.push({candidateId,status:'created',leadId:lead.id,pipelineId:input.destination.pipelineId})
     }

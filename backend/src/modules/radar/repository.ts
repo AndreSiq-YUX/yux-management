@@ -1,3 +1,4 @@
+import { projectLeadCommercialProfile } from '../crm/lead-commercial-profile.js'
 import {excludeRadarCampaignCandidates} from './campaign-exclusions.js'
 import {isRadarSemanticallyOutside} from './semantic-eligibility.js'
 import {projectRadarCommercialResearchStatus} from './commercial-status.js'
@@ -2559,6 +2560,9 @@ export async function convertRadarOpportunityToLead(pool: pg.Pool, user: AuthUse
       phone_raw: string | null
       city: string | null
       state: string | null
+      website_url: string | null
+      address: string | null
+      cnpj: string | null
       source_type: string | null
       source_url: string | null
       summary: string | null
@@ -2568,7 +2572,7 @@ export async function convertRadarOpportunityToLead(pool: pg.Pool, user: AuthUse
       evidence_json: unknown
       evidence_used: unknown
     }>(
-      `SELECT o.*, c.trade_name, c.legal_name, c.email_raw, c.phone_raw, c.city, c.state,
+      `SELECT o.*, c.trade_name, c.legal_name, c.email_raw, c.phone_raw, c.city, c.state, c.website_url, c.address, c.cnpj,
               c.source_type, c.source_url, d.summary, d.evidence_json,
               s.total_score, s.explanation AS score_explanation,
               m.body AS message_body, m.evidence_used
@@ -2618,7 +2622,7 @@ export async function convertRadarOpportunityToLead(pool: pg.Pool, user: AuthUse
         companyName,
         opportunity.email_raw || `radar-${opportunity.id}@yux.local`,
         opportunity.phone_raw,
-        opportunity.total_score || 0,
+        0,
         leadNotes,
         JSON.stringify({
           source: 'radar_comercial',
@@ -2639,6 +2643,10 @@ export async function convertRadarOpportunityToLead(pool: pg.Pool, user: AuthUse
       ],
     )
     const leadId = lead.rows[0].id
+    const commercialProfile = projectLeadCommercialProfile({legalName:opportunity.legal_name,tradeName:opportunity.trade_name,city:opportunity.city,state:opportunity.state,address:opportunity.address,cnpj:opportunity.cnpj,websiteUrl:opportunity.website_url,registryPhone:opportunity.phone_raw})
+    await client.query(`UPDATE public.leads SET website_url=$2,city=$3,state=$4,address=$5,cnpj=$6,commercial_profile=$7::jsonb,
+      crm_instance_id=(SELECT crm_instance_id FROM public.crm_pipelines WHERE id=$8) WHERE id=$1`,
+      [leadId,commercialProfile.websiteUrl??null,commercialProfile.city??null,commercialProfile.state??null,commercialProfile.address??null,commercialProfile.cnpj??null,JSON.stringify(commercialProfile),firstPipeline.pipeline_id])
     await client.query(
       `INSERT INTO public.interactions (organization_id, lead_id, type, title, description, date)
        VALUES ($1,$2,'note','Analise Radar Comercial',$3,NOW())`,

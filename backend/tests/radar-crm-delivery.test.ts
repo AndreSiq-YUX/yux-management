@@ -1,6 +1,16 @@
 import {expect,it} from 'vitest'
 import {buildRadarCrmLeadFacts} from '../src/modules/radar/crm-delivery.js'
 
+it('delivers location, institutional website and WhatsApp independently from the landline',()=>{
+ const contact=(kind:string,value:string)=>({kind,value,association:'confirmed',scope:'company',purpose:'general',sourceUrl:'https://alfa.example/contato',observedAt:'2026-11-02'})
+ const facts=buildRadarCrmLeadFacts({title:'Brave Alimentos',normalizedPayload:{cnpj:'12345678000190',city:'São Paulo',state:'SP',address:'Rua das Flores, 12',websiteUrl:'https://alfa.example/',publicContacts:[contact('phone','+551133334444'),contact('whatsapp','+5511999998888'),contact('email','vendas@alfa.example'),contact('email','compras@alfa.example'),{...contact('social','https://www.instagram.com/alfa_alimentos/'),sourceUrl:'https://alfa.example/contato'}]}},'Oferta') as any
+ expect(facts).toMatchObject({phone:'+551133334444',whatsappPhone:'+5511999998888',city:'São Paulo',state:'SP',address:'Rua das Flores, 12',websiteUrl:'https://alfa.example/',cnpj:'12345678000190'})
+ expect(facts.commercialProfile.contacts.filter((c:any)=>c.kind==='email')).toHaveLength(2)
+ expect(facts.commercialProfile.contacts.some((c:any)=>c.kind==='social')).toBe(true)
+ const phoneOnly=buildRadarCrmLeadFacts({title:'Alfa',normalizedPayload:{websiteUrl:'https://alfa.example/',publicContacts:[contact('phone','+551133334444')]}},'Oferta') as any
+ expect(phoneOnly.whatsappPhone).toBeUndefined()
+})
+
 it('schema-projects every delivered attribution field including malformed legacy scalars',()=>{
  const facts=buildRadarCrmLeadFacts({title:'Alfa',normalizedPayload:{websiteUrl:'https://alfa.example/?api_key=private',phoneRaw:{provider:'OpenRouter',costUsd:2},targetStatus:{provider:'Brave'},productFit:{model:'private-model'},researchRevision:{model:'private-model'}}},'Oferta')
  expect(facts.attribution.websiteUrl).toBeUndefined();expect(facts.attribution.registryPhone).toBeUndefined()

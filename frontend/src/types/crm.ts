@@ -171,6 +171,10 @@ export interface CrmLead {
   source: string
   sourceKind?: LeadSourceKind
   status?: CrmLeadStatus
+  websiteUrl?: string
+  address?: string
+  cnpj?: string
+  commercialProfile?: LeadCommercialProfile
   whatsappPhone?: string
   city?: string
   state?: string
@@ -396,3 +400,13 @@ export interface AutomationExecution {
   requestedAt: string
   completedAt?: string
 }
+
+export interface LeadCommercialProfile {
+ legalName?: string; tradeName?: string; cnpj?: string; city?: string; state?: string; address?: string; websiteUrl?: string; cnaeMain?: string; cnaes?: string[]; registryPhone?: string;
+ contacts: Array<{kind?: string; value?: string; association?: string; scope?: string; purpose?: string; preferred?: boolean; sourceUrl?: string; observedAt?: string}>;
+ profile?: {summary?: CommercialClaim; services?: CommercialClaim[]; customerSegments?: CommercialClaim[]; operatingRegions?: CommercialClaim[]; scaleSignals?: Array<{value?: string; sourceUrl?: string; referenceDate?: string; scope?: string}>};
+ activity?: {status?: string; limitation?: string; signals?: Array<{excerpt?: string; sourceUrl?: string; observedAt?: string; publishedDate?: string}>};
+ sizeAssessment?: {contributions?: Array<{metric?: string; amount?: number; sourceUrl?: string; referenceDate?: string}>};
+ reasons?: string[]; targetStatus?: string; productFit?: string;
+}
+export interface CommercialClaim {value?: string; sourceUrl?: string; observedAt?: string; referenceDate?: string; scope?: string}

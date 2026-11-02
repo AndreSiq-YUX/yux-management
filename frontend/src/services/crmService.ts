@@ -39,6 +39,13 @@ type LeadRow = {
   name: string
   email: string
   phone?: string | null
+  website_url?: string | null
+  whatsapp_phone?: string | null
+  city?: string | null
+  state?: string | null
+  address?: string | null
+  cnpj?: string | null
+  commercial_profile?: CrmLead['commercialProfile']
   company?: string | null
   source: string
   source_kind?: CrmLead['sourceKind'] | null
@@ -123,6 +130,7 @@ const mapLead = (row: LeadRow): CrmLead => ({
   email: row.email,
   phone: row.phone || undefined,
   company: row.company || undefined,
+  websiteUrl: row.website_url || undefined, whatsappPhone: row.whatsapp_phone || undefined, city: row.city || undefined, state: row.state || undefined, address: row.address || undefined, cnpj: row.cnpj || undefined, commercialProfile: row.commercial_profile,
   source: row.source,
   sourceKind: row.source_kind || undefined,
   status: row.status || 'open',

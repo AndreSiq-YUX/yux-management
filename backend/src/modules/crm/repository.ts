@@ -1,3 +1,4 @@
+import { projectLeadCommercialProfile, type LeadCommercialProfile } from './lead-commercial-profile.js'
 import { loadProfileSummaries } from './profile-summary.js'
 import type pg from 'pg'
 import type { AuthUser } from '../../auth/routes.js'
@@ -18,6 +19,13 @@ export type CrmLeadInput = {
   email: string
   phone?: string
   company?: string
+  websiteUrl?: string | null
+  whatsappPhone?: string | null
+  city?: string | null
+  state?: string | null
+  address?: string | null
+  cnpj?: string | null
+  commercialProfile?: LeadCommercialProfile
   source: string
   sourceKind?: string
   status?: string
@@ -79,6 +87,13 @@ type StageRow = {
 }
 
 type LeadRow = {
+  website_url?: string | null
+  whatsapp_phone?: string | null
+  city?: string | null
+  state?: string | null
+  address?: string | null
+  cnpj?: string | null
+  commercial_profile?: unknown
   qualification_temperature?: string
   can_delete?: boolean
   id: string
@@ -331,13 +346,13 @@ export async function createLead(pool: Pick<pg.Pool, 'query'>, user: AuthUser, i
        organization_id, crm_instance_id, pipeline_id, stage_id, team_id, owner_member_id,
        pipeline_version_id, stage_version_id, assignment_state, assignment_mode,
        name, email, phone, company, source, source_kind, status, score, value, notes,
-       owner_id, assigned_to, last_activity_at, next_follow_up_at, attribution_context, stage
+       owner_id, assigned_to, last_activity_at, next_follow_up_at, attribution_context, stage, website_url, whatsapp_phone, city, state, address, cnpj, commercial_profile
      )
      VALUES (
        $1, $2, $3, $4, $5, $6,
        $7, $8, $9, $10,
        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-       $21, $22, $23, $24, $25, 'NEW'
+       $21, $22, $23, $24, $25, 'NEW', $26, $27, $28, $29, $30, $31, $32::jsonb
      )
      RETURNING *`,
     [
@@ -366,6 +381,7 @@ export async function createLead(pool: Pick<pg.Pool, 'query'>, user: AuthUser, i
       input.lastActivityAt ?? new Date().toISOString(),
       input.nextFollowUpAt ?? null,
       input.attributionContext ?? {},
+      input.websiteUrl || null, input.whatsappPhone || null, input.city || null, input.state || null, input.address || null, input.cnpj || null, JSON.stringify(projectLeadCommercialProfile(input.commercialProfile)),
     ],
   )
 
@@ -861,6 +877,8 @@ function buildLeadUpdate(patch: CrmLeadPatch) {
     ['email', patch.email],
     ['phone', patch.phone],
     ['company', patch.company],
+    ['website_url', patch.websiteUrl], ['whatsapp_phone', patch.whatsappPhone], ['city', patch.city], ['state', patch.state], ['address', patch.address], ['cnpj', patch.cnpj],
+    ['commercial_profile', patch.commercialProfile === undefined ? undefined : JSON.stringify(projectLeadCommercialProfile(patch.commercialProfile))],
     ['source', patch.source],
     ['source_kind', patch.sourceKind],
     ['status', patch.status],
@@ -920,6 +938,8 @@ function mapLead(row: LeadRow) {
     email: row.email,
     phone: row.phone ?? undefined,
     company: row.company ?? undefined,
+    websiteUrl: row.website_url ?? undefined, whatsappPhone: row.whatsapp_phone ?? undefined, city: row.city ?? undefined, state: row.state ?? undefined, address: row.address ?? undefined, cnpj: row.cnpj ?? undefined,
+    commercialProfile: projectLeadCommercialProfile(row.commercial_profile),
     source: row.source,
     sourceKind: row.source_kind ?? undefined,
     status: row.status ?? 'open',

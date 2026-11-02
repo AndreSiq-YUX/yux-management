@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { z } from 'zod'
+import { commercialUrlInput, leadCommercialProfileSchema } from './lead-commercial-profile.js'
 import { registerLeadTrashRoutes } from './lead-trash-routes.js'
 import { registerQualificationRoutes } from './qualification-routes.js'
 import { reconcileQualification } from './qualification-repository.js'
@@ -127,7 +128,14 @@ const leadInputSchema = z.object({
   assignmentState: z.string().optional(),
   assignmentMode: z.string().optional(),
   name: z.string().min(1),
-  email: z.string().email(),
+  email: z.union([z.string().email(), z.literal('')]),
+  websiteUrl: commercialUrlInput,
+  whatsappPhone: z.string().trim().max(40).nullable().optional(),
+  city: z.string().trim().max(160).nullable().optional(),
+  state: z.string().trim().max(2).nullable().optional(),
+  address: z.string().trim().max(600).nullable().optional(),
+  cnpj: z.string().trim().max(18).nullable().optional(),
+  commercialProfile: leadCommercialProfileSchema.optional(),
   phone: z.string().optional(),
   company: z.string().optional(),
   source: z.string().min(1),
