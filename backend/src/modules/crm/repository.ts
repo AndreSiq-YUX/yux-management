@@ -1,4 +1,5 @@
-import { projectLeadCommercialProfile,projectLeadAttribution, type LeadCommercialProfile } from './lead-commercial-profile.js'
+import {leadEditableTextColumns} from './lead-editing.js'
+import { projectLeadCommercialProfile,projectLeadAttribution,projectLeadNotes, type LeadCommercialProfile } from './lead-commercial-profile.js'
 import { loadProfileSummaries } from './profile-summary.js'
 import type pg from 'pg'
 import type { AuthUser } from '../../auth/routes.js'
@@ -40,6 +41,7 @@ export type CrmLeadInput = {
 }
 
 export type CrmLeadPatch = Partial<CrmLeadInput> & {
+  expectedValues?:Partial<Record<keyof typeof leadEditableTextColumns,string|null>>
   stage?: string
   lostReason?: string | null
   wonAt?: string | null
@@ -396,14 +398,23 @@ export async function patchLead(pool: pg.Pool, user: AuthUser, leadId: string, p
   if (update.values.length === 0) return mapLead(existing)
 
   const assignments = update.columns.map((column, index) => `${column} = $${index + 2}`)
+  const values:unknown[]=[leadId,...update.values]
+  const expected=Object.entries(patch.expectedValues??{}).map(([key,value])=>{
+    if(!Object.hasOwn(leadEditableTextColumns,key))throw Object.assign(new Error('Campo de edição inválido.'),{statusCode:400})
+    values.push(value)
+    return `${leadEditableTextColumns[key as keyof typeof leadEditableTextColumns]} IS NOT DISTINCT FROM $${values.length}::text`
+  })
   const result = await pool.query<LeadRow>(
     `UPDATE public.leads
      SET ${assignments.join(', ')}, updated_at = NOW()
-     WHERE id = $1
+     WHERE id = $1 AND deleted_at IS NULL ${expected.length?`AND ${expected.join(' AND ')}`:''}
      RETURNING *`,
-    [leadId, ...update.values],
+    values,
   )
-
+  if(!result.rows[0]){
+    await getLeadForAccess(pool,user,leadId)
+    throw Object.assign(new Error('Os dados editados mudaram. Feche e reabra a edição para revisar antes de salvar.'),{statusCode:409})
+  }
   return mapLead(result.rows[0])
 }
 
@@ -949,7 +960,7 @@ export function mapLead(row: LeadRow) {
     fitScore: row.fit_score ?? undefined,
     intentScore: row.intent_score ?? undefined,
     value: row.value !== null && row.value !== undefined ? Number(row.value) : undefined,
-    notes: row.notes ?? undefined,
+    notes: projectLeadNotes(row.notes,[row.name,row.company].filter((name):name is string=>!!name)),
     ownerId: row.owner_id ?? undefined,
     assignedTo: row.assigned_to ?? undefined,
     lostReason: row.lost_reason ?? undefined,

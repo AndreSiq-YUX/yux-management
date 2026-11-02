@@ -25,9 +25,22 @@ export function LeadDataEditor({
   onSaved: () => void
   onCancel: () => void
 }) {
-  const [values, setValues] = useState(() =>
-      Object.fromEntries(fields.map(([key]) => [key, String(lead[key] ?? '')])),
+  const initial = useRef({
+    values: Object.fromEntries(
+      fields.map(([key]) => [
+        key,
+        String(
+          (key === 'websiteUrl'
+            ? (lead.websiteUrl ?? lead.commercialProfile?.websiteUrl)
+            : lead[key]) ?? '',
+        ),
+      ]),
     ),
+    expected: Object.fromEntries(
+      fields.map(([key]) => [key, lead[key] ?? null]),
+    ),
+  })
+  const [values, setValues] = useState(() => initial.current.values),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   const pending = useRef(false)
@@ -38,10 +51,19 @@ export function LeadDataEditor({
     setBusy(true)
     setError('')
     try {
-      await apiRequest(`/crm/leads/${lead.id}`, {
-        method: 'PATCH',
-        body: values,
-      })
+      const changed = fields.filter(
+        ([key]) => values[key] !== initial.current.values[key],
+      )
+      if (changed.length)
+        await apiRequest(`/crm/leads/${lead.id}`, {
+          method: 'PATCH',
+          body: {
+            ...Object.fromEntries(changed.map(([key]) => [key, values[key]])),
+            expectedValues: Object.fromEntries(
+              changed.map(([key]) => [key, initial.current.expected[key]]),
+            ),
+          },
+        })
       onSaved()
     } catch (reason) {
       setError(

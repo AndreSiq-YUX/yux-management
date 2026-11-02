@@ -1,3 +1,4 @@
+import {leadExpectedValuesSchema} from './lead-editing.js'
 import {registerLeadActionRoutes} from './lead-action-routes.js'
 import {registerLeadCommercialRoutes} from './lead-commercial-routes.js'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
@@ -155,6 +156,7 @@ const leadInputSchema = z.object({
 })
 
 const leadPatchSchema = leadInputSchema.omit({ profile: true }).partial().extend({
+  expectedValues:leadExpectedValuesSchema.optional(),
   stage: z.string().optional(),
   lostReason: z.string().nullable().optional(),
   wonAt: z.string().nullable().optional(),

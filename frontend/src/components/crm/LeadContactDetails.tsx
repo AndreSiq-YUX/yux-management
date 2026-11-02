@@ -28,7 +28,7 @@ export function LeadContactDetails({ lead }: { lead: CrmLead }) {
       return true
     })
   const website = safeLeadUrl(
-    lead.websiteUrl || lead.commercialProfile?.websiteUrl,
+    lead.websiteUrl ?? lead.commercialProfile?.websiteUrl,
   )
   const location = [
     lead.address,

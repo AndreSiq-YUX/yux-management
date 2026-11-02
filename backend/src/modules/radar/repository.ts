@@ -1,3 +1,4 @@
+import {assertRadarCrmDeliveryRights,loadRadarCrmDeliveryRights} from './crm-delivery-rights.js'
 import { projectLeadCommercialProfile } from '../crm/lead-commercial-profile.js'
 import {excludeRadarCampaignCandidates} from './campaign-exclusions.js'
 import {isRadarSemanticallyOutside} from './semantic-eligibility.js'
@@ -2563,6 +2564,7 @@ export async function convertRadarOpportunityToLead(pool: pg.Pool, user: AuthUse
       website_url: string | null
       address: string | null
       cnpj: string | null
+      delivery_facts?:Record<string,unknown>
       source_type: string | null
       source_url: string | null
       summary: string | null
@@ -2574,6 +2576,7 @@ export async function convertRadarOpportunityToLead(pool: pg.Pool, user: AuthUse
     }>(
       `SELECT o.*, c.trade_name, c.legal_name, c.email_raw, c.phone_raw, c.city, c.state, c.website_url, c.address, c.cnpj,
               c.source_type, c.source_url, d.summary, d.evidence_json,
+              (SELECT normalized_payload FROM public.radar_candidate_records provenance WHERE provenance.imported_opportunity_id=o.id AND provenance.organization_id=o.organization_id ORDER BY provenance.updated_at DESC LIMIT 1) AS delivery_facts,
               s.total_score, s.explanation AS score_explanation,
               m.body AS message_body, m.evidence_used
        FROM public.radar_opportunities o
@@ -2604,7 +2607,8 @@ export async function convertRadarOpportunityToLead(pool: pg.Pool, user: AuthUse
     if (!firstPipeline) throw Object.assign(new Error('radar_crm_pipeline_not_found'), { statusCode: 409 })
 
     const companyName = opportunity.trade_name || opportunity.legal_name || 'Empresa Radar'
-    if(opportunity.source_type==='osm_extract')throw Object.assign(new Error('radar_delivery_attribution_required'),{statusCode:409})
+    try{assertRadarCrmDeliveryRights(await loadRadarCrmDeliveryRights(client),opportunity.source_type??undefined,opportunity.delivery_facts??{})}
+    catch{throw Object.assign(new Error('A autorização de entrega desta pesquisa precisa ser revisada pela equipe YUX.'),{statusCode:409})}
     const evidenceItems = normalizeRadarEvidence(opportunity.evidence_json || opportunity.evidence_used).filter(item=>radarCommercialText(item))
     const sourceLabel = radarCommercialUrl(opportunity.source_url)
     const leadNotes = radarCommercialText(opportunity.summary) || `Analise da oportunidade para ${companyName}.`
@@ -2613,7 +2617,7 @@ export async function convertRadarOpportunityToLead(pool: pg.Pool, user: AuthUse
          organization_id, pipeline_id, stage_id, name, email, phone, company, source,
          source_kind, status, score, notes, last_activity_at, attribution_context, stage
        )
-       VALUES ($1,$2,$3,$4,$5,$6,$4,'Radar Comercial','outbound','open',$7,$8,NOW(),$9,'NEW')
+       VALUES ($1,$2,$3,$4,$5,$6,$4,'Radar Comercial','manual','open',$7,$8,NOW(),$9,'NEW')
        RETURNING id`,
       [
         opportunity.organization_id,

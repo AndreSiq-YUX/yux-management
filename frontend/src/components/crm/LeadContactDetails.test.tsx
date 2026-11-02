@@ -54,3 +54,17 @@ it('shows usable website, WhatsApp, social profiles and address and uses an acce
     act(() => root.unmount())
   }
 })
+
+it('keeps an explicitly cleared imported website absent when the record is reopened',()=>{
+ const host=document.createElement('div'),root=createRoot(host)
+ try{
+  const imported={id:'lead',name:'Empresa',email:'',websiteUrl:'',commercialProfile:{websiteUrl:'https://wrong.example'}} as CrmLead
+  act(()=>root.render(<LeadContactDetails lead={imported}/>))
+  expect(host.querySelector('a[href="https://wrong.example/"]')).toBeNull()
+  act(()=>root.unmount())
+  const reopened=createRoot(host)
+  act(()=>reopened.render(<LeadContactDetails lead={structuredClone(imported)}/>))
+  expect(host.querySelector('a[href="https://wrong.example/"]')).toBeNull()
+  act(()=>reopened.unmount())
+ }finally{host.remove()}
+})

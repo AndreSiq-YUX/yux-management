@@ -37,6 +37,50 @@ export function projectLeadCommercialProfile(value: unknown) {
 export type LeadCommercialProfile = ReturnType<
   typeof projectLeadCommercialProfile
 >
+
+export function projectLeadNotes(value: unknown, identities: string[] = []) {
+  if (typeof value !== 'string') return undefined
+  return value
+    .split('\n')
+    .flatMap((line) => {
+      const legacy =
+        /^(Perfil e fontes|Atividade e evidências):\s*(\{.*\})\s*$/.exec(line)
+      if (!legacy) return [line]
+      try {
+        const parsed: unknown = JSON.parse(legacy[2])
+        const facts = projectLeadCommercialProfile({
+          legalName: identities[0],
+          tradeName: identities[1],
+          ...(legacy[1] === 'Perfil e fontes'
+            ? { profile: parsed }
+            : { activity: parsed }),
+        })
+        const claim = (item: { value?: string; sourceUrl?: string }) =>
+          item.value
+            ? `${item.value}${item.sourceUrl ? ` (${item.sourceUrl})` : ''}`
+            : undefined
+        const result =
+          legacy[1] === 'Perfil e fontes'
+            ? [
+                ...(facts.profile?.summary ? [facts.profile.summary] : []),
+                ...(facts.profile?.services ?? []),
+                ...(facts.profile?.customerSegments ?? []),
+                ...(facts.profile?.operatingRegions ?? []),
+                ...(facts.profile?.scaleSignals ?? []),
+              ].map(claim)
+            : (facts.activity?.signals?.map((item) =>
+                claim({ value: item.excerpt, sourceUrl: item.sourceUrl }),
+              ) ?? [])
+        const readable = result.filter((item): item is string => !!item)
+        return readable.length
+          ? readable
+          : ['Informações da pesquisa disponíveis nos dados comerciais.']
+      } catch {
+        return [line]
+      }
+    })
+    .join('\n')
+}
 export const leadCommercialProfileSchema = z
   .unknown()
   .transform(projectLeadCommercialProfile)

@@ -31,7 +31,8 @@ it('persists commercial fields, projects nested data for four roles and isolates
       cnpj: '12345678000190',
       whatsappPhone: '+5543999998888',
       commercialProfile: {
-        legalName: 'Brave Alimentos Ltda',
+        websiteUrl:'https://alimentos.test',
+      legalName: 'Brave Alimentos Ltda',
         provider: 'private',
         contacts: [
           {
@@ -71,6 +72,7 @@ it('persists commercial fields, projects nested data for four roles and isolates
     member.rows[0].id,
   ])
   await rig.sql('UPDATE leads SET attribution_context=$2::jsonb WHERE id=$1',[created.body.id,JSON.stringify({utmSource:'campanha',radarCampaignId:'a163958e-fad8-4bd1-9118-e92dd38bd1d6',provider:'secret-provider',radarDiagnosticId:'secret-diagnostic',contacts:[{kind:'email',value:'compras@alimentos.test',association:'confirmed',model:'secret-model'}]})])
+  await rig.sql('UPDATE leads SET notes=$2 WHERE id=$1',[created.body.id,'Comprador pediu retorno na sexta-feira.\nPerfil e fontes: {"summary":{"value":"Brave Alimentos atende cozinhas"},"provider":"private-engine"}'])
   for (const role of [
     'yux_admin',
     'yux_operator',
@@ -85,6 +87,9 @@ it('persists commercial fields, projects nested data for four roles and isolates
     const lead = list.body.find((l: any) => l.id === created.body.id)
     expect(JSON.stringify(lead.attributionContext)).not.toMatch(/secret-provider|secret-diagnostic|secret-model|provider|model|radarDiagnosticId/)
     expect(lead.attributionContext.utmSource).toBe('campanha')
+    expect(lead.notes).toContain('Comprador pediu retorno na sexta-feira.')
+    expect(lead.notes).toContain('Brave Alimentos atende cozinhas')
+    expect(lead.notes).not.toMatch(/private-engine|\{"summary"/)
     expect(lead.city).toBe('Londrina')
     expect(lead.commercialProfile.legalName).toBe('Brave Alimentos Ltda')
     expect(JSON.stringify(lead.commercialProfile)).not.toMatch(
@@ -118,6 +123,11 @@ it('persists commercial fields, projects nested data for four roles and isolates
     city: 'Maringá',
     websiteUrl: 'https://novo.test',
   })
+  const cleared=await rig.request('client_admin_A','PATCH',`/api/crm/leads/${created.body.id}`,{websiteUrl:'',expectedValues:{websiteUrl:'https://novo.test'}})
+  expect(cleared.statusCode,JSON.stringify(cleared.body)).toBe(200)
+  const reopened=await rig.request('client_admin_A','GET',`/api/crm/leads/${created.body.id}`)
+  expect(reopened.body.websiteUrl).toBe('')
+  expect(reopened.body.commercialProfile.websiteUrl).toBe('https://alimentos.test')
   const contact = (
     await rig.sql(
       "INSERT INTO omnichannel_contacts(organization_id,display_name,email) VALUES($1,'Contato Alfa',$2) RETURNING id",
@@ -167,4 +177,22 @@ it('persists commercial fields, projects nested data for four roles and isolates
       )
     ).statusCode,
   ).toBe(404)
+})
+
+it('preserves independent concurrent edits and rejects a stale edit to the same field atomically',async()=>{
+ const lead=await rig.request('client_admin_A','POST','/api/crm/leads',{organizationId:fixture.organizationId,crmInstanceId:fixture.instanceId,pipelineId:fixture.pipelineId,stageId:fixture.stageId,name:'Edição concorrente',email:'',source:'Manual',city:'Londrina',phone:'111'})
+ const leadId=lead.body.id
+ expect(lead.statusCode).toBe(201)
+ const patch=(body:unknown)=>rig.request('client_admin_A','PATCH',`/api/crm/leads/${leadId}`,body)
+ expect((await patch({city:'Maringá',expectedValues:{city:'Londrina'}})).statusCode).toBe(200)
+ expect((await patch({phone:'222',expectedValues:{phone:'111'}})).statusCode).toBe(200)
+ const stale=await patch({city:'Curitiba',phone:'333',expectedValues:{city:'Londrina',phone:'222'}})
+ expect(stale.statusCode,JSON.stringify(stale.body)).toBe(409)
+ expect(stale.body.error).toContain('mudaram')
+ const current=await rig.request('client_admin_A','GET',`/api/crm/leads/${leadId}`)
+ expect(current.body).toMatchObject({city:'Maringá',phone:'222'})
+ expect((await patch({websiteUrl:'',expectedValues:{websiteUrl:null}})).statusCode).toBe(200)
+ const clearedElsewhere=await patch({websiteUrl:'https://another.test',expectedValues:{websiteUrl:null}})
+ expect(clearedElsewhere.statusCode).toBe(409)
+ expect((await rig.request('client_admin_A','GET',`/api/crm/leads/${leadId}`)).body.websiteUrl).toBe('')
 })

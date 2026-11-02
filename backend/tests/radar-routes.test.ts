@@ -208,7 +208,7 @@ class FakeRadarPool {
     if (normalized.includes('SELECT dedupe_key FROM public.radar_candidate_records')) return { rows: this.osmSeenKeys.map(dedupe_key => ({ dedupe_key })) }
     if (normalized.includes('radar_campaign_exclusion')||normalized.includes('radar_business_identity_keys')) return {rows:[]}
     if (normalized.includes('SELECT * FROM public.radar_candidate_records WHERE id = $1')) return { rows: [candidateRow({ status: this.candidateStatus })] }
-    if (normalized.includes('FROM public.radar_candidate_records')) return { rows: [candidateRow({ status: this.candidateStatus })] }
+    if (normalized.includes('FROM public.radar_candidate_records')&&!normalized.includes('FROM public.radar_opportunities o')) return { rows: [candidateRow({ status: this.candidateStatus })] }
     if (normalized.includes('SELECT DISTINCT ON (run.candidate_id)')) return {rows:[]}
     if (normalized.includes("SET status = 'imported'")) {
       this.candidateStatus = 'imported'
@@ -288,6 +288,7 @@ class FakeRadarPool {
     if (normalized.includes('FROM public.crm_pipelines p')) {
       return { rows: [{ pipeline_id: ids.pipeline, stage_id: ids.stage }] }
     }
+    if (normalized.includes("provider_key IN ('cnpja'"))return {rows:[]}
     if (normalized.includes('UPDATE public.leads SET website_url=')) return {rows:[]}
     if (normalized.includes('INSERT INTO public.leads')) return { rows: [{ id: ids.lead }] }
     if (normalized.includes('INSERT INTO public.interactions')) {

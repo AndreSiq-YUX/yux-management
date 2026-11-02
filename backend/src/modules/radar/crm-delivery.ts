@@ -6,7 +6,7 @@ import {z} from 'zod'
 import type {AuthUser} from '../../auth/routes.js'
 import {requireRadarScope} from './access.js'
 import {isRadarEnabledOrganization} from './repository.js'
-import {assertB2bDeliveryRights} from './b2b-delivery.js'
+import {assertRadarCrmDeliveryRights,loadRadarCrmDeliveryRights} from './crm-delivery-rights.js'
 import type {RadarContactEvidence} from './contact-evidence.js'
 import {projectRadarCompanyFacts} from './company-projection.js'
 import {consolidateRadarContacts,isUsefulRadarContact} from './contact-consolidation.js'
@@ -85,7 +85,7 @@ export async function deliverRadarCompaniesToCrm(pool:pg.Pool,user:AuthUser,inpu
       const first=(await client.query(`SELECT id FROM public.crm_pipeline_stages WHERE pipeline_id=$1 AND is_active=TRUE ORDER BY order_index,id LIMIT 1`,[input.destination.pipelineId])).rows[0]
       if(first?.id!==input.destination.stageId)throw failure('radar_crm_triage_stage_invalid')
     }
-    const providers=(await client.query(`SELECT provider_key,public_config FROM public.platform_provider_connections WHERE environment='production' AND is_default=TRUE AND provider_key IN ('cnpja','brave_place','serper','perplexity')`)).rows
+    const rights=await loadRadarCrmDeliveryRights(client)
     for(const candidateId of [...new Set(input.candidateIds)].sort()){
       const candidate=(await client.query(`SELECT candidate.*,review.approved_at,review.configuration_revision AS review_revision,
         review.target_status,review.verification_method,research.output AS research_output
@@ -107,9 +107,7 @@ export async function deliverRadarCompaniesToCrm(pool:pg.Pool,user:AuthUser,inpu
         ||![Number(data.researchRevision??0),Number(data.discoveryRevision??1)].includes(input.configurationRevision))){
         block('radar_crm_review_required');continue
       }
-      try{assertB2bDeliveryRights(candidate.source_type.startsWith('cnpja')?providers.find(row=>row.provider_key==='cnpja')?.public_config??{}:{clientDeliveryLicensed:true},
-        providers.find(row=>row.provider_key==='brave_place')?.public_config,!!data.braveSourceUrl||data.researchUsesBrave===true,
-        providers.find(row=>row.provider_key==='serper')?.public_config,data.researchUsesSerper===true,providers.find(row=>row.provider_key==='perplexity')?.public_config,data.researchUsesPerplexity===true,data.researchUsesSerperPlaces===true)}
+      try{assertRadarCrmDeliveryRights(rights,candidate.source_type,data)}
       catch(cause){block(cause instanceof Error?cause.message:'radar_crm_delivery_rights_required');continue}
       if(candidate.source_type==='osm_extract'){block('radar_delivery_attribution_required');continue}
       const facts=buildRadarCrmLeadFacts({title:candidate.title,normalizedPayload:data},campaign.offer_type)

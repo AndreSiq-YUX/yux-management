@@ -1,3 +1,4 @@
+import {LeadNotes} from './LeadNotes'
 import { useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
@@ -502,9 +503,7 @@ function LeadWorkspace({
                     Cadastrado em{' '}
                     {new Date(lead.createdAt).toLocaleDateString('pt-BR')}
                   </p>
-                  {lead.notes && lead.source !== 'Radar Comercial' && (
-                    <p className="whitespace-pre-wrap text-sm">{lead.notes}</p>
-                  )}
+                  <LeadNotes lead={lead}/>
                   {lead.aiSummary && (
                     <p className="text-sm">{lead.aiSummary}</p>
                   )}

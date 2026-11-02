@@ -9,7 +9,7 @@ import {
 import { projectLeadCommercialProfile } from '../crm/lead-commercial-profile.js'
 import { buildRadarCrmLeadFacts } from './crm-delivery.js'
 import { projectRadarCompanyFacts } from './company-projection.js'
-import { assertB2bDeliveryRights } from './b2b-delivery.js'
+import {assertRadarCrmDeliveryRights,loadRadarCrmDeliveryRights} from './crm-delivery-rights.js'
 import { requireRadarScope } from './access.js'
 import { radarPublicPresenceFromDossier } from './public-presence.js'
 import type pg from 'pg'
@@ -81,7 +81,7 @@ async function load(db: ProfileDb, user: AuthUser, leadId: string) {
   if (!candidate) {
     const old = (
       await db.query(
-        `SELECT c.*,o.campaign_id FROM public.radar_company_records c JOIN public.radar_opportunities o ON o.company_record_id=c.id AND o.organization_id=c.organization_id WHERE o.converted_lead_id=$1 AND o.organization_id=$2 LIMIT 1`,
+        `SELECT c.*,o.campaign_id,(SELECT normalized_payload FROM public.radar_candidate_records provenance WHERE provenance.imported_opportunity_id=o.id AND provenance.organization_id=o.organization_id ORDER BY provenance.updated_at DESC LIMIT 1) AS delivery_facts FROM public.radar_company_records c JOIN public.radar_opportunities o ON o.company_record_id=c.id AND o.organization_id=c.organization_id WHERE o.converted_lead_id=$1 AND o.organization_id=$2 LIMIT 1`,
         [leadId, lead.organization_id],
       )
     ).rows[0]
@@ -140,26 +140,9 @@ async function load(db: ProfileDb, user: AuthUser, leadId: string) {
       409,
       'A identificação da empresa diverge da pesquisa vinculada. Revise o CNPJ.',
     )
-  const providers = (
-    await db.query(
-      "SELECT provider_key,public_config FROM public.platform_provider_connections WHERE environment='production' AND is_default=TRUE AND provider_key IN ('cnpja','brave_place','serper','perplexity')",
-    )
-  ).rows
-  const config = (key: string) =>
-    providers.find((p) => p.provider_key === key)?.public_config ?? {}
+  const rights=await loadRadarCrmDeliveryRights(db)
   try {
-    assertB2bDeliveryRights(
-      candidate.source_type?.startsWith('cnpja')
-        ? config('cnpja')
-        : { clientDeliveryLicensed: true },
-      config('brave_place'),
-      !!payload.braveSourceUrl || payload.researchUsesBrave === true,
-      config('serper'),
-      payload.researchUsesSerper === true,
-      config('perplexity'),
-      payload.researchUsesPerplexity === true,
-      payload.researchUsesSerperPlaces === true,
-    )
+    assertRadarCrmDeliveryRights(rights,candidate.source_type,{...payload,...candidate.delivery_facts})
   } catch {
     throw profileError(
       409,

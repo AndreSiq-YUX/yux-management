@@ -122,6 +122,21 @@ describe('CrmWorkspace', () => {
       expect(dialog.querySelector('form[aria-label="Compor e-mail"]')).not.toBeNull()
     }finally{act(()=>root.unmount())}
   })
+  it('keeps manual lead notes readable for Radar imports without showing serialized research JSON',async()=>{
+    vi.mocked(crmService.getPipelines).mockResolvedValue([pipeline])
+    vi.mocked(crmService.getLeads).mockResolvedValue([{...leads[0],source:'Radar Comercial',notes:'Comprador pediu retorno na sexta-feira.\nPerfil e fontes: {"summary":{"value":"Atende cozinhas industriais"},"provider":"private-engine"}'}])
+    for(const method of [crmService.getInteractions,crmService.getTasks,crmService.getSequences,crmService.getEnrollments,crmService.getExecutions])vi.mocked(method).mockResolvedValue([])
+    const container=document.createElement('div'),root=createRoot(container)
+    try{
+      await act(async()=>{root.render(<MemoryRouter><CrmWorkspace initialPipelineId="pipeline-1" initialLeadId="lead-1"/></MemoryRouter>);await flush();await flush();await flush()})
+      const dialog=document.querySelector('[role="dialog"]')!
+      expect(dialog.textContent).toContain('Comprador pediu retorno na sexta-feira.')
+      expect(dialog.textContent).toContain('Atende cozinhas industriais')
+      expect(dialog.textContent).not.toContain('private-engine')
+      expect(dialog.textContent).not.toContain('{"summary"')
+    }finally{act(()=>root.unmount())}
+  })
+
   it('opens the requested lead from a Radar deep link in its selected pipeline',async()=>{
     vi.mocked(crmService.getPipelines).mockResolvedValue([pipeline])
     vi.mocked(crmService.getLeads).mockResolvedValue(leads)
