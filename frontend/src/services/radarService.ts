@@ -33,6 +33,9 @@ const buildQuery = (params: Record<string, string | undefined>) => {
 }
 
 export const radarService = {
+  previewLeadData(leadId:string){return apiRequest<LeadRadarPreview>(`/crm/leads/${leadId}/radar-data`)},
+  applyLeadData(leadId:string,previewRevision:string,requestId:string){return apiRequest<{requestId:string;appliedFields:string[]}>(`/crm/leads/${leadId}/radar-data`,{method:'POST',body:{previewRevision,requestId}})},
+
   excludeCampaignCandidates(organizationId:string,campaignId:string,candidateIds:string[],requestId:string){return apiRequest<{items:Array<{candidateId:string;status:'excluded'}>}>(`/radar/campaigns/${campaignId}/exclusions`,{method:'POST',body:{organizationId,candidateIds,requestId}})},
   getCampaignExclusions(organizationId:string,campaignId:string){return apiRequest<Array<{id:string;candidateId:string|null;title:string;createdAt:string}>>(`/radar/campaigns/${campaignId}/exclusions${buildQuery({organizationId})}`)},
   restoreCampaignExclusion(organizationId:string,campaignId:string,exclusionId:string){return apiRequest(`/radar/campaigns/${campaignId}/exclusions/${exclusionId}/restore`,{method:'POST',body:{organizationId}})},
@@ -329,3 +332,5 @@ export const radarService = {
     return apiRequest<RadarEnrichmentRun[]>(`/radar/campaigns/${campaignId}/runs`)
   },
 }
+
+export interface LeadRadarPreview {previewRevision:string;proposals:Array<{field:string;currentValue:unknown;incomingValue:unknown;decision:string}>}
