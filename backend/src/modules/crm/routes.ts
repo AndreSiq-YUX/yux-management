@@ -1,3 +1,4 @@
+import {registerLeadActionRoutes} from './lead-action-routes.js'
 import {registerLeadCommercialRoutes} from './lead-commercial-routes.js'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { randomUUID } from 'node:crypto'
@@ -311,6 +312,7 @@ export async function registerCrmRoutes(app: FastifyInstance) {
   await registerQualificationRoutes(app, getAuthenticatedUser)
   await registerLeadTrashRoutes(app, getAuthenticatedUser)
   await registerLeadCommercialRoutes(app, getAuthenticatedUser)
+  await registerLeadActionRoutes(app, getAuthenticatedUser)
   app.post('/conversation-query', async (request, reply) => {
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply

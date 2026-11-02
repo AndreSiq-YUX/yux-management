@@ -31,6 +31,7 @@ interface Lead360PanelProps {
   slaEvents?: LeadSlaEvent[]
   quickReplies?: CrmQuickReply[]
   templates?: CrmMessageTemplate[]
+  onAction?: (action: 'note' | 'whatsapp' | 'email' | 'call' | 'task' | 'meeting' | 'proposal') => void
   onSendSuggestion?: (suggestionId: string) => void
   taskTitle: string
   dueAt: string
@@ -43,6 +44,7 @@ interface Lead360PanelProps {
 }
 
 export function Lead360Panel({
+  onAction,
   lead,
   interactions,
   tasks,
@@ -98,12 +100,12 @@ export function Lead360Panel({
         <RecordIdentityPanel
           lead={lead}
           actions={[
-            { key: 'note', label: 'Nota', icon: <StickyNote className="h-4 w-4" /> },
-            { key: 'whatsapp', label: 'WhatsApp', icon: <MessageCircle className="h-4 w-4" /> },
-            { key: 'email', label: 'E-mail', icon: <Mail className="h-4 w-4" /> },
-            { key: 'call', label: 'Chamada', icon: <Phone className="h-4 w-4" /> },
-            { key: 'task', label: 'Tarefa', icon: <CheckSquare className="h-4 w-4" /> },
-            { key: 'meeting', label: 'Reuniao', icon: <CalendarDays className="h-4 w-4" /> },
+            { onClick: onAction ? () => onAction('note') : undefined, key: 'note', label: 'Nota', icon: <StickyNote className="h-4 w-4" /> },
+            { onClick: onAction ? () => onAction('whatsapp') : undefined, key: 'whatsapp', label: 'WhatsApp', icon: <MessageCircle className="h-4 w-4" /> },
+            { onClick: onAction ? () => onAction('email') : undefined, key: 'email', label: 'E-mail', icon: <Mail className="h-4 w-4" /> },
+            { onClick: onAction ? () => onAction('call') : undefined, key: 'call', label: 'Chamada', icon: <Phone className="h-4 w-4" /> },
+            { onClick: onAction ? () => onAction('task') : undefined, key: 'task', label: 'Tarefa', icon: <CheckSquare className="h-4 w-4" /> },
+            { onClick: onAction ? () => onAction('meeting') : undefined, key: 'meeting', label: 'Reuniao', icon: <CalendarDays className="h-4 w-4" /> },
           ]}
         />
       )}
@@ -125,6 +127,7 @@ export function Lead360Panel({
               slaEvents,
               quickReplies,
               templates,
+              onAction,
               onSendSuggestion,
               taskTitle,
               dueAt,
@@ -183,10 +186,10 @@ function renderTabContent(key: string, context: Lead360TabContext) {
         </section>
         <RecordQuickActions
           actions={[
-            { key: 'note', label: 'Registrar nota', icon: <StickyNote className="mr-2 h-4 w-4" /> },
-            { key: 'whatsapp', label: 'Abrir WhatsApp', icon: <MessageCircle className="mr-2 h-4 w-4" /> },
-            { key: 'task', label: 'Criar tarefa', icon: <CheckSquare className="mr-2 h-4 w-4" />, onClick: context.onCreateTask },
-            { key: 'proposal', label: 'Proposta', icon: <FileText className="mr-2 h-4 w-4" /> },
+            { onClick: context.onAction ? () => context.onAction!('note') : undefined, key: 'note', label: 'Registrar nota', icon: <StickyNote className="mr-2 h-4 w-4" /> },
+            { onClick: context.onAction ? () => context.onAction!('whatsapp') : undefined, key: 'whatsapp', label: 'Abrir WhatsApp', icon: <MessageCircle className="mr-2 h-4 w-4" /> },
+            { key: 'task', label: 'Criar tarefa', icon: <CheckSquare className="mr-2 h-4 w-4" />, onClick: context.onAction ? () => context.onAction!('task') : context.onCreateTask },
+            { onClick: context.onAction ? () => context.onAction!('proposal') : undefined, key: 'proposal', label: 'Proposta', icon: <FileText className="mr-2 h-4 w-4" /> },
             { key: 'won', label: 'Marcar ganho', icon: <Trophy className="mr-2 h-4 w-4" />, onClick: context.onMarkWon },
             { key: 'lost', label: 'Marcar perdido', icon: <XCircle className="mr-2 h-4 w-4" />, onClick: context.onMarkLost },
           ]}
