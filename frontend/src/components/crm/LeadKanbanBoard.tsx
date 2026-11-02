@@ -62,14 +62,14 @@ export function LeadKanbanBoard({ stages, leads, onSelectLead, onMoveLead, profi
                   <Card key={lead.id} className="border-yx-line bg-yx-surface hover:border-yx-blue">
                     <CardContent className="space-y-3 p-3">
                       <div>
-                        <button
+                        <div className="flex items-start justify-between gap-2"><button
                           type="button"
-                          className="text-left text-sm font-semibold text-yx-fg hover:text-yx-blue"
+                          className="min-w-0 break-words text-left text-sm font-semibold text-yx-fg hover:text-yx-blue"
                           onClick={() => onSelectLead(lead)}
                         >
                           {lead.name}
-                        </button>
-                        <p className="text-xs text-yx-fg-3">{lead.company || lead.email}</p><LeadHighlights lead={lead} /><LeadDeleteButton lead={lead} />
+                        </button><LeadDeleteButton lead={lead} /></div>
+                        <p className="text-xs text-yx-fg-3">{lead.company || lead.email}</p><LeadHighlights lead={lead} />
                       </div>
                       <div className="flex items-center justify-between gap-2 text-xs text-yx-fg-3">
                         <span>{scoreLabel} {lead.score} <LeadTemperature temperature={lead.temperature} /></span>

@@ -1,4 +1,4 @@
-import { projectLeadCommercialProfile, type LeadCommercialProfile } from './lead-commercial-profile.js'
+import { projectLeadCommercialProfile,projectLeadAttribution, type LeadCommercialProfile } from './lead-commercial-profile.js'
 import { loadProfileSummaries } from './profile-summary.js'
 import type pg from 'pg'
 import type { AuthUser } from '../../auth/routes.js'
@@ -87,6 +87,7 @@ type StageRow = {
 }
 
 type LeadRow = {
+  segment?: string; interest?: string; urgency?: string; consent_lgpd?: boolean; whatsapp_opt_in?: boolean; email_opt_in?: boolean; competitor?: string; objections?: string[]
   website_url?: string | null
   whatsapp_phone?: string | null
   city?: string | null
@@ -917,7 +918,7 @@ function buildLeadUpdate(patch: CrmLeadPatch) {
   return { columns, values }
 }
 
-function mapLead(row: LeadRow) {
+export function mapLead(row: LeadRow) {
   return {
     id: row.id,
     organizationId: row.organization_id,
@@ -937,6 +938,7 @@ function mapLead(row: LeadRow) {
     name: row.name,
     email: row.email,
     phone: row.phone ?? undefined,
+    segment: row.segment, interest: row.interest, urgency: row.urgency, consentLgpd: row.consent_lgpd, whatsappOptIn: row.whatsapp_opt_in, emailOptIn: row.email_opt_in, competitor: row.competitor, objections: row.objections,
     company: row.company ?? undefined,
     websiteUrl: row.website_url ?? undefined, whatsappPhone: row.whatsapp_phone ?? undefined, city: row.city ?? undefined, state: row.state ?? undefined, address: row.address ?? undefined, cnpj: row.cnpj ?? undefined,
     commercialProfile: projectLeadCommercialProfile(row.commercial_profile),
@@ -955,7 +957,7 @@ function mapLead(row: LeadRow) {
     lostAt: row.lost_at ?? undefined,
     lastActivityAt: row.last_activity_at ?? undefined,
     nextFollowUpAt: row.next_follow_up_at ?? undefined,
-    attributionContext: row.attribution_context ?? undefined,
+    attributionContext: projectLeadAttribution(row.attribution_context,[row.name,row.company].filter((name):name is string=>!!name)),
     aiSummary: row.ai_summary ?? undefined,
     intent: row.intent ?? undefined,
     sentiment: row.sentiment ?? undefined,

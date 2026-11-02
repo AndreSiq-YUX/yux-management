@@ -4,10 +4,13 @@ import type { ComponentProps } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PortalOmnichannelWorkspace } from './PortalOmnichannelWorkspace'
+import type {CrmLead} from '@/types/crm'
+import {crmService} from '@/services/crmService'
 import { omnichannelService } from '@/services/omnichannelService'
 import { usePlatformStore } from '@/stores/platformStore'
 import type { OmnichannelMessageView, PortalOmnichannelConversationSummary } from '@/services/omnichannelService'
 
+vi.mock('@/services/crmService',()=>({crmService:{getLeadRecord:vi.fn(),getPipelines:vi.fn(),moveLead:vi.fn()}}))
 vi.mock('@/services/omnichannelService', () => ({
   omnichannelService: {
     getMessages: vi.fn(),
@@ -112,6 +115,12 @@ const buttonByText = (container: HTMLElement, text: string) =>
   Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === text)
 
 describe('PortalOmnichannelWorkspace', () => {
+  it('opens the conversation selected by a CRM link rather than the first inbox item',()=>{
+    const second={...conversation,id:'conversation-selected',contact:{...conversation.contact,id:'contact-selected',displayName:'Compras do lead'}}
+    const {container,root}=renderWorkspace({conversations:[conversation,second],messagesByConversation:{[conversation.id]:[],[second.id]:[]},...{initialConversationId:second.id}})
+    expect([...container.querySelectorAll('h2')].map(h=>h.textContent)).toContain('Compras do lead')
+    act(()=>root.unmount())
+  })
   it('renders own-organization inbox with the Conversas title and no internal wording', () => {
     const { container, root } = renderWorkspace()
     const html = container.innerHTML
@@ -309,6 +318,19 @@ describe('PortalOmnichannelWorkspace', () => {
     expect(buttonByText(container, 'Voltar')).toBeUndefined()
 
     act(() => root.unmount())
+  })
+
+  it('shows the CRM lead linked to the conversation even without a contact lead',async()=>{
+    vi.mocked(crmService.getLeadRecord).mockResolvedValue({id:'lead-linked',name:'Empresa vinculada',company:'Empresa vinculada',pipelineId:'pipeline',stageId:'stage',score:0,status:'open'} as CrmLead)
+    vi.mocked(crmService.getPipelines).mockResolvedValue([])
+    const {container,root}=renderWorkspace({conversations:[{...conversation,leadId:'lead-linked'}],initialConversationId:conversation.id})
+    try{
+      await act(async()=>{await Promise.resolve();await Promise.resolve()})
+      const context=buttonByText(container,'Ver contexto');if(context)await act(async()=>context.click())
+      expect(crmService.getLeadRecord).toHaveBeenCalledWith('lead-linked')
+      expect(container.textContent).toContain('Empresa vinculada')
+      expect(container.querySelector('a[href*="leadId=lead-linked"]')).not.toBeNull()
+    }finally{act(()=>root.unmount())}
   })
 
   it('loads a conversation timeline only once when messages are not provided', async () => {

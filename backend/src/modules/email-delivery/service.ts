@@ -262,7 +262,7 @@ export async function recordEmailSendEvent(
     `INSERT INTO public.email_send_events (
        request_id, event_type, provider_event_id, provider_payload, occurred_at
      ) VALUES ($1, $2, $3, $4::jsonb, $5)
-     ON CONFLICT (provider_event_id) DO NOTHING
+     ON CONFLICT (provider_event_id) WHERE provider_event_id IS NOT NULL DO NOTHING
      RETURNING id`,
     [request.id, eventType, identity, JSON.stringify(providerPayload), occurredAt.toISOString()],
   )

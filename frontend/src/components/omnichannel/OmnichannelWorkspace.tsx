@@ -24,6 +24,7 @@ const EMPTY_AI_RUNS_BY_CONVERSATION: Record<string, OmnichannelAiRunView[]> = {}
 
 export interface OmnichannelWorkspaceProps {
   organizationId: string
+  initialConversationId?: string
   conversations?: OmnichannelConversationSummary[]
   messagesByConversation?: Record<string, OmnichannelMessageView[]>
   aiRunsByConversation?: Record<string, OmnichannelAiRunView[]>
@@ -44,6 +45,7 @@ export interface OmnichannelWorkspaceProps {
 
 export function OmnichannelWorkspace({
   organizationId,
+  initialConversationId,
   conversations: controlledConversations,
   messagesByConversation = EMPTY_MESSAGES_BY_CONVERSATION,
   aiRunsByConversation = EMPTY_AI_RUNS_BY_CONVERSATION,
@@ -67,7 +69,8 @@ export function OmnichannelWorkspace({
   const [loadedAiRuns, setLoadedAiRuns] = useState<Record<string, OmnichannelAiRunView[]>>({})
   const [queues, setQueues] = useState<SummaryItem[]>(controlledQueues || [])
   const [teams, setTeams] = useState<SummaryItem[]>(controlledTeams || [])
-  const [selectedId, setSelectedId] = useState<string>()
+  const [selectedId, setSelectedId] = useState<string | undefined>(initialConversationId)
+  useEffect(()=>{setSelectedId(initialConversationId)},[initialConversationId,organizationId])
   const [loading, setLoading] = useState(!controlledConversations)
   const [assistant, setAssistant] = useState<AiAssistantSettings | null>(null)
   const messageLoadsInFlight = useRef(new Set<string>())
@@ -77,7 +80,13 @@ export function OmnichannelWorkspace({
   }, [organizationId])
 
   const conversations = controlledConversations || loadedConversations
-  const selectedConversation = conversations.find(conversation => conversation.id === selectedId) || conversations[0]
+  const selectedConversation = selectedId ? conversations.find(conversation => conversation.id === selectedId) : conversations[0]
+  useEffect(()=>{
+    if(!initialConversationId||controlledConversations)return
+    let active=true
+    omnichannelService.getConversationDetail(initialConversationId).then(detail=>{if(active&&detail.organizationId===organizationId)setLoadedConversations(current=>current.some(c=>c.id===detail.id)?current:[detail as OmnichannelConversationSummary,...current])}).catch(()=>{})
+    return()=>{active=false}
+  },[initialConversationId,organizationId,controlledConversations])
   const selectedConversationId = selectedConversation?.id
   const messages = selectedConversationId ? (messagesByConversation[selectedConversationId] || loadedMessages[selectedConversationId] || []) : []
   const aiRuns = selectedConversationId ? (aiRunsByConversation[selectedConversationId] || loadedAiRuns[selectedConversationId] || []) : []

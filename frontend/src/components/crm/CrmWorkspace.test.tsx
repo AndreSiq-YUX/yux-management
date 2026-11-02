@@ -107,6 +107,21 @@ const leads: CrmLead[] = [
 const flush = () => new Promise(resolve => setTimeout(resolve, 0))
 
 describe('CrmWorkspace', () => {
+  it('integrates lead content into one navigation and opens email composition from the action',async()=>{
+    vi.mocked(crmService.getPipelines).mockResolvedValue([pipeline])
+    vi.mocked(crmService.getLeads).mockResolvedValue(leads)
+    vi.mocked(crmService.getInteractions).mockResolvedValue([]);vi.mocked(crmService.getTasks).mockResolvedValue([])
+    vi.mocked(crmService.getSequences).mockResolvedValue([]);vi.mocked(crmService.getEnrollments).mockResolvedValue([]);vi.mocked(crmService.getExecutions).mockResolvedValue([])
+    const container=document.createElement('div'),root=createRoot(container)
+    try{
+      await act(async()=>{root.render(<MemoryRouter><CrmWorkspace initialPipelineId="pipeline-1" initialLeadId="lead-1"/></MemoryRouter>);await flush();await flush();await flush()})
+      const dialog=document.querySelector('[role="dialog"]')!
+      expect(dialog.querySelectorAll('[role="tablist"]')).toHaveLength(1)
+      const email=Array.from(dialog.querySelectorAll('button')).find(b=>b.textContent==='E-mail')!
+      await act(async()=>{email.click();await flush()})
+      expect(dialog.querySelector('form[aria-label="Compor e-mail"]')).not.toBeNull()
+    }finally{act(()=>root.unmount())}
+  })
   it('opens the requested lead from a Radar deep link in its selected pipeline',async()=>{
     vi.mocked(crmService.getPipelines).mockResolvedValue([pipeline])
     vi.mocked(crmService.getLeads).mockResolvedValue(leads)

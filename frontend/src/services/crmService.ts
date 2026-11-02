@@ -402,6 +402,8 @@ export const crmService = {
     })
   },
 
+  async getLeadRecord(leadId:string){return apiRequest<CrmLead>(`/crm/leads/${leadId}`)},
+
   async getLeads(organizationId: string, pipelineId: string) {
     return apiRequest<CrmLead[]>(`/crm/leads${buildQuery({ organizationId, pipelineId })}`)
   },

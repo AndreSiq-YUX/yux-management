@@ -1,3 +1,4 @@
+import {useSearchParams} from 'react-router-dom'
 import { canAccessModule } from '@/lib/platform/accessControl'
 import { getPlatformModule } from '@/lib/platform/moduleRegistry'
 import { PortalOmnichannelWorkspace } from '@/components/omnichannel/PortalOmnichannelWorkspace'
@@ -6,6 +7,7 @@ import { PageHeader } from '@/components/portal-ui'
 import { usePlatformStore } from '@/stores/platformStore'
 
 export function PortalOmnichannelPage() {
+  const [params]=useSearchParams()
   const {
     activeContract,
     enabledModuleKeys,
@@ -49,6 +51,7 @@ export function PortalOmnichannelPage() {
   return (
     <PortalOmnichannelWorkspace
       organizationId={organization?.id || activeContract.clientId}
+      initialConversationId={params.get('conversation')||undefined}
       canConfigure={canConfigure}
     />
   )

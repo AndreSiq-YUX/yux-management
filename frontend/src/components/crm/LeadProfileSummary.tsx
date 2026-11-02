@@ -1,3 +1,4 @@
+import {Pencil} from 'lucide-react'
 import type { CrmLead } from '@/types/crm'
 import { Button } from '@/components/ui/button'
 import { profileValue } from '@/lib/crm/profileValue'
@@ -5,19 +6,21 @@ import { profileValue } from '@/lib/crm/profileValue'
 export function LeadProfileSummary({
   lead,
   onEdit,
+  compact = false,
 }: {
   lead: CrmLead
+  compact?: boolean
   onEdit: () => void
 }) {
   return (
     <section
-      className="flex flex-col gap-3 rounded-md border p-4"
+      className={compact ? "flex flex-col gap-3" : "flex flex-col gap-3 rounded-md border p-4"}
       aria-label="Dados do cliente"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-semibold">Dados do cliente</h3>
-        <Button size="sm" variant="outline" onClick={onEdit}>
-          Editar dados
+        <h3 className={compact?"text-xs font-semibold uppercase tracking-wide text-muted-foreground":"font-semibold"}>Perfil do cliente</h3>
+        <Button size={compact ? "icon-sm" : "sm"} variant={compact?"ghost":"outline"} aria-label="Editar campos personalizados" title="Editar campos personalizados" onClick={onEdit}>
+          {compact?<Pencil className="size-4"/>:"Editar dados"}
         </Button>
       </div>
       <p className="text-sm">
@@ -27,7 +30,7 @@ export function LeadProfileSummary({
         </strong>
       </p>
       {lead.profileSummary?.fields.length ? (
-        <dl className="grid gap-3 sm:grid-cols-2">
+        <dl className={compact?"grid gap-3":"grid gap-3 sm:grid-cols-2"}>
           {lead.profileSummary.fields.map((field) => (
             <div key={field.key} className="min-w-0">
               <dt className="text-xs text-muted-foreground">{field.label}</dt>
@@ -39,7 +42,7 @@ export function LeadProfileSummary({
         </dl>
       ) : (
         <p className="text-sm text-muted-foreground">
-          Selecione o tipo de cliente para preencher os campos da ficha.
+          Use a edição para definir o tipo e os campos deste cliente.
         </p>
       )}
     </section>

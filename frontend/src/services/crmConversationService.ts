@@ -1,3 +1,4 @@
+import {apiRequest} from '@/lib/apiClient'
 import { crmConversationDataClient } from '@/lib/crmConversationDataClient'
 import { scoreConversationLeadMatch } from '@/lib/crm/conversationRules'
 import { crmService } from '@/services/crmService'
@@ -283,6 +284,11 @@ export const mapMessageTemplate = (row: any): CrmMessageTemplate => ({
 })
 
 export const crmConversationService = {
+  async getLeadWorkspace(leadId:string){
+    const data=await apiRequest<{conversations:Array<JsonRecord&{conversation:{id:string;status?:string;subject?:string;summary?:string;last_message_at?:string}}> ;insights:JsonRecord[];fieldSuggestions:JsonRecord[];responseSuggestions:JsonRecord[];slaEvents:JsonRecord[];quickReplies:JsonRecord[];templates:JsonRecord[]}>(`/crm/leads/${leadId}/related`)
+    return {conversations:data.conversations.map(row=>({...mapLeadConversationLink(row),conversation:row.conversation})),insights:data.insights.map(mapLeadAiInsight),fieldSuggestions:data.fieldSuggestions.map(mapFieldSuggestion),responseSuggestions:data.responseSuggestions.map(mapResponseSuggestion),slaEvents:data.slaEvents.map(mapSlaEvent),quickReplies:data.quickReplies.map(mapQuickReply),templates:data.templates.map(mapMessageTemplate)}
+  },
+
   async findLeadMatchesForConversation(input: FindLeadMatchesInput) {
     const data = await requireData<any[]>(
       crmConversationDataClient

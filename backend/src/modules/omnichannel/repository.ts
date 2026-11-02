@@ -682,6 +682,7 @@ function mapPortalConversation(row: ConversationRow) {
   const conversation = mapConversation(row)
   return {
     id: conversation.id,
+    leadId: conversation.leadId,
     organizationId: conversation.organizationId,
     channel: conversation.channel,
     status: conversation.status,

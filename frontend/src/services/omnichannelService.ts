@@ -85,6 +85,7 @@ export interface OmnichannelConversationSummary {
 
 export interface PortalOmnichannelConversationSummary {
   id: string
+  leadId?: string
   organizationId: string
   channel: OmnichannelChannel
   status: ConversationStatus
@@ -274,6 +275,7 @@ export function mapPortalConversation(row: any): PortalOmnichannelConversationSu
   const conversation = mapOmnichannelConversation(row)
   return {
     id: conversation.id,
+    leadId: conversation.leadId,
     organizationId: conversation.organizationId,
     channel: conversation.channel,
     status: conversation.status,

@@ -11,9 +11,10 @@ interface LeadProposalLauncherProps {
   packageId: string
   onPackageChange: (value: string) => void
   onCreate: () => void
+  busy?:boolean
 }
 
-export function LeadProposalLauncher({ lead, packages, packageId, onPackageChange, onCreate }: LeadProposalLauncherProps) {
+export function LeadProposalLauncher({ lead, packages, packageId, onPackageChange, onCreate,busy }: LeadProposalLauncherProps) {
   return (
     <section className="rounded-md border bg-white p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -21,17 +22,18 @@ export function LeadProposalLauncher({ lead, packages, packageId, onPackageChang
           <h3 className="font-medium text-slate-950">Nova proposta</h3>
           <p className="text-sm text-slate-500">{lead.company || lead.name} · {lead.value ? lead.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'Valor a definir'}</p>
         </div>
-        <div className="flex min-w-[280px] flex-1 gap-2 md:flex-none">
+        <div className="flex min-w-0 flex-1 flex-wrap gap-2 md:flex-none">
           <Select value={packageId} onValueChange={onPackageChange}>
-            <SelectTrigger><SelectValue placeholder="Pacote comercial" /></SelectTrigger>
+            <SelectTrigger className="min-w-0 flex-1" aria-label="Pacote comercial"><SelectValue placeholder="Pacote comercial" /></SelectTrigger>
             <SelectContent>{packages.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
           </Select>
-          <Button disabled={!packageId} onClick={onCreate}>
+          <Button disabled={busy||!packageId} onClick={onCreate}>
             <FilePlus2 className="mr-1 h-4 w-4" />
-            Criar
+            {busy?'Criando...':'Criar rascunho'}
           </Button>
         </div>
       </div>
+      {packages.length===0&&<p className="mt-3 text-sm text-muted-foreground">Nenhum pacote comercial disponível. Solicite a configuração do catálogo à equipe responsável pela conta.</p>}
       <div className="mt-3 grid gap-2 text-sm md:grid-cols-3">
         <Info label="Origem" value={leadSourceLabel(lead.sourceKind, lead.source)} />
         <Info label="Interesse" value={lead.interest || 'Nao informado'} />

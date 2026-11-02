@@ -32,6 +32,7 @@ interface PortalMetrics {
 
 export interface PortalOmnichannelWorkspaceProps {
   organizationId: string
+  initialConversationId?: string
   conversations?: PortalOmnichannelConversationSummary[]
   messagesByConversation?: Record<string, OmnichannelMessageView[]>
   metrics?: PortalMetrics
@@ -64,6 +65,7 @@ const isHandledByAi = (conversation: PortalOmnichannelConversationSummary) =>
 
 export function PortalOmnichannelWorkspace({
   organizationId,
+  initialConversationId,
   conversations: controlledConversations,
   messagesByConversation = EMPTY_MESSAGES_BY_CONVERSATION,
   metrics: controlledMetrics,
@@ -89,7 +91,8 @@ export function PortalOmnichannelWorkspace({
   const [loadedMessages, setLoadedMessages] = useState<Record<string, OmnichannelMessageView[]>>({})
   const [loadedMetrics, setLoadedMetrics] = useState<PortalMetrics>()
   /** Conversa aberta de propósito. Sem ela, o celular mostra a lista e o desktop mostra a primeira conversa. */
-  const [openId, setOpenId] = useState<string>()
+  const [openId, setOpenId] = useState<string | undefined>(initialConversationId)
+  useEffect(()=>{setOpenId(initialConversationId)},[initialConversationId,organizationId])
   const [queues, setQueues] = useState<SummaryItem[]>(controlledQueues)
   const [teams, setTeams] = useState<SummaryItem[]>([])
   const [loading, setLoading] = useState(!controlledConversations)
@@ -121,7 +124,7 @@ export function PortalOmnichannelWorkspace({
   }), [conversations, filters])
 
   const openConversation = openId ? conversations.find(conversation => conversation.id === openId) : undefined
-  const activeConversation = openConversation || list[0]
+  const activeConversation = openId ? openConversation : list[0]
   const activeConversationId = activeConversation?.id
   const messages = activeConversationId ? (messagesByConversation[activeConversationId] || loadedMessages[activeConversationId] || []) : []
   const suggestionMessage = messages.find(message => message.authorType === 'ai' && message.deliveryStatus === 'queued')
@@ -135,7 +138,11 @@ export function PortalOmnichannelWorkspace({
         omnichannelService.getPortalInbox({ organizationId }),
         omnichannelService.getPortalMetrics(organizationId),
       ])
-      setLoadedConversations(nextConversations)
+      let inbox=nextConversations
+      if(initialConversationId&&!inbox.some(c=>c.id===initialConversationId)){
+        try{const requested=await omnichannelService.getConversationDetail(initialConversationId,true) as PortalOmnichannelConversationSummary;if(requested.organizationId===organizationId)inbox=[requested,...inbox]}catch{/* Remain unselected rather than opening a different contact. */}
+      }
+      setLoadedConversations(inbox)
       setLoadedMetrics({
         totalConversations: nextMetrics.totalConversations,
         openConversations: nextMetrics.openConversations,
@@ -160,7 +167,7 @@ export function PortalOmnichannelWorkspace({
     } catch (error) {
       console.error('Erro ao carregar filas e equipes do portal:', error)
     }
-  }, [controlledConversations, organizationId])
+  }, [controlledConversations, organizationId, initialConversationId])
 
   useEffect(() => { loadPortal() }, [loadPortal])
 

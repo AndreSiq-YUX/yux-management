@@ -17,6 +17,7 @@ export interface LeadConversationView extends LeadConversationLink {
 interface LeadConversationPanelProps {
   conversations: LeadConversationView[]
   slaEvents?: LeadSlaEvent[]
+  onOpen?: (id:string)=>void
 }
 
 const channelLabel: Record<string, string> = {
@@ -26,7 +27,7 @@ const channelLabel: Record<string, string> = {
   webchat: 'Webchat',
 }
 
-export function LeadConversationPanel({ conversations, slaEvents = [] }: LeadConversationPanelProps) {
+export function LeadConversationPanel({ conversations, slaEvents = [],onOpen }: LeadConversationPanelProps) {
   const active = conversations.filter(item => item.status !== 'archived')
 
   return (
@@ -58,7 +59,7 @@ export function LeadConversationPanel({ conversations, slaEvents = [] }: LeadCon
                 </p>
               </div>
               <div className="flex items-start justify-end">
-                <ConversationSlaBadge event={sla} />
+                <ConversationSlaBadge event={sla} />{onOpen&&<button type="button" onClick={()=>onOpen(link.conversationId)} className="ml-2 text-sm font-medium text-primary underline-offset-4 hover:underline">Abrir conversa</button>}
               </div>
             </div>
           )

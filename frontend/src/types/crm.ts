@@ -206,7 +206,7 @@ export interface CrmLead {
   lostAt?: string
   lastActivityAt?: string
   nextFollowUpAt?: string
-  attributionContext?: AttributionContext
+  attributionContext?: AttributionContext & {radarCandidateId?: string; radarCampaignId?: string}
   createdAt: string
   updatedAt: string
 }

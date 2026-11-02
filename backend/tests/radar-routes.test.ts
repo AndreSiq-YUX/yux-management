@@ -288,6 +288,7 @@ class FakeRadarPool {
     if (normalized.includes('FROM public.crm_pipelines p')) {
       return { rows: [{ pipeline_id: ids.pipeline, stage_id: ids.stage }] }
     }
+    if (normalized.includes('UPDATE public.leads SET website_url=')) return {rows:[]}
     if (normalized.includes('INSERT INTO public.leads')) return { rows: [{ id: ids.lead }] }
     if (normalized.includes('INSERT INTO public.interactions')) {
       this.lastInteractionDescription = params[2] as string

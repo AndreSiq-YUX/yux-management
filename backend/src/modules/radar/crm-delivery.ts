@@ -39,8 +39,8 @@ export function buildRadarCrmLeadFacts(candidate:{title:string;normalizedPayload
   const notes=[`Oferta da campanha: ${offer}`,
     `Público: ${({confirmed:'Confirmado',review:'Requer revisão',not_target:'Fora do público',insufficient:'Evidência insuficiente'} as Record<string,string>)[String(data.targetStatus)]??'Não avaliado'}`,
     `Adequação: ${({high:'Boa aderência',possible:'Possível aderência',low:'Baixa aderência',unknown:'Não confirmada'} as Record<string,string>)[String(data.productFit)]??'Não avaliada'}`,
-    ...reasons, commercial.profile?`Perfil e fontes: ${JSON.stringify(commercial.profile)}`:'',
-    activity?`Atividade e evidências: ${JSON.stringify(activity)}`:'',
+    ...reasons, commercial.profile?.summary?.value?`Perfil: ${commercial.profile.summary.value}`:'',
+    activity?.signals?.length?`Atividade: ${activity.signals.map(signal=>signal.excerpt).filter(Boolean).join('; ')}`:'',
     'Contatos públicos não comprovam consentimento nem atendimento. Contato comercial manual.'].filter(Boolean).join('\n')
   return {name:candidate.title,email:first('email')??'',phone:first('phone')??first('whatsapp')??null,
     notes,whatsappPhone:first('whatsapp'),city:commercial.city,state:commercial.state,address:commercial.address,websiteUrl:commercial.websiteUrl,cnpj:commercial.cnpj,commercialProfile:projectLeadCommercialProfile(commercial),

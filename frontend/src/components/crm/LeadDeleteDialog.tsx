@@ -1,3 +1,5 @@
+import {Trash2} from 'lucide-react'
+import {Tooltip,TooltipContent,TooltipProvider,TooltipTrigger} from '@/components/ui/tooltip'
 import { requestLeadDeletion } from '@/lib/crm/leadDeletionEvents'
 import { useState } from 'react'
 import {
@@ -12,18 +14,20 @@ import type { CrmLead } from '@/types/crm'
 export function LeadDeleteButton({ lead }: { lead: CrmLead }) {
   if (!lead.canDelete) return null
   return (
-    <Button
+    <TooltipProvider delayDuration={300}><Tooltip><TooltipTrigger asChild><Button
       type="button"
-      size="sm"
+      size="icon-sm"
       variant="ghost"
+      className="shrink-0 text-muted-foreground hover:text-destructive"
+      title={`Excluir ${lead.name}`}
       aria-label={`Excluir ${lead.name}`}
       onClick={(event) => {
         event.stopPropagation()
         requestLeadDeletion([lead])
       }}
     >
-      Excluir
-    </Button>
+      <Trash2 className="size-4" aria-hidden="true"/>
+    </Button></TooltipTrigger><TooltipContent>Excluir lead</TooltipContent></Tooltip></TooltipProvider>
   )
 }
 export function LeadDeleteDialog({

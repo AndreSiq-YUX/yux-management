@@ -7,10 +7,12 @@ import {
 import { Button } from '@/components/ui/button'
 export function LeadScoreSummary({
   leadId,
+  compact = false,
   onTask,
   onProposal,
 }: {
   leadId: string
+  compact?: boolean
   onTask: () => void
   onProposal: () => void
 }) {
@@ -69,7 +71,7 @@ export function LeadScoreSummary({
       </p>
     )
   if (!data) return null
-  return (
+  const content = (
     <section
       className="flex flex-col gap-3 rounded-md border p-4"
       aria-label="Qualificação do lead"
@@ -108,4 +110,6 @@ export function LeadScoreSummary({
       </div>
     </section>
   )
+  return compact ? <details className="rounded-md border bg-background p-3"><summary className="cursor-pointer text-sm font-medium">Entender pontuação · {data.score}/100</summary><div className="mt-3">{content}</div></details> : content
+
 }
