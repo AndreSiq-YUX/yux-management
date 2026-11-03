@@ -1,6 +1,6 @@
 # Prioridade Comercial no CRM — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Entregar potencial, temperatura e prioridade configuráveis por instância de CRM, com cálculo auditável, filas operacionais e ativação gradual.
 
@@ -94,11 +94,11 @@ type PriorityResult = {
 
 **Interfaces:** `priorityDefinitionSchema`; `evaluatePriority(version: PriorityVersion, input: PriorityInput, now: Date): PriorityResult`. Recebe dados normalizados e horário explícito. Sem acesso a banco ou relógio global.
 
-- [ ] Criar testes `first_known_zero_wins` (alternativa principal 0, estimativa 20 → grupo 0), `coverage_gates_ranking` (30 de 40 conhecidos de 100 aplicáveis → potencial 75, cobertura 40, sem fila de ranking com mínimo 50), `warmth_is_independent` (potencial 100, nenhum sinal → temperatura 0), `exclusion_wins` (bloqueio em conta com nota 100 → sem fila e sem prioridade).
-- [ ] Executar `npm --prefix backend test -- tests/crm-priority-model.test.ts` e confirmar falha por ausência do motor.
-- [ ] Implementar o esquema e o cálculo. Validar pesos, IDs duplicados, matriz completa, cortes e faixas ordenados, tetos, limites de janela e referências de campos. Separar grupos positivos e penalidades. Ordenar contribuições por ID e timestamp para resultado reproduzível. Avaliar somente a previsão de compra mais recente ainda vigente. Determinar a próxima mudança temporal a partir da primeira expiração, saída da janela histórica, limite de prazo de compra ou faixa de inatividade futura.
-- [ ] Rodar o mesmo teste junto de `tests/crm-qualification.test.ts` e `tests/crm-scoring.test.ts`. Esperado: motor novo e modos atuais passam.
-- [ ] Commit `feat(crm): evaluate configurable lead priority`.
+- [x] Criar testes `first_known_zero_wins` (alternativa principal 0, estimativa 20 → grupo 0), `coverage_gates_ranking` (30 de 40 conhecidos de 100 aplicáveis → potencial 75, cobertura 40, sem fila de ranking com mínimo 50), `warmth_is_independent` (potencial 100, nenhum sinal → temperatura 0), `exclusion_wins` (bloqueio em conta com nota 100 → sem fila e sem prioridade).
+- [x] Executar `npm --prefix backend test -- tests/crm-priority-model.test.ts` e confirmar falha por ausência do motor.
+- [x] Implementar o esquema e o cálculo. Validar pesos, IDs duplicados, matriz completa, cortes e faixas ordenados, tetos, limites de janela e referências de campos. Separar grupos positivos e penalidades. Ordenar contribuições por ID e timestamp para resultado reproduzível. Avaliar somente a previsão de compra mais recente ainda vigente. Determinar a próxima mudança temporal a partir da primeira expiração, saída da janela histórica, limite de prazo de compra ou faixa de inatividade futura.
+- [x] Rodar o mesmo teste junto de `tests/crm-qualification.test.ts` e `tests/crm-scoring.test.ts`. Esperado: motor novo e modos atuais passam.
+- [x] Commit `feat(crm): evaluate configurable lead priority`.
 
 ### Tarefa 2 — Versões, permissões e prévia
 
@@ -106,11 +106,11 @@ type PriorityResult = {
 
 **Interfaces:** `GET /crm/priority/model?crmInstanceId=...`; `PUT /crm/priority/draft` com `{crmInstanceId, expectedRevision, definition}`; `POST /crm/priority/preview` com `{crmInstanceId, revision, runId?, afterId?}`. A primeira página cria o run. A continuação exige seu ID e o cursor retornado. A prévia retorna `{revision, runId, results, nextCursor, totals}`, com 50 leads por página. O servidor armazena conclusão, totais e revisão da prévia, sem persistir os scores de simulação.
 
-- [ ] Criar testes HTTP `stale_draft_is_rejected` (409), `preview_has_no_operational_effects` (zero avaliações, tarefas e eventos de negócio), `archived_field_is_unknown` e `direct_http_scopes_same_account_and_cross_account`. Usar Admin YUX, operador, Admin da conta, membro e gestor com lead de outra equipe. O gestor só visualiza a carteira autorizada. Publicação e edição pertencem ao administrador autorizado.
-- [ ] Executar `npm --prefix backend run test:integration -- tests/integration/crm-priority-models.test.ts` com `YUX_INTEGRATION_DATABASE_URL` apontando para banco isolado. Confirmar falha pelos endpoints ausentes.
-- [ ] Criar `crm_priority_configs` (uma linha por instância, rascunho, revisão, apontador ativo e efeitos), `crm_priority_versions` (definição imutável e autor), `crm_priority_preview_runs` (revisão, cursor, totais, autor e instante de referência). Validar chaves de vínculo, RLS, grants e autorização explícita. Mudança de rascunho invalida a prévia anterior. Calcular a prévia com os dados acessíveis àquele usuário e rejeitar paginação fora do cursor do servidor. Usar o mesmo instante de referência nas páginas. Nesta entrega, informar que a prévia avalia o perfil com sinais vazios. A Tarefa 3 conecta o histórico ao mesmo avaliador.
-- [ ] Reexecutar testes HTTP e verificar que configuração e score dos dois modos atuais seguem operando.
-- [ ] Commit `feat(crm): version and preview priority models`.
+- [x] Criar testes HTTP `stale_draft_is_rejected` (409), `preview_has_no_operational_effects` (zero avaliações, tarefas e eventos de negócio), `archived_field_is_unknown` e `direct_http_scopes_same_account_and_cross_account`. Usar Admin YUX, operador, Admin da conta, membro e gestor com lead de outra equipe. O gestor só visualiza a carteira autorizada. Publicação e edição pertencem ao administrador autorizado.
+- [x] Executar `npm --prefix backend run test:integration -- tests/integration/crm-priority-models.test.ts` com `YUX_INTEGRATION_DATABASE_URL` apontando para banco isolado. Confirmar falha pelos endpoints ausentes.
+- [x] Criar `crm_priority_configs` (uma linha por instância, rascunho, revisão, apontador ativo e efeitos), `crm_priority_versions` (definição imutável e autor), `crm_priority_preview_runs` (revisão, cursor, totais, autor e instante de referência). Validar chaves de vínculo, RLS, grants e autorização explícita. Mudança de rascunho invalida a prévia anterior. Calcular a prévia com os dados acessíveis àquele usuário e rejeitar paginação fora do cursor do servidor. Usar o mesmo instante de referência nas páginas. Nesta entrega, informar que a prévia avalia o perfil com sinais vazios. A Tarefa 3 conecta o histórico ao mesmo avaliador.
+- [x] Reexecutar testes HTTP e verificar que configuração e score dos dois modos atuais seguem operando.
+- [x] Commit `feat(crm): version and preview priority models`.
 
 ### Tarefa 3 — Sinais comerciais com identidade estável
 

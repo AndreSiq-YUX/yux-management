@@ -200,7 +200,7 @@ async function readValues(db: ProfileDb, leadId: string) {
   return Object.fromEntries(result.rows.map(row => [row.field_key, row.value])) as Record<string, ProfileValue>
 }
 
-async function getInstanceAccess(db: ProfileDb, user: AuthUser, instanceId: string, configure = false) {
+export async function getInstanceAccess(db: ProfileDb, user: AuthUser, instanceId: string, configure = false) {
   const result = await db.query<InstanceAccess>(`SELECT ci.id, ci.organization_id, ci.max_custom_field_count,
       ci.allow_client_field_customization, member.role::text AS member_role, member.status::text AS member_status
     FROM public.crm_instances ci
@@ -215,13 +215,11 @@ async function getInstanceAccess(db: ProfileDb, user: AuthUser, instanceId: stri
   return access
 }
 
-async function getLeadAccess(db: ProfileDb, user: AuthUser, leadId: string, lock = false, newlyCreated = false) {
-  const result = await db.query<LeadAccess>(`SELECT l.id, l.organization_id, COALESCE(l.crm_instance_id, p.crm_instance_id) AS crm_instance_id,
-      l.record_type_id, l.owner_member_id, l.owner_id, l.assigned_to, l.team_id
-    FROM public.leads l JOIN public.crm_pipelines p ON p.id = l.pipeline_id AND p.organization_id = l.organization_id
+// Shared with portfolio previews. Bind $2 to the actor ID and $3 to internal access.
+export const leadProfileScopeSql = `FROM public.leads l JOIN public.crm_pipelines p ON p.id = l.pipeline_id AND p.organization_id = l.organization_id
     JOIN public.crm_instances ci ON ci.id = COALESCE(l.crm_instance_id, p.crm_instance_id) AND ci.organization_id = l.organization_id
       AND (p.crm_instance_id IS NULL OR l.crm_instance_id IS NULL OR p.crm_instance_id = l.crm_instance_id)
-    WHERE l.deleted_at IS NULL AND l.id = $1 AND ($3::boolean OR EXISTS (
+    WHERE l.deleted_at IS NULL AND ($3::boolean OR EXISTS (
       SELECT 1 FROM public.crm_instance_members member
       JOIN public.memberships m ON m.user_id = member.user_id AND m.organization_id = l.organization_id
       WHERE member.crm_instance_id = ci.id AND member.user_id = $2 AND member.status = 'active'
@@ -230,7 +228,13 @@ async function getLeadAccess(db: ProfileDb, user: AuthUser, leadId: string, lock
           OR (member.role = 'manager' AND EXISTS (
             SELECT 1 FROM public.crm_team_members tm WHERE tm.team_id = l.team_id AND tm.member_id = member.id AND tm.role = 'manager'
           )))
-    )) ${lock ? 'FOR UPDATE OF l' : ''}`, [leadId, user.id, isInternal(user) || newlyCreated])
+    ))`
+
+async function getLeadAccess(db: ProfileDb, user: AuthUser, leadId: string, lock = false, newlyCreated = false) {
+  const result = await db.query<LeadAccess>(`SELECT l.id, l.organization_id, ci.id AS crm_instance_id,
+      l.record_type_id, l.owner_member_id, l.owner_id, l.assigned_to, l.team_id
+    ${leadProfileScopeSql} AND l.id = $1 ${lock ? 'FOR UPDATE OF l' : ''}`,
+  [leadId, user.id, isInternal(user) || newlyCreated])
   if (!result.rows[0]) throw profileError(404, 'Lead não encontrado ou sem acesso.')
   return result.rows[0]
 }

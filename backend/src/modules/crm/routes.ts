@@ -8,6 +8,7 @@ import { z } from 'zod'
 import { commercialUrlInput, leadCommercialProfileSchema } from './lead-commercial-profile.js'
 import { registerLeadTrashRoutes } from './lead-trash-routes.js'
 import { registerQualificationRoutes } from './qualification-routes.js'
+import { registerPriorityRoutes } from './priority-routes.js'
 import { reconcileQualification } from './qualification-repository.js'
 import { hashSessionToken } from '../../auth/session.js'
 import { requireAuth } from '../../http/guards.js'
@@ -312,6 +313,7 @@ async function getAuthenticatedUser(request: FastifyRequest, reply: FastifyReply
 export async function registerCrmRoutes(app: FastifyInstance) {
   await registerRecordProfileRoutes(app, getAuthenticatedUser)
   await registerQualificationRoutes(app, getAuthenticatedUser)
+  await registerPriorityRoutes(app, getAuthenticatedUser)
   await registerLeadTrashRoutes(app, getAuthenticatedUser)
   await registerLeadCommercialRoutes(app, getAuthenticatedUser)
   await registerLeadActionRoutes(app, getAuthenticatedUser)

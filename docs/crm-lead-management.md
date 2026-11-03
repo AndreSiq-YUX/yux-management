@@ -2,6 +2,32 @@
 
 Atualizado em: 2026-10-29
 
+## Prioridade comercial — motor e simulação
+
+O novo motor calcula potencial, temperatura e prioridade separadamente. O
+rascunho pertence a uma instância de CRM e pode aplicar grupos a tipos de
+lead. Cada grupo de potencial avalia a primeira alternativa conhecida e
+informa sua contribuição e a cobertura dos dados. O potencial fica sem
+nota quando todos os critérios estão desconhecidos.
+
+API autenticada sob `/api/crm/priority`:
+
+- `GET /model?crmInstanceId=...` informa a revisão atual. Administradores
+  autorizados recebem também o rascunho e o catálogo de campos.
+- `PUT /draft` recebe `{ crmInstanceId, expectedRevision, definition }`.
+  Use a revisão zero para o primeiro rascunho e a última revisão para editar.
+- `POST /preview` recebe `{ crmInstanceId, revision }`. Continue com o
+  `runId` e o `nextCursor` retornado como `afterId`. Cada página contém
+  até 50 leads visíveis para a pessoa que iniciou a simulação.
+
+A prévia retorna `mode: "profile_only"`, o horário de referência,
+resultados por lead e totais por estado e fila. A temperatura fica em zero
+nesta etapa, antes da integração dos sinais. O registro da execução guarda
+revisão, cursor e totais. As pontuações simuladas são retornadas na resposta,
+sem gravar pontuações nas fichas ou disparar atividades. A migration
+`0257_crm_priority_models.sql` prepara o armazenamento. A publicação do
+modelo e a interface de configuração pertencem às entregas seguintes.
+
 ## Tipos de cliente e campos personalizados
 
 No cockpit de leads, administradores autorizados usam **Tipos e campos** para
