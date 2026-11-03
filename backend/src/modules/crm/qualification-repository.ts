@@ -63,6 +63,10 @@ export async function qualificationFields(
   instanceId: string,
 ) {
   const config = await scoringAccess(db, user, instanceId)
+  return qualificationFieldCatalog(config)
+}
+
+export function qualificationFieldCatalog(config: Awaited<ReturnType<typeof getProfileConfiguration>>) {
   return [
     {
       key: 'recordTypeId',
@@ -117,15 +121,21 @@ export async function qualificationContext(db: QualificationDb, lead: LeadRow) {
     [lead.id, lead.crm_instance_id, lead.record_type_id, lead.organization_id],
   )
   return {
+    ...qualificationLeadFields(lead),
+    ...Object.fromEntries(
+      values.rows.map((v) => [`custom:${v.field_key}`, v.value]),
+    ),
+  } as Record<string, unknown>
+}
+
+export function qualificationLeadFields(lead: Pick<LeadRow, 'record_type_id' | 'company' | 'source' | 'value' | 'stage_id'>) {
+  return {
     recordTypeId: lead.record_type_id,
     'lead.company': lead.company,
     'lead.source': lead.source,
     'lead.value': lead.value === null ? null : Number(lead.value),
     'lead.stage_id': lead.stage_id,
-    ...Object.fromEntries(
-      values.rows.map((v) => [`custom:${v.field_key}`, v.value]),
-    ),
-  } as Record<string, unknown>
+  }
 }
 export async function reconcileQualification(
   db: QualificationDb,

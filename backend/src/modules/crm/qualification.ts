@@ -8,13 +8,30 @@ export const activityEvents = [
   'email.clicked',
   'lead.response_received',
 ] as const
-const band = z
+export const qualificationBandSchema = z
   .object({
     min: z.number().finite().nullable(),
     max: z.number().finite().nullable(),
     points: z.number().int().min(-100).max(100),
   })
   .strict()
+export const qualificationOperatorSchema = z.enum([
+  'exists', 'equals', 'not_equals', 'contains', 'not_contains',
+  'greater_than', 'less_than', 'at_least', 'at_most',
+])
+export const qualificationComparisonSchema = z.union([
+  z.string().max(500), z.number().finite(), z.boolean(), z.null(),
+])
+
+export function qualificationBandsError(bands: readonly z.infer<typeof qualificationBandSchema>[]) {
+  for (const [index, current] of bands.entries()) {
+    const previous = bands[index - 1]
+    if (current.min !== null && current.max !== null && current.min >= current.max)
+      return 'O início da faixa deve ser menor que o fim.'
+    if (previous && (previous.max === null || current.min === null || current.min < previous.max))
+      return 'As faixas devem estar ordenadas e não podem se sobrepor.'
+  }
+}
 export const qualificationRuleSchema = z
   .object({
     name: z.string().trim().min(2).max(120),
@@ -22,24 +39,10 @@ export const qualificationRuleSchema = z
     dimension: z.enum(['fit', 'intent']),
     fieldKey: z.string().max(160).default(''),
     recordTypeId: z.string().uuid().nullable().default(null),
-    operator: z
-      .enum([
-        'exists',
-        'equals',
-        'not_equals',
-        'contains',
-        'not_contains',
-        'greater_than',
-        'less_than',
-        'at_least',
-        'at_most',
-      ])
-      .default('exists'),
-    comparisonValue: z
-      .union([z.string().max(500), z.number().finite(), z.boolean(), z.null()])
-      .optional(),
+    operator: qualificationOperatorSchema.default('exists'),
+    comparisonValue: qualificationComparisonSchema.optional(),
     points: z.number().int().min(-100).max(100),
-    bands: z.array(band).max(20).default([]),
+    bands: z.array(qualificationBandSchema).max(20).default([]),
     eventType: z.enum(activityEvents).optional(),
     maxContribution: z.number().int().min(1).max(100).default(100),
   })
@@ -51,27 +54,14 @@ export const qualificationRuleSchema = z
       issue('Selecione uma atividade.')
     if (rule.kind === 'activity' && rule.bands.length)
       issue('Faixas são aplicáveis ao perfil.')
-    for (let i = 0; i < rule.bands.length; i++) {
-      const current = rule.bands[i]
-      const prev = rule.bands[i - 1]
-      if (
-        current.min !== null &&
-        current.max !== null &&
-        current.min >= current.max
-      )
-        issue('O início da faixa deve ser menor que o fim.')
-      if (
-        i > 0 &&
-        (prev.max === null || current.min === null || current.min < prev.max)
-      )
-        issue('As faixas devem estar ordenadas e não podem se sobrepor.')
-    }
+    const bandsError = qualificationBandsError(rule.bands)
+    if (bandsError) issue(bandsError)
     if (!rule.bands.length && rule.points === 0)
       issue('Informe uma pontuação diferente de zero.')
   })
 export type QualificationRule = z.infer<typeof qualificationRuleSchema>
 export function matchesQualification(
-  rule: QualificationRule,
+  rule: Pick<QualificationRule, 'fieldKey' | 'operator' | 'comparisonValue' | 'recordTypeId'>,
   context: Record<string, unknown>,
 ) {
   if (rule.recordTypeId && context.recordTypeId !== rule.recordTypeId)
@@ -110,7 +100,7 @@ export function matchesQualification(
   }
 }
 export function evaluateProfileRule(
-  rule: QualificationRule,
+  rule: Pick<QualificationRule, 'fieldKey' | 'operator' | 'comparisonValue' | 'recordTypeId' | 'bands' | 'points'>,
   context: Record<string, unknown>,
 ) {
   if (rule.recordTypeId && context.recordTypeId !== rule.recordTypeId) return 0
