@@ -51,6 +51,13 @@ describe('priority model', () => {
     })
     expect(evaluate({}).fitScore).toBeNull()
   })
+  it('explains an archived criterion when an estimated fallback is available', () => {
+    const result = evaluate({ 'custom:proxy': 10 }, { archivedFieldKeys: new Set(['custom:capacity']) })
+    expect(result.reasons).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'missing_data', fieldKeys: ['custom:capacity'], archivedFieldKeys: ['custom:capacity'] }),
+      expect.objectContaining({ kind: 'criterion', fieldKey: 'custom:proxy', estimated: true }),
+    ]))
+  })
   it('warmth_is_independent', () => {
     expect(evaluate({ 'custom:proxy': 10, 'custom:reach': true })).toMatchObject({
       fitScore: 80, temperatureScore: 0, temperatureBandId: 'cold', priorityScore: 48, queueId: 'work',
@@ -76,5 +83,30 @@ describe('priority model', () => {
     expect(priorityDefinitionSchema.safeParse({ ...definition, matrix: [definition.matrix[0], definition.matrix[0]] }).success).toBe(false)
     expect(priorityDefinitionSchema.safeParse({ ...definition, fitWeight: 70 }).success).toBe(false)
     expect(priorityDefinitionSchema.safeParse({ ...definition, fitGroups: [{ ...definition.fitGroups[0], alternatives: [{ fieldKey: 'custom:capacity', bands: [{ min: 0, max: 10, points: 5 }, { min: 9, max: 20, points: 10 }] }] }] }).success).toBe(false)
+  })
+  it('requires purchase windows to use date bands and only scores the latest unexpired forecast', () => {
+    const group = { id: 'purchase', label: 'Previsão', maxPoints: 100, strategy: 'sumCapped' }
+    expect(priorityDefinitionSchema.safeParse({
+      ...definition, interestGroups: [{ ...group, rules: [{ kind: 'purchase_window', points: 40 }] }],
+    }).success).toBe(false)
+    const version = {
+      id: 'draft', revision: 1, definition: priorityDefinitionSchema.parse({
+        ...definition, timeZone: 'America/Sao_Paulo',
+        interestGroups: [{ ...group, rules: [{
+          kind: 'purchase_window', purchaseBands: [{ min: 0, max: 2, points: 40 }],
+        }] }],
+      }),
+    }
+    const forecasts: PriorityInput['signals'] = [
+      { id: 'old', canonicalKey: 'old', kind: 'purchase_window', channel: 'crm', actor: 'buyer', occurredAt: '2026-10-31T12:00:00Z', targetDate: '2026-11-03' },
+      { id: 'new', canonicalKey: 'new', kind: 'purchase_window', channel: 'crm', actor: 'buyer', occurredAt: '2026-11-01T12:00:00Z', targetDate: '2026-11-04' },
+    ]
+    expect(evaluatePriority(version, { ...input, signals: forecasts }, now)).toMatchObject({
+      temperatureScore: 40, nextEvaluationAt: '2026-11-05T03:00:00.000Z',
+    })
+    expect(evaluatePriority(version, { ...input, signals: forecasts }, new Date('2026-11-05T03:00:00.000Z'))).toMatchObject({
+      temperatureScore: 0,
+      reasons: expect.arrayContaining([expect.objectContaining({ kind: 'expired_signal', signalId: 'new' })]),
+    })
   })
 })

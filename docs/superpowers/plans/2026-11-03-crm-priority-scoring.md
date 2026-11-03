@@ -66,6 +66,7 @@ type PriorityInput = {
   leadId: string
   recordTypeId: string | null
   fields: Record<string, string | number | boolean | null>
+  archivedFieldKeys?: ReadonlySet<string>
   signals: readonly PrioritySignal[]
   status: 'open' | 'won' | 'lost'
   deleted: boolean
@@ -96,7 +97,7 @@ type PriorityResult = {
 
 - [x] Criar testes `first_known_zero_wins` (alternativa principal 0, estimativa 20 → grupo 0), `coverage_gates_ranking` (30 de 40 conhecidos de 100 aplicáveis → potencial 75, cobertura 40, sem fila de ranking com mínimo 50), `warmth_is_independent` (potencial 100, nenhum sinal → temperatura 0), `exclusion_wins` (bloqueio em conta com nota 100 → sem fila e sem prioridade).
 - [x] Executar `npm --prefix backend test -- tests/crm-priority-model.test.ts` e confirmar falha por ausência do motor.
-- [x] Implementar o esquema e o cálculo. Validar pesos, IDs duplicados, matriz completa, cortes e faixas ordenados, tetos, limites de janela e referências de campos. Separar grupos positivos e penalidades. Ordenar contribuições por ID e timestamp para resultado reproduzível. Avaliar somente a previsão de compra mais recente ainda vigente. Determinar a próxima mudança temporal a partir da primeira expiração, saída da janela histórica, limite de prazo de compra ou faixa de inatividade futura.
+- [x] Implementar o esquema e o cálculo. Validar pesos, IDs duplicados, matriz completa, cortes e faixas ordenados, tetos, limites de janela e referências de campos. Separar grupos positivos e penalidades. Ordenar contribuições por ID e timestamp para resultado reproduzível. Usar a previsão de compra mais recente, com faixas de prazo obrigatórias. Se ela vencer, solicitar atualização em vez de recuperar uma previsão anterior. Determinar a próxima mudança temporal a partir da primeira expiração, saída da janela histórica, limite de prazo de compra ou faixa de inatividade futura.
 - [x] Rodar o mesmo teste junto de `tests/crm-qualification.test.ts` e `tests/crm-scoring.test.ts`. Esperado: motor novo e modos atuais passam.
 - [x] Commit `feat(crm): evaluate configurable lead priority`.
 

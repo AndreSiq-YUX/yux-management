@@ -62,8 +62,16 @@ BEGIN
   END LOOP;
 END $$;
 
-GRANT SELECT, INSERT ON public.crm_priority_configs TO yux_api;
+-- The public schema grants broad DML by default to both runtime roles.
+REVOKE ALL ON public.crm_priority_configs, public.crm_priority_versions,
+  public.crm_priority_preview_runs FROM yux_api, yux_worker;
+
+GRANT SELECT ON public.crm_priority_configs TO yux_api;
+GRANT INSERT (crm_instance_id, organization_id, revision, draft, updated_by)
+  ON public.crm_priority_configs TO yux_api;
 GRANT UPDATE (revision, draft, updated_by, updated_at) ON public.crm_priority_configs TO yux_api;
 GRANT SELECT ON public.crm_priority_versions TO yux_api;
-GRANT SELECT, INSERT ON public.crm_priority_preview_runs TO yux_api;
+GRANT SELECT ON public.crm_priority_preview_runs TO yux_api;
+GRANT INSERT (crm_instance_id, organization_id, actor_id, revision, totals)
+  ON public.crm_priority_preview_runs TO yux_api;
 GRANT UPDATE (next_cursor, totals, completed_at) ON public.crm_priority_preview_runs TO yux_api;

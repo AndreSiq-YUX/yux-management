@@ -70,6 +70,7 @@ async function readCatalog(db: ProfileDb, user: AuthUser, instanceId: string) {
   return {
     recordTypes: profile.recordTypes.filter(type => type.isActive).map(({ id, name }) => ({ id, name })),
     fields: fields.map(field => field.type === 'stage' ? { ...field, type: 'select', options: stages.rows } : field),
+    archivedFieldKeys: new Set(profile.fields.filter(field => !field.isActive).map(field => `custom:${field.stableKey}`)),
   }
 }
 
@@ -117,13 +118,14 @@ function validateDefinitionFields(definition: PriorityDefinition, catalog: Prior
 export async function getPriorityModel(db: ProfileDb, user: AuthUser, crmInstanceId: string) {
   const access = await priorityAccess(db, user, crmInstanceId)
   const config = await readConfig(db, crmInstanceId, access.organizationId)
+  const catalog = access.canEdit ? await readCatalog(db, user, crmInstanceId) : null
   return {
     revision: config?.revision ?? 0,
     draft: access.canEdit && config ? priorityDefinitionSchema.parse(config.draft) : null,
     activeVersionId: config?.active_version_id ?? null,
     effectsEnabled: config?.effects_enabled ?? false,
     canEdit: access.canEdit,
-    ...(access.canEdit ? await readCatalog(db, user, crmInstanceId) : {}),
+    ...(catalog ? { fields: catalog.fields, recordTypes: catalog.recordTypes } : {}),
   }
 }
 
@@ -169,7 +171,7 @@ async function readPreviewPage(db: ProfileDb, user: AuthUser, instanceId: string
 
 async function readPreviewFields(db: ProfileDb, user: AuthUser, instanceId: string, organizationId: string, leads: PreviewLead[]) {
   const fieldsByLead = new Map<string, PriorityInput['fields']>()
-  if (!leads.length) return fieldsByLead
+  if (!leads.length) return { fieldsByLead, archivedFieldKeys: new Set<string>() }
   const catalog = await readCatalog(db, user, instanceId)
   const catalogByKey = new Map(catalog.fields.map(field => [field.key, field]))
   const values = await db.query<{ lead_id: string; field_key: string; value: unknown }>(
@@ -192,7 +194,7 @@ async function readPreviewFields(db: ProfileDb, user: AuthUser, instanceId: stri
     if (field && lead && (!field.recordTypeId || field.recordTypeId === lead.record_type_id) && validFieldValue(field, value))
       fieldsByLead.get(lead_id)![key] = value
   }
-  return fieldsByLead
+  return { fieldsByLead, archivedFieldKeys: catalog.archivedFieldKeys }
 }
 
 export async function previewPriority(db: ProfileDb, user: AuthUser, input: {
@@ -222,12 +224,12 @@ export async function previewPriority(db: ProfileDb, user: AuthUser, input: {
     throw profileError(409, 'A simulação mudou. Use o cursor atual ou inicie uma nova simulação.')
 
   const { leads, nextCursor } = await readPreviewPage(db, user, crmInstanceId, organizationId, run.next_cursor)
-  const fields = await readPreviewFields(db, user, crmInstanceId, organizationId, leads)
+  const { fieldsByLead, archivedFieldKeys } = await readPreviewFields(db, user, crmInstanceId, organizationId, leads)
   const totals = run.totals
   const byQueue = new Map(Object.entries(totals.byQueue))
   const results = leads.map(lead => {
     const result = evaluatePriority({ id: run.id, revision, definition }, {
-      leadId: lead.id, recordTypeId: lead.record_type_id, fields: fields.get(lead.id) ?? {},
+      leadId: lead.id, recordTypeId: lead.record_type_id, fields: fieldsByLead.get(lead.id) ?? {}, archivedFieldKeys,
       status: lead.status === 'won' || lead.status === 'lost' ? lead.status : 'open',
       deleted: false, contactBlocked: lead.contact_blocked, signals: [],
     }, run.as_of)

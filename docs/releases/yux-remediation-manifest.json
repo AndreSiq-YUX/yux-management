@@ -40,7 +40,7 @@
     "count": 159,
     "first": "0001_auth_core.sql",
     "last": "0257_crm_priority_models.sql",
-    "aggregateSha256": "1ce034e3b8e7c7a43064c3b182a176c5cd4c7421f13be8cd99c80d92498b1683",
+    "aggregateSha256": "9274c3d0a9cf877080d34b35864cab9c04c23a22650674e04a003395e5837ead",
     "targetVerification": "not_run"
   },
   "contracts": {

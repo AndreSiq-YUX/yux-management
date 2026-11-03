@@ -104,6 +104,10 @@ export const priorityDefinitionSchema = z.object({
         issue('A validade do sinal deve caber na janela histórica.')
       if (rule.purchaseBands.length && rule.kind !== 'purchase_window')
         issue('Faixas de prazo exigem uma previsão de compra.')
+      if (rule.kind === 'purchase_window' && !rule.purchaseBands.length)
+        issue('A previsão de compra exige faixas de dias até a data prevista.')
+      if (rule.purchaseBands.some(band => [band.min, band.max].some(bound => bound !== null && (!Number.isInteger(bound) || bound < 0))))
+        issue('Os limites da previsão de compra devem ser dias inteiros não negativos.')
       const error = qualificationBandsError(rule.purchaseBands)
       if (error) issue(error)
     }
@@ -128,6 +132,7 @@ export type PriorityInput = {
   leadId: string
   recordTypeId: string | null
   fields: Record<string, string | number | boolean | null>
+  archivedFieldKeys?: ReadonlySet<string>
   signals: readonly PrioritySignal[]
   status: 'open' | 'won' | 'lost'
   deleted: boolean
@@ -135,7 +140,7 @@ export type PriorityInput = {
 }
 export type PriorityReason =
   | { kind: 'criterion'; id: string; label: string; fieldKey: string; points: number; estimated: boolean }
-  | { kind: 'missing_data'; id: string; label: string; fieldKeys: string[] }
+  | { kind: 'missing_data'; id: string; label: string; fieldKeys: string[]; archivedFieldKeys: string[] }
   | { kind: 'signal' | 'expired_signal' | 'penalty'; id: string; label: string; points: number; signalId?: string; occurredAt?: string }
   | { kind: 'exclusion'; id: string; label: string }
 
@@ -158,6 +163,7 @@ const DAY = 86_400_000
 function hasKnownField(rule: z.infer<typeof predicate>, input: PriorityInput) {
   const value = input.fields[rule.fieldKey]
   return (!rule.recordTypeId || rule.recordTypeId === input.recordTypeId) &&
+    !input.archivedFieldKeys?.has(rule.fieldKey) &&
     value !== undefined && value !== null && value !== '' &&
     (typeof value !== 'number' || Number.isFinite(value))
 }
@@ -172,11 +178,17 @@ function scoreFit(definition: PriorityDefinition, input: PriorityInput, reasons:
     const rules = group.alternatives.filter(rule => !rule.recordTypeId || rule.recordTypeId === input.recordTypeId)
     if (!rules.length) continue
     applicable += group.maxPoints
-    const rule = rules.find(rule => hasKnownField(rule, input) && (!rule.bands.length || typeof input.fields[rule.fieldKey] === 'number'))
-    if (!rule) {
-      reasons.push({ kind: 'missing_data', id: group.id, label: group.label, fieldKeys: [...new Set(rules.map(item => item.fieldKey))] })
-      continue
+    const selected = rules.findIndex(rule => hasKnownField(rule, input) && (!rule.bands.length || typeof input.fields[rule.fieldKey] === 'number'))
+    const skipped = selected < 0 ? rules : rules.slice(0, selected)
+    if (skipped.length) {
+      const fieldKeys = [...new Set(skipped.map(item => item.fieldKey))]
+      reasons.push({
+        kind: 'missing_data', id: group.id, label: group.label, fieldKeys,
+        archivedFieldKeys: fieldKeys.filter(key => input.archivedFieldKeys?.has(key)),
+      })
     }
+    if (selected < 0) continue
+    const rule = rules[selected]
     const points = evaluateProfileRule(rule, context)
     known += group.maxPoints
     scored += points
@@ -188,18 +200,18 @@ function scoreFit(definition: PriorityDefinition, input: PriorityInput, reasons:
   }
 }
 
-function localDay(time: number, zone: string) {
-  const parts = new Intl.DateTimeFormat('en', { timeZone: zone, year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(time)
+function localDay(time: number, formatter: Intl.DateTimeFormat) {
+  const parts = formatter.formatToParts(time)
   const value = (type: string) => Number(parts.find(part => part.type === type)?.value)
   return Date.UTC(value('year'), value('month') - 1, value('day'))
 }
 
-function nextLocalDay(now: number, zone: string, day: number) {
+function startOfLocalDay(now: number, formatter: Intl.DateTimeFormat, target: number, daysUntilTarget: number) {
   let left = now
-  let right = now + 36 * 3_600_000
+  let right = now + daysUntilTarget * DAY + 36 * 3_600_000
   while (right - left > 1) {
     const middle = Math.floor((left + right) / 2)
-    if (localDay(middle, zone) > day) right = middle
+    if (localDay(middle, formatter) >= target) right = middle
     else left = middle
   }
   return right
@@ -215,6 +227,14 @@ function scoreInterest(definition: PriorityDefinition, input: PriorityInput, now
     .filter(signal => signal.time <= now && signal.time > now - definition.historyDays * DAY)
     .sort((a, b) => b.time - a.time || a.id.localeCompare(b.id))
   const latestPurchase = signals.find(signal => signal.kind === 'purchase_window')
+  const purchaseDate = latestPurchase?.targetDate
+  const formatter = purchaseDate ? new Intl.DateTimeFormat('en', {
+    timeZone: definition.timeZone, year: 'numeric', month: 'numeric', day: 'numeric',
+  }) : null
+  const day = formatter ? localDay(now, formatter) : 0
+  const targetDate = purchaseDate && /^\d{4}-\d{2}-\d{2}$/.test(purchaseDate) ? Date.parse(purchaseDate) : NaN
+  const daysLeft = (targetDate - day) / DAY
+  const purchaseBoundaries = new Map<number, number>()
 
   function scoreGroup(group: { id: string; label: string; rules: z.infer<typeof signalRule>[]; maxPoints: number; strategy: 'max' | 'sumCapped' }, penalty: boolean) {
     const canonical = new Map<string, Candidate>()
@@ -233,14 +253,23 @@ function scoreInterest(definition: PriorityDefinition, input: PriorityInput, now
         }
         due(expiry)
         let points = rule.points
-        if (rule.purchaseBands.length) {
-          if (signal !== latestPurchase || !signal.targetDate) continue
-          const day = localDay(now, definition.timeZone)
-          const remaining = (Date.parse(signal.targetDate) - day) / DAY
-          if (!Number.isInteger(remaining) || remaining < 0) continue
-          due(nextLocalDay(now, definition.timeZone, day))
-          points = rule.purchaseBands.find(band => (band.min === null || remaining >= band.min) &&
-            (band.max === null || remaining < band.max))?.points ?? 0
+        if (rule.kind === 'purchase_window') {
+          if (signal !== latestPurchase || !formatter || !Number.isInteger(daysLeft)) continue
+          if (daysLeft < 0) {
+            if (!expired.has(signal.canonicalKey)) expired.set(signal.canonicalKey, signal)
+            continue
+          }
+          const bounds = rule.purchaseBands.flatMap(band => [band.min, band.max])
+            .filter((bound): bound is number => bound !== null && bound <= daysLeft)
+          const untilBoundary = daysLeft - Math.max(0, ...bounds) + 1
+          let boundary = purchaseBoundaries.get(untilBoundary)
+          if (boundary === undefined) {
+            boundary = startOfLocalDay(now, formatter, day + untilBoundary * DAY, untilBoundary)
+            purchaseBoundaries.set(untilBoundary, boundary)
+          }
+          due(boundary)
+          points = rule.purchaseBands.find(band => (band.min === null || daysLeft >= band.min) &&
+            (band.max === null || daysLeft < band.max))?.points ?? 0
         }
         if (points > (canonical.get(signal.canonicalKey)?.points ?? 0))
           canonical.set(signal.canonicalKey, { signal, points })
