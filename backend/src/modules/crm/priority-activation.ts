@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { AuthUser } from '../../auth/routes.js'
+import { lockPriorityEffects } from './priority-actions.js'
 import { priorityAccess } from './priority-repository.js'
 import { profileError, type ProfileDb } from './record-profile.js'
 
@@ -17,6 +18,7 @@ export async function changePriorityActivation(
   const { canEdit, organizationId } = await priorityAccess(db, user, crmInstanceId)
   if (!canEdit)
     throw profileError(403, 'Somente administradores autorizados podem publicar o modelo.')
+  await lockPriorityEffects(db, crmInstanceId)
   const args = [crmInstanceId, organizationId]
   const config = (
     await db.query<{ revision: number; active_activation_id: string | null }>(
@@ -86,7 +88,7 @@ export async function changePriorityActivation(
       ).rows[0].id
     : null
   await db.query(
-    `UPDATE public.crm_priority_configs SET active_version_id=$3,active_activation_id=$4
+    `UPDATE public.crm_priority_configs SET active_version_id=$3,active_activation_id=$4,effects_enabled=FALSE
     WHERE crm_instance_id=$1 AND organization_id=$2`,
     [...args, versionId, activationId],
   )

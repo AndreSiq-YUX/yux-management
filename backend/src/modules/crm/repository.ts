@@ -5,6 +5,7 @@ import { loadPrioritySummaries } from './priority-views.js'
 import type pg from 'pg'
 import type { AuthUser } from '../../auth/routes.js'
 import { recordDomainEvent } from '../events/repository.js'
+import { insertLeadTask } from './task-repository.js'
 
 export type CrmLeadInput = {
   organizationId: string
@@ -585,29 +586,7 @@ export async function createLeadTask(pool: pg.Pool, user: AuthUser, leadId: stri
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    const result = await client.query<TaskRow>(
-      `INSERT INTO public.lead_tasks (organization_id, lead_id, title, description, due_at, assigned_to, priority, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, organization_id, lead_id, enrollment_id, title, description, status, priority, due_at, completed_at, assigned_to`,
-      [
-        input.organizationId,
-        leadId,
-        input.title.trim(),
-        input.description?.trim() || null,
-        input.dueAt,
-        input.assignedTo ?? null,
-        input.priority ?? 'medium',
-        user.id,
-      ],
-    )
-    const task = result.rows[0]
-    if (!task) throw Object.assign(new Error('task_create_failed'), { statusCode: 500 })
-    await client.query(
-      `UPDATE public.leads
-       SET next_follow_up_at = LEAST(COALESCE(next_follow_up_at, $2), $2), updated_at = NOW()
-       WHERE id = $1`,
-      [leadId, input.dueAt],
-    )
+    const task = await insertLeadTask(client, { ...input, leadId, createdBy: user.id })
     await recordDomainEvent(client, {
       eventType: 'lead.task_created',
       organizationId: lead.organization_id,

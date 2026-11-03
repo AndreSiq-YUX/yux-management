@@ -37,6 +37,8 @@ export const crmPriorityService = {
     apiRequest<ActivationResult>(`${base}/publish`, { method: 'POST', body }),
   activate: (body: ActivationCommand & { versionId: string | null }) =>
     apiRequest<ActivationResult>(`${base}/activate`, { method: 'POST', body }),
+  setEffects: (body: { crmInstanceId: string; expectedActivationId: string; enabled: boolean }) =>
+    apiRequest<{ effectsEnabled: boolean }>(`${base}/effects`, { method: 'PATCH', body }),
   lead: (leadId: string) => apiRequest<LeadPriority | null>(`/crm/leads/${leadId}/priority`),
   history: (leadId: string) => apiRequest<{items:PriorityTransition[]}>(`/crm/leads/${leadId}/priority/history`),
   signals: (leadId: string) => apiRequest<{ items: LeadPrioritySignal[] }>(signals(leadId)),

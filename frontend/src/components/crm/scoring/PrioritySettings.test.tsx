@@ -11,6 +11,7 @@ vi.mock('@/services/crmPriorityService', () => ({
     preview: vi.fn(),
     publish: vi.fn(),
     activate: vi.fn(),
+    setEffects: vi.fn(),
   },
 }))
 
@@ -53,6 +54,7 @@ it('requires a complete preview of the saved revision and explicit publication c
     draft,
     activeActivationId: null,
     activeVersionId: null,
+    effectsEnabled: false,
     versions: [],
     fields: [
       { key: 'lead.company', label: 'Empresa', type: 'text', recordTypeId: null, options: [] },
@@ -79,6 +81,7 @@ it('requires a complete preview of the saved revision and explicit publication c
   try {
     await act(async () => root.render(<PrioritySettings crmInstanceId="instance" />))
     expect(button('Publicar modelo').disabled).toBe(true)
+    expect(button('Ativar tarefas automáticas')).toBeUndefined()
     await act(async () => button('Simular carteira').click())
     expect(crmPriorityService.preview).toHaveBeenCalledWith({
       crmInstanceId: 'instance',
@@ -94,6 +97,21 @@ it('requires a complete preview of the saved revision and explicit publication c
     expect(crmPriorityService.publish).toHaveBeenCalledWith(
       expect.objectContaining({ revision: 3, runId: 'run' }),
     )
+    expect(crmPriorityService.setEffects).not.toHaveBeenCalled()
+    vi.mocked(crmPriorityService.setEffects).mockResolvedValue({ effectsEnabled: true })
+    await act(async () => button('Ativar tarefas automáticas').click())
+    expect(crmPriorityService.setEffects).not.toHaveBeenCalled()
+    await act(async () =>
+      Array.from(document.querySelectorAll('button'))
+        .find((node) => node.textContent === 'Confirmar alteração')!
+        .click(),
+    )
+    expect(crmPriorityService.setEffects).toHaveBeenCalledWith({
+      crmInstanceId: 'instance',
+      expectedActivationId: 'active',
+      enabled: true,
+    })
+    expect(button('Pausar tarefas automáticas')).toBeDefined()
   } finally {
     await act(async () => root.unmount())
     host.remove()

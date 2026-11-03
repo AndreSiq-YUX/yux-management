@@ -6,6 +6,7 @@ import { getPriorityModel, previewPriority, savePriorityDraft } from './priority
 import { inProfileTransaction, profileError } from './record-profile.js'
 import { addPrioritySignal, listPrioritySignals, prioritySignalInput, revokePrioritySignal, revokePrioritySignalInput } from './priority-signals.js'
 import { changePriorityActivation } from './priority-activation.js'
+import { setPriorityEffects } from './priority-actions.js'
 import { getLeadPriority, getLeadPriorityHistory } from './priority-views.js'
 
 const instance = z.object({ crmInstanceId: z.uuid() }).strict()
@@ -65,6 +66,12 @@ export async function registerPriorityRoutes(
     if (!user) return reply
     const input = parse(activate,request.body)
     return inProfileTransaction(app.pg,db=>changePriorityActivation(db,user,input))
+  })
+  app.patch('/priority/effects', async (request, reply) => {
+    const user = await authenticate(request, reply)
+    if (!user) return reply
+    const input = parse(instance.extend({ expectedActivationId: z.uuid(), enabled: z.boolean() }), request.body)
+    return inProfileTransaction(app.pg, db => setPriorityEffects(db, user, input))
   })
   app.get('/leads/:id/priority',async (request,reply)=>{
     const user = await authenticate(request,reply)

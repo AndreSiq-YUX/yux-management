@@ -8,6 +8,36 @@ type Queryable = {
 
 type TaskActor = Pick<AuthUser, 'id' | 'role'>
 
+export async function insertLeadTask(db: Queryable, input: {
+  organizationId: string
+  leadId: string
+  title: string
+  description?: string
+  dueAt: string
+  assignedTo?: string
+  priority?: string
+  createdBy?: string
+}) {
+  const result = await db.query<Pick<TaskRow,
+    'id' | 'organization_id' | 'lead_id' | 'enrollment_id' | 'title' | 'description' |
+    'status' | 'priority' | 'due_at' | 'completed_at' | 'assigned_to'
+  >>(
+    `INSERT INTO public.lead_tasks (organization_id,lead_id,title,description,due_at,assigned_to,priority,created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+     RETURNING id,organization_id,lead_id,enrollment_id,title,description,status,priority,due_at,completed_at,assigned_to`,
+    [input.organizationId, input.leadId, input.title.trim(), input.description?.trim() || null,
+      input.dueAt, input.assignedTo ?? null, input.priority ?? 'medium', input.createdBy ?? null],
+  )
+  const task = result.rows[0]
+  if (!task) throw Object.assign(new Error('task_create_failed'), { statusCode: 500 })
+  await db.query(
+    `UPDATE public.leads SET next_follow_up_at=LEAST(COALESCE(next_follow_up_at,$2),$2),updated_at=now()
+     WHERE id=$1 AND organization_id=$3`,
+    [input.leadId, input.dueAt, input.organizationId],
+  )
+  return task
+}
+
 export type CrmTaskFilters = {
   organizationId: string
   crmInstanceId: string

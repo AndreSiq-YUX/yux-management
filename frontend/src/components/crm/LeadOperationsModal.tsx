@@ -1,5 +1,5 @@
 import {LeadNotes} from './LeadNotes'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   CalendarDays,
@@ -94,10 +94,18 @@ function LeadWorkspace({
   governance?: CrmGovernanceContext | null
 }) {
   const record = useLeadRecord(lead.id, organizationId)
+  const queueId = lead.priority?.queueId
+  const lastQueueId = useRef(queueId)
+  const refreshRecord = record.refresh
+  useEffect(() => {
+    if (lastQueueId.current === queueId) return
+    lastQueueId.current = queueId
+    if (queueId) void refreshRecord()
+  }, [queueId, refreshRecord])
   const ops = useLeadOperations({
     lead,
     organizationId,
-    onChanged: record.refresh,
+    onChanged: refreshRecord,
   })
   const [tab, setTab] = useState('overview'),
     [editing, setEditing] = useState(false),

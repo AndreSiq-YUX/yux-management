@@ -20,9 +20,40 @@ import { blankPriorityDraft, PriorityRulesEditor } from './PriorityRulesEditor'
 type Confirmation =
   | { kind: 'publish'; requestId: string }
   | { kind: 'activate'; versionId: string | null; requestId: string }
+  | { kind: 'effects'; enabled: boolean; activationId: string }
 const note = (value: number | null) => (value === null ? '—' : String(value))
 const message = (error: unknown) =>
   error instanceof Error ? error.message : 'Não foi possível concluir a operação.'
+
+function confirmationCopy(confirmation: Confirmation | null, revision?: number) {
+  switch (confirmation?.kind) {
+    case 'publish':
+      return {
+        title: 'Publicar modelo de prioridade',
+        description: `A revisão ${revision} será ativada neste CRM com as tarefas automáticas pausadas.`,
+      }
+    case 'activate':
+      return confirmation.versionId
+        ? {
+            title: 'Restaurar versão',
+            description: 'A versão selecionada será recalculada com os dados atuais e as tarefas automáticas ficarão pausadas.',
+          }
+        : {
+            title: 'Desativar prioridade',
+            description: 'A carteira voltará a usar a pontuação anterior.',
+          }
+    case 'effects':
+      return confirmation.enabled
+        ? {
+            title: 'Ativar tarefas automáticas',
+            description: 'Novas entradas em filas com prazo podem criar uma tarefa para o responsável ativo. A classificação inicial da carteira gera apenas recomendações.',
+          }
+        : {
+            title: 'Pausar tarefas automáticas',
+            description: 'A pausa interrompe a criação de novas tarefas. As tarefas existentes seguem no CRM.',
+          }
+  }
+}
 
 export function PrioritySettings({
   crmInstanceId,
@@ -115,6 +146,17 @@ export function PrioritySettings({
   const confirm = () =>
     void action(async () => {
       if (!confirmation || !configuration) return
+      if (confirmation.kind === 'effects') {
+        const result = await crmPriorityService.setEffects({
+          crmInstanceId,
+          expectedActivationId: confirmation.activationId,
+          enabled: confirmation.enabled,
+        })
+        setConfiguration({ ...configuration, ...result })
+        setConfirmation(null)
+        setStatus(result.effectsEnabled ? 'Tarefas automáticas ativadas.' : 'Tarefas automáticas pausadas.')
+        return
+      }
       const input = {
         crmInstanceId,
         expectedActivationId: configuration.activeActivationId,
@@ -146,6 +188,7 @@ export function PrioritySettings({
         ...configuration,
         activeActivationId: result.activationId,
         activeVersionId: result.versionId,
+        effectsEnabled: false,
         versions,
       })
       onActiveChange?.(Boolean(result.activationId))
@@ -187,6 +230,7 @@ export function PrioritySettings({
 
   const isActive = Boolean(configuration.activeActivationId)
   const isPublishing = confirmation?.kind === 'publish'
+  const dialog = confirmationCopy(confirmation, preview?.revision)
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -199,6 +243,38 @@ export function PrioritySettings({
           </span>
         )}
       </div>
+      {configuration.activeActivationId && (
+        <section
+          aria-label="Tarefas automáticas"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4"
+        >
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="font-medium">Tarefas automáticas</h3>
+              <Badge variant={configuration.effectsEnabled ? 'default' : 'secondary'}>
+                {configuration.effectsEnabled ? 'Ativas' : 'Pausadas'}
+              </Badge>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Use os prazos do modelo publicado para criar tarefas ao entrar em uma fila configurada.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              if (configuration.activeActivationId)
+                setConfirmation({
+                  kind: 'effects',
+                  enabled: !configuration.effectsEnabled,
+                  activationId: configuration.activeActivationId,
+                })
+            }}
+          >
+            {configuration.effectsEnabled ? 'Pausar tarefas automáticas' : 'Ativar tarefas automáticas'}
+          </Button>
+        </section>
+      )}
       <fieldset disabled={busy} className="min-w-0">
         <PriorityRulesEditor
           value={draft}
@@ -367,20 +443,8 @@ export function PrioritySettings({
       >
         <DialogContent className="w-[calc(100%-2rem)] max-w-md">
           <DialogHeader>
-            <DialogTitle>
-              {isPublishing
-                ? 'Publicar modelo de prioridade'
-                : confirmation?.versionId
-                  ? 'Restaurar versão'
-                  : 'Desativar prioridade'}
-            </DialogTitle>
-            <DialogDescription>
-              {isPublishing
-                ? `A revisão ${preview?.revision} será ativada neste CRM e as fichas serão recalculadas em segundo plano.`
-                : confirmation?.versionId
-                  ? 'A versão selecionada será recalculada com os dados atuais.'
-                  : 'A carteira voltará a usar a pontuação anterior.'}
-            </DialogDescription>
+            <DialogTitle>{dialog?.title}</DialogTitle>
+            <DialogDescription>{dialog?.description}</DialogDescription>
           </DialogHeader>
           {error && (
             <p role="alert" className="text-sm text-destructive">

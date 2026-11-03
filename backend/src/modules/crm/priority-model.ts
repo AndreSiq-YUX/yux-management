@@ -64,13 +64,19 @@ export const priorityDefinitionSchema = z.object({
   timeZone: timeZone.default('UTC'),
   fitBands: z.array(band).min(1).max(10),
   temperatureBands: z.array(band).min(1).max(10),
-  queues: z.array(z.object({ id, label, recommendation: z.string().trim().max(240).optional() }).strict()).min(1).max(20),
+  queues: z.array(z.object({
+    id, label,
+    recommendation: z.string().trim().max(240).optional(),
+    taskDueDays: days.optional(),
+  }).strict()).min(1).max(20),
   matrix: z.array(z.object({ fitBandId: id, temperatureBandId: id, queueId: id }).strict()).max(100),
   exclusions: z.array(predicate.extend({ id, label })).max(30).default([]),
 }).strict().superRefine((definition, context) => {
   const issue = (message: string) => context.addIssue({ code: 'custom', message })
   if (definition.fitWeight + definition.temperatureWeight !== 100)
     issue('Os pesos de potencial e temperatura devem somar 100.')
+  if (definition.queues.some(queue => queue.taskDueDays !== undefined && !queue.recommendation))
+    issue('Preencha a próxima ação sugerida nas filas com criação de tarefa.')
   for (const entries of [definition.fitGroups, definition.interestGroups, definition.fitBands, definition.temperatureBands, definition.queues, definition.exclusions]) {
     if (new Set(entries.map(entry => entry.id)).size !== entries.length)
       issue('Os identificadores devem ser únicos em cada conjunto.')

@@ -62,7 +62,7 @@ export type PrioritySignalRule = {
   purchaseBands: PriorityRange[]
 }
 export type PriorityBand = { id: string; label: string; min: number }
-export type PriorityQueue = { id: string; label: string; recommendation?: string }
+export type PriorityQueue = { id: string; label: string; recommendation?: string; taskDueDays?: number }
 export type PriorityDefinition = {
   fitWeight: number
   temperatureWeight: number
@@ -97,6 +97,7 @@ export type PriorityConfiguration = {
   canEdit: boolean
   activeActivationId: string | null
   activeVersionId: string | null
+  effectsEnabled: boolean
   versions: { id: string; revision: number; createdAt: string }[]
   fields?: PriorityField[]
   recordTypes?: { id: string; name: string }[]

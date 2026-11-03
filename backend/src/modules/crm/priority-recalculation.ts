@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { runWithDatabaseRequestContext } from '../../db/request-context.js'
 import {
@@ -11,6 +12,7 @@ import {
   type PriorityLeadFacts,
 } from './priority-repository.js'
 import { loadPrioritySignalsForLeads } from './priority-signals.js'
+import { applyPriorityTransition } from './priority-actions.js'
 import { inProfileTransaction, type ProfileDb } from './record-profile.js'
 
 type Activation = {
@@ -107,8 +109,9 @@ async function evaluateLead(db: ProfileDb, id: string, fixedNow?: Date) {
       definition: unknown
       refreshed_at: Date
       evaluation_time_ms: string
+      effects_enabled: boolean
     }>(
-      `SELECT a.id,a.version_id,a.refreshed_at,v.revision,v.definition,
+      `SELECT a.id,a.version_id,a.refreshed_at,v.revision,v.definition,c.effects_enabled,
       ceil(extract(epoch FROM clock_timestamp()) * 1000)::bigint AS evaluation_time_ms
       FROM public.crm_priority_configs c
       JOIN public.crm_priority_activations a ON a.id=c.active_activation_id
@@ -189,11 +192,13 @@ async function evaluateLead(db: ProfileDb, id: string, fixedNow?: Date) {
         : pending
           ? 'change'
           : 'time'
+    const transitionId = randomUUID()
     await db.query(
       `INSERT INTO public.crm_priority_transitions
-      (lead_id,crm_instance_id,organization_id,activation_id,cause,occurred_at,before_summary,after_summary)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+      (id,lead_id,crm_instance_id,organization_id,activation_id,cause,occurred_at,before_summary,after_summary)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
       [
+        transitionId,
         id,
         instanceId,
         organizationId,
@@ -204,6 +209,19 @@ async function evaluateLead(db: ProfileDb, id: string, fixedNow?: Date) {
         JSON.stringify(after),
       ],
     )
+    if (active.effects_enabled) {
+      await applyPriorityTransition(db, {
+        id: transitionId,
+        leadId: id,
+        organizationId,
+        instanceId,
+        activationId: active.id,
+        cause,
+        occurredAt: now,
+        previousQueueId: before?.queueId ?? null,
+        queue: definition.queues.find(queue => queue.id === after.queueId),
+      })
+    }
   }
   if (pending) await db.query('DELETE FROM public.crm_priority_work WHERE lead_id=$1', [id])
   return true

@@ -861,7 +861,13 @@ export function PriorityRulesEditor({
             onChange={(temperatureBands) => classification({ temperatureBands })}
           />
           <div className={outline}>
-            <h4 className="font-medium">Filas em ordem de atendimento</h4>
+            <div>
+              <h4 className="font-medium">Filas em ordem de atendimento</h4>
+              <p className="text-sm text-muted-foreground">
+                Preencha o prazo para usar a ação sugerida como tarefa quando um lead entrar na fila.
+                Deixe o prazo em branco para manter apenas a sugestão.
+              </p>
+            </div>
             {value.queues.map((queue, i) => (
               <div key={queue.id} className={outline}>
                 <FieldGroup className={grid}>
@@ -878,6 +884,17 @@ export function PriorityRulesEditor({
                     onChange={(recommendation) =>
                       classification({
                         queues: replace(value.queues, i, { ...queue, recommendation }),
+                      })
+                    }
+                  />
+                  <Num
+                    label="Prazo da tarefa automática (dias)"
+                    value={queue.taskDueDays ?? null}
+                    min={1}
+                    max={730}
+                    onChange={(days) =>
+                      classification({
+                        queues: replace(value.queues, i, { ...queue, taskDueDays: days ?? undefined }),
                       })
                     }
                   />

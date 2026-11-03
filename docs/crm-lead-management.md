@@ -19,6 +19,8 @@ API autenticada sob `/api/crm/priority`:
 - `POST /preview` recebe `{ crmInstanceId, revision }`. Continue com o
   `runId` e o `nextCursor` retornado como `afterId`. Cada página contém
   até 50 leads visíveis para a pessoa que iniciou a simulação.
+- `PATCH /effects` recebe `{ crmInstanceId, expectedActivationId, enabled }`.
+  Apenas administradores autorizados podem alterar a automação da ativação atual.
 
 A prévia retorna `mode: "with_signals"`, o horário de referência, a janela
 histórica, resultados por lead e totais por estado e fila. Ela usa sinais
@@ -40,12 +42,20 @@ entrar pelo histórico. Sinais vindos de e-mail podem ser registrados
 manualmente. A regra pode considerar a validade do sinal e a última
 interação relevante do comprador.
 
-As migrations 0257–0259 cobrem rascunhos, sinais, ativações, avaliações e
-histórico. O job de manutenção `crm.priorityRecalculate` processa lotes
+As migrations 0257–0260 cobrem rascunhos, sinais, ativações, avaliações,
+histórico e registro de tarefas automáticas. O job de manutenção
+`crm.priorityRecalculate` processa lotes
 pendentes e vencidos a cada minuto. A publicação enfileira a avaliação das
 fichas com os dados atuais. Durante o recálculo, a ficha mostra **Calculando**.
-Esta entrega recomenda ações. A criação automática de tarefas pertence à
-próxima entrega do plano.
+
+Em **Filas**, preencha a próxima ação sugerida e o prazo em dias para
+transformar a ação em tarefa. Depois de publicar e validar o modelo,
+confirme **Ativar tarefas automáticas** para essa instância. Cada nova
+entrada na fila pode criar uma tarefa interna para o responsável ativo,
+com o título da ação sugerida. Leads sem responsável mantêm a sugestão
+na ficha. A classificação inicial da carteira gera recomendações.
+Publicar, restaurar uma versão ou desativar a prioridade pausa a criação
+automática. As tarefas já criadas permanecem no CRM.
 
 ## Tipos de cliente e campos personalizados
 
