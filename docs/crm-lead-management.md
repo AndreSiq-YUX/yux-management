@@ -2,7 +2,7 @@
 
 Atualizado em: 2026-10-29
 
-## Prioridade comercial — motor e simulação
+## Prioridade comercial
 
 O novo motor calcula potencial, temperatura e prioridade separadamente. O
 rascunho pertence a uma instância de CRM e pode aplicar grupos a tipos de
@@ -20,13 +20,32 @@ API autenticada sob `/api/crm/priority`:
   `runId` e o `nextCursor` retornado como `afterId`. Cada página contém
   até 50 leads visíveis para a pessoa que iniciou a simulação.
 
-A prévia retorna `mode: "profile_only"`, o horário de referência,
-resultados por lead e totais por estado e fila. A temperatura fica em zero
-nesta etapa, antes da integração dos sinais. O registro da execução guarda
-revisão, cursor e totais. As pontuações simuladas são retornadas na resposta,
-sem gravar pontuações nas fichas ou disparar atividades. A migration
-`0257_crm_priority_models.sql` prepara o armazenamento. A publicação do
-modelo e a interface de configuração pertencem às entregas seguintes.
+A prévia retorna `mode: "with_signals"`, o horário de referência, a janela
+histórica, resultados por lead e totais por estado e fila. Ela usa sinais
+estruturados e eventos elegíveis já registrados. Registra revisão, cursor e
+totais da simulação. As notas previstas só são retornadas na resposta.
+
+Na área **Comercial → Pontuação de leads**, configure os grupos de
+potencial e temperatura, as filas e os impedimentos. Salve o rascunho,
+simule a carteira e confirme a publicação da revisão. A ativação vale para
+essa instância. Use **Restaurar versão** ou **Desativar prioridade** para
+reverter. A ficha mostra a classificação, os motivos e a próxima ação
+sugerida. A lista e o Kanban permitem filtrar pela fila. Em **Hoje**, os
+prazos operacionais aparecem separados da ordem comercial.
+
+Na aba **Atividades** da ficha, use **Registrar ou consultar sinais** para
+informar uma manifestação comercial, vincular o mesmo fato a um sinal
+anterior ou revogar um registro. Respostas vinculadas de WhatsApp podem
+entrar pelo histórico. Sinais vindos de e-mail podem ser registrados
+manualmente. A regra pode considerar a validade do sinal e a última
+interação relevante do comprador.
+
+As migrations 0257–0259 cobrem rascunhos, sinais, ativações, avaliações e
+histórico. O job de manutenção `crm.priorityRecalculate` processa lotes
+pendentes e vencidos a cada minuto. A publicação enfileira a avaliação das
+fichas com os dados atuais. Durante o recálculo, a ficha mostra **Calculando**.
+Esta entrega recomenda ações. A criação automática de tarefas pertence à
+próxima entrega do plano.
 
 ## Tipos de cliente e campos personalizados
 

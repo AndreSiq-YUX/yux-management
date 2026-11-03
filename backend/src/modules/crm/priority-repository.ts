@@ -1,12 +1,14 @@
 import type { AuthUser } from '../../auth/routes.js'
 import { evaluatePriority, priorityDefinitionSchema, type PriorityDefinition, type PriorityInput } from './priority-model.js'
 import { qualificationFieldCatalog, qualificationLeadFields } from './qualification-repository.js'
-import { getInstanceAccess, getProfileConfiguration, leadProfileScopeSql, profileError, type ProfileDb } from './record-profile.js'
+import { loadPrioritySignalsForLeads } from './priority-signals.js'
+import { getInstanceAccess, loadProfileCatalog, leadProfileScopeSql, profileError, type ProfileDb } from './record-profile.js'
 
 type ConfigRow = {
   revision: number
   draft: unknown
   active_version_id: string | null
+  active_activation_id: string | null
   effects_enabled: boolean
 }
 
@@ -24,10 +26,11 @@ type RunRow = {
   revision: number
   next_cursor: string | null
   completed_at: Date | null
+  publishable: boolean
   totals: PreviewTotals
 }
 
-type PreviewLead = Parameters<typeof qualificationLeadFields>[0] & {
+export type PriorityLeadFacts = Parameters<typeof qualificationLeadFields>[0] & {
   id: string
   name: string
   city: string | null
@@ -37,9 +40,9 @@ type PreviewLead = Parameters<typeof qualificationLeadFields>[0] & {
 }
 
 const PAGE_SIZE = 50
-const CONFIG_COLUMNS = 'revision, draft, active_version_id, effects_enabled'
+const CONFIG_COLUMNS = 'revision, draft, active_version_id, active_activation_id, effects_enabled'
 
-async function priorityAccess(db: ProfileDb, user: AuthUser, instanceId: string) {
+export async function priorityAccess(db: ProfileDb, user: AuthUser, instanceId: string) {
   const access = await getInstanceAccess(db, user, instanceId)
   const canEdit = user.role === 'yux_admin' ||
     (user.role === 'client_admin' && access.member_role === 'client_admin' && access.member_status === 'active')
@@ -55,8 +58,8 @@ async function readConfig(db: ProfileDb, instanceId: string, organizationId: str
   return result.rows[0]
 }
 
-async function readCatalog(db: ProfileDb, user: AuthUser, instanceId: string) {
-  const profile = await getProfileConfiguration(db, user, instanceId)
+async function readCatalog(db: ProfileDb, instanceId: string) {
+  const profile = await loadProfileCatalog(db, instanceId)
   const fields = [
     ...qualificationFieldCatalog(profile),
     { key: 'lead.city', label: 'Cidade', type: 'text', options: [], recordTypeId: null },
@@ -118,11 +121,15 @@ function validateDefinitionFields(definition: PriorityDefinition, catalog: Prior
 export async function getPriorityModel(db: ProfileDb, user: AuthUser, crmInstanceId: string) {
   const access = await priorityAccess(db, user, crmInstanceId)
   const config = await readConfig(db, crmInstanceId, access.organizationId)
-  const catalog = access.canEdit ? await readCatalog(db, user, crmInstanceId) : null
+  const catalog = access.canEdit ? await readCatalog(db, crmInstanceId) : null
+  const versions = access.canEdit ? (await db.query<{id:string;revision:number;createdAt:Date}>(`SELECT id,revision,created_at AS "createdAt" FROM public.crm_priority_versions
+    WHERE crm_instance_id=$1 AND organization_id=$2 ORDER BY revision DESC LIMIT 50`,[crmInstanceId,access.organizationId])).rows : []
   return {
     revision: config?.revision ?? 0,
     draft: access.canEdit && config ? priorityDefinitionSchema.parse(config.draft) : null,
     activeVersionId: config?.active_version_id ?? null,
+    activeActivationId: config?.active_activation_id ?? null,
+    versions,
     effectsEnabled: config?.effects_enabled ?? false,
     canEdit: access.canEdit,
     ...(catalog ? { fields: catalog.fields, recordTypes: catalog.recordTypes } : {}),
@@ -135,7 +142,7 @@ export async function savePriorityDraft(db: ProfileDb, user: AuthUser, input: {
   const { crmInstanceId, expectedRevision, definition } = input
   const access = await priorityAccess(db, user, crmInstanceId)
   if (!access.canEdit) throw profileError(403, 'A configuração de prioridade exige um administrador autorizado.')
-  validateDefinitionFields(definition, await readCatalog(db, user, crmInstanceId))
+  validateDefinitionFields(definition, await readCatalog(db, crmInstanceId))
   const params = [crmInstanceId, access.organizationId, JSON.stringify(definition), user.id]
   const result = expectedRevision === 0
     ? await db.query<ConfigRow>(
@@ -150,14 +157,26 @@ export async function savePriorityDraft(db: ProfileDb, user: AuthUser, input: {
   return { revision: saved.revision, draft: definition }
 }
 
+export const priorityContactBlockedSql = `EXISTS (
+         SELECT 1 FROM (
+           SELECT o.id,o.status FROM public.radar_opportunities o
+           WHERE o.organization_id=l.organization_id AND o.converted_lead_id=l.id
+           UNION ALL
+           SELECT o.id,o.status FROM public.radar_candidate_records candidate
+           JOIN public.radar_opportunities o ON o.id=candidate.imported_opportunity_id AND o.organization_id=candidate.organization_id
+           WHERE candidate.organization_id=l.organization_id AND candidate.crm_lead_id=l.id
+         ) linked WHERE linked.status='opted_out' OR EXISTS (
+           SELECT 1 FROM public.radar_compliance_logs c
+           WHERE c.opportunity_id=linked.id AND c.organization_id=l.organization_id AND c.opt_out
+         )
+       )`
+
+export const priorityLeadFactColumns = `l.id,l.name,l.record_type_id,l.company,l.source,l.value,l.stage_id,l.city,l.state,l.status,
+  ${priorityContactBlockedSql} AS contact_blocked`
+
 async function readPreviewPage(db: ProfileDb, user: AuthUser, instanceId: string, organizationId: string, cursor: string | null) {
-  const result = await db.query<PreviewLead>(
-    `SELECT l.id,l.name,l.record_type_id,l.company,l.source,l.value,l.stage_id,l.city,l.state,l.status,
-       EXISTS (
-         SELECT 1 FROM public.radar_opportunities o
-         JOIN public.radar_compliance_logs c ON c.opportunity_id=o.id AND c.organization_id=o.organization_id AND c.opt_out
-         WHERE o.converted_lead_id=l.id AND o.organization_id=l.organization_id
-       ) AS contact_blocked
+  const result = await db.query<PriorityLeadFacts>(
+    `SELECT ${priorityLeadFactColumns}
      ${leadProfileScopeSql}
        AND ci.id=$1 AND l.organization_id=$4 AND ($5::uuid IS NULL OR l.id>$5)
      ORDER BY l.id LIMIT ${PAGE_SIZE + 1}`,
@@ -169,10 +188,10 @@ async function readPreviewPage(db: ProfileDb, user: AuthUser, instanceId: string
   }
 }
 
-async function readPreviewFields(db: ProfileDb, user: AuthUser, instanceId: string, organizationId: string, leads: PreviewLead[]) {
+export async function readPriorityFields(db: ProfileDb, instanceId: string, organizationId: string, leads: PriorityLeadFacts[]) {
   const fieldsByLead = new Map<string, PriorityInput['fields']>()
   if (!leads.length) return { fieldsByLead, archivedFieldKeys: new Set<string>() }
-  const catalog = await readCatalog(db, user, instanceId)
+  const catalog = await readCatalog(db, instanceId)
   const catalogByKey = new Map(catalog.fields.map(field => [field.key, field]))
   const values = await db.query<{ lead_id: string; field_key: string; value: unknown }>(
     `SELECT lead_id,field_key,value FROM public.lead_custom_field_values
@@ -201,7 +220,7 @@ export async function previewPriority(db: ProfileDb, user: AuthUser, input: {
   crmInstanceId: string; revision: number; runId?: string; afterId?: string
 }) {
   const { crmInstanceId, revision } = input
-  const { organizationId } = await priorityAccess(db, user, crmInstanceId)
+  const { organizationId, canEdit } = await priorityAccess(db, user, crmInstanceId)
   const config = await readConfig(db, crmInstanceId, organizationId, true)
   if (config?.revision !== revision)
     throw profileError(409, 'O rascunho mudou. Inicie uma nova simulação.')
@@ -209,35 +228,43 @@ export async function previewPriority(db: ProfileDb, user: AuthUser, input: {
   const emptyTotals: PreviewTotals = { processed: 0, ranked: 0, needsData: 0, excluded: 0, byQueue: {} }
   const run = input.runId
     ? (await db.query<RunRow>(
-        `SELECT id,as_of,revision,next_cursor,completed_at,totals FROM public.crm_priority_preview_runs
+        `SELECT id,as_of,revision,next_cursor,completed_at,totals,publishable FROM public.crm_priority_preview_runs
           WHERE id=$1 AND crm_instance_id=$2 AND organization_id=$3 AND actor_id=$4
             AND as_of > now() - interval '24 hours' FOR UPDATE`,
         [input.runId, crmInstanceId, organizationId, user.id],
       )).rows[0]
     : (await db.query<RunRow>(
-        `INSERT INTO public.crm_priority_preview_runs (crm_instance_id,organization_id,actor_id,revision,totals)
-          VALUES ($1,$2,$3,$4,$5) RETURNING id,as_of,revision,next_cursor,completed_at,totals`,
-        [crmInstanceId, organizationId, user.id, revision, JSON.stringify(emptyTotals)],
+        `INSERT INTO public.crm_priority_preview_runs (crm_instance_id,organization_id,actor_id,revision,totals,publishable)
+          VALUES ($1,$2,$3,$4,$5,$6) RETURNING id,as_of,revision,next_cursor,completed_at,totals,publishable`,
+        [crmInstanceId, organizationId, user.id, revision, JSON.stringify(emptyTotals),canEdit],
       )).rows[0]
   if (!run) throw profileError(404, 'Simulação não encontrada ou expirada.')
-  if (run.revision !== revision || run.completed_at || run.next_cursor !== (input.afterId ?? null))
+  if (run.revision !== revision || run.completed_at || run.next_cursor !== (input.afterId ?? null) || run.publishable !== canEdit)
     throw profileError(409, 'A simulação mudou. Use o cursor atual ou inicie uma nova simulação.')
 
   const { leads, nextCursor } = await readPreviewPage(db, user, crmInstanceId, organizationId, run.next_cursor)
-  const { fieldsByLead, archivedFieldKeys } = await readPreviewFields(db, user, crmInstanceId, organizationId, leads)
+  const { fieldsByLead, archivedFieldKeys } = await readPriorityFields(db, crmInstanceId, organizationId, leads)
+  const signals = await loadPrioritySignalsForLeads(db,{organizationId,instanceId:crmInstanceId},leads.map(lead=>lead.id),
+    new Date(run.as_of.getTime()-definition.historyDays*86_400_000),run.as_of)
+  const previous = config.active_activation_id ? (await db.query<{lead_id:string;score:number|null}>(`SELECT lead_id,
+    (result->>'priorityScore')::int AS score FROM public.crm_priority_evaluations
+    WHERE activation_id=$1 AND organization_id=$2 AND lead_id=ANY($3::uuid[])`,
+  [config.active_activation_id,organizationId,leads.map(lead=>lead.id)])).rows : []
+  const previousScores = new Map(previous.map(row=>[row.lead_id,row.score]))
   const totals = run.totals
   const byQueue = new Map(Object.entries(totals.byQueue))
   const results = leads.map(lead => {
     const result = evaluatePriority({ id: run.id, revision, definition }, {
       leadId: lead.id, recordTypeId: lead.record_type_id, fields: fieldsByLead.get(lead.id) ?? {}, archivedFieldKeys,
       status: lead.status === 'won' || lead.status === 'lost' ? lead.status : 'open',
-      deleted: false, contactBlocked: lead.contact_blocked, signals: [],
+      deleted: false, contactBlocked: lead.contact_blocked, signals: signals.get(lead.id) ?? [],
     }, run.as_of)
     totals.processed++
     if (result.state === 'needs_data') totals.needsData++
     else totals[result.state]++
     if (result.queueId) byQueue.set(result.queueId, (byQueue.get(result.queueId) ?? 0) + 1)
-    return { leadId: lead.id, name: lead.name, ...result }
+    return { leadId: lead.id, name: lead.name, ...result,
+      ...(config.active_activation_id ? {previousPriorityScore:previousScores.get(lead.id) ?? null} : {}) }
   })
   totals.byQueue = Object.fromEntries(byQueue)
   await db.query(
@@ -245,5 +272,5 @@ export async function previewPriority(db: ProfileDb, user: AuthUser, input: {
         SET next_cursor=$2, totals=$3, completed_at=CASE WHEN $2::uuid IS NULL THEN now() ELSE NULL END
       WHERE id=$1`, [run.id, nextCursor, JSON.stringify(totals)],
   )
-  return { revision, runId: run.id, results, nextCursor, totals, asOf: run.as_of.toISOString(), mode: 'profile_only' as const }
+  return { revision, runId: run.id, results, nextCursor, totals, asOf: run.as_of.toISOString(), mode: 'with_signals' as const, historyDays: definition.historyDays }
 }

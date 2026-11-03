@@ -30,6 +30,7 @@ export interface CrmCockpitLead extends CrmLead {
 }
 
 export interface CrmCockpitFilterState {
+  priorityQueue?: string
   search?: string
   ownerMemberId?: string
   teamId?: string

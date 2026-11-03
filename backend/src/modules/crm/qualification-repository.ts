@@ -66,7 +66,7 @@ export async function qualificationFields(
   return qualificationFieldCatalog(config)
 }
 
-export function qualificationFieldCatalog(config: Awaited<ReturnType<typeof getProfileConfiguration>>) {
+export function qualificationFieldCatalog(config: Pick<Awaited<ReturnType<typeof getProfileConfiguration>>, 'recordTypes'|'fields'>) {
   return [
     {
       key: 'recordTypeId',

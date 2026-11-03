@@ -64,7 +64,7 @@ export const priorityDefinitionSchema = z.object({
   timeZone: timeZone.default('UTC'),
   fitBands: z.array(band).min(1).max(10),
   temperatureBands: z.array(band).min(1).max(10),
-  queues: z.array(z.object({ id, label }).strict()).min(1).max(20),
+  queues: z.array(z.object({ id, label, recommendation: z.string().trim().max(240).optional() }).strict()).min(1).max(20),
   matrix: z.array(z.object({ fitBandId: id, temperatureBandId: id, queueId: id }).strict()).max(100),
   exclusions: z.array(predicate.extend({ id, label })).max(30).default([]),
 }).strict().superRefine((definition, context) => {

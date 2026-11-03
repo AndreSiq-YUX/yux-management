@@ -20,6 +20,8 @@ import { LeadWorkspaceLayout } from './LeadWorkspaceLayout'
 import { LeadProfileSummary } from './LeadProfileSummary'
 import { LeadProfilePanel } from './LeadProfilePanel'
 import { LeadScoreSummary } from './scoring/LeadScoreSummary'
+import { LeadPriorityDetails, PriorityBadge } from './scoring/LeadPriorityDetails'
+import { LeadPrioritySignals } from './scoring/LeadPrioritySignals'
 import { LeadTemperature } from './scoring/LeadTemperature'
 import { LeadDeleteButton } from './LeadDeleteDialog'
 import { LeadContactDetails, LeadResearchDetails } from './LeadContactDetails'
@@ -185,13 +187,13 @@ function LeadWorkspace({
                 ? 'Perdido'
                 : 'Aberto'}
           </Badge>
-          <span
+          {lead.priority ? <PriorityBadge priority={lead.priority} /> : <><span
             className="rounded-md border px-2 py-1 text-sm font-semibold"
             title="Pontuação do lead"
           >
             {lead.score}/100
           </span>
-          <LeadTemperature temperature={lead.temperature} />
+          <LeadTemperature temperature={lead.temperature} /></>}
           <LeadDeleteButton lead={lead} />
         </div>
       </div>
@@ -230,12 +232,12 @@ function LeadWorkspace({
           }}
         />
       )}
-      <LeadScoreSummary
+      {lead.priority ? <LeadPriorityDetails leadId={lead.id} summary={lead.priority} /> : <LeadScoreSummary
         leadId={lead.id}
         compact
         onTask={() => act('task')}
         onProposal={() => act('proposal')}
-      />
+      />}
       <Separator />
       <dl className="flex flex-col gap-3 text-sm">
         <div>
@@ -565,6 +567,7 @@ function LeadWorkspace({
               value="activities"
               className="mt-0 flex flex-col gap-5"
             >
+              {(lead.crmInstanceId || crmInstanceId) && <LeadPrioritySignals leadId={lead.id} onChanged={changed} />}
               {ops.action === 'email' ? (
                 <LeadEmailComposer
                   key={lead.id}

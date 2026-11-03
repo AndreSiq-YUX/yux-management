@@ -4,6 +4,8 @@ import { isSlaBreached } from '@/lib/crm/conversationRules'
 import type { CrmCockpitLead } from '@/types/crmCockpit'
 import type { LeadSlaEvent } from '@/types/crmAi'
 import type { ProposalFollowUpTask } from '@/types/crmClosing'
+import { compareLeadPriority } from '@/lib/crm/priorityOrder'
+import { PriorityBadge } from './scoring/LeadPriorityDetails'
 
 interface TodayWorkQueueProps {
   leads: CrmCockpitLead[]
@@ -16,6 +18,30 @@ interface TodayWorkQueueProps {
 export function TodayWorkQueue({ leads, slaEvents = [], proposalFollowUps = [], onSelectLead, now = new Date() }: TodayWorkQueueProps) {
   const breachedLeadIds = new Set(slaEvents.filter(event => isSlaBreached(event, now)).map(event => event.leadId))
   const proposalFollowUpLeadIds = new Set(proposalFollowUps.filter(task => task.status === 'pending' && new Date(task.dueAt).getTime() <= now.getTime()).map(task => task.leadId))
+  if (leads.some(lead=>lead.priority)) {
+    const open=leads.filter(lead=>(lead.status||'open')==='open')
+    const deadlines=open.filter(lead=>breachedLeadIds.has(lead.id)||proposalFollowUpLeadIds.has(lead.id)||
+      (lead.nextFollowUpAt && Date.parse(lead.nextFollowUpAt)<=now.getTime()))
+    const eligible=open.filter(lead=>lead.priority?.state==='ranked'||lead.priority?.state==='needs_data').sort(compareLeadPriority)
+    const pending=open.filter(lead=>lead.priority?.state==='pending').length
+    return <div className="flex flex-col gap-4">
+      {deadlines.length>0&&<section aria-label="Prazos operacionais" className="flex flex-col gap-2 rounded-lg border p-4">
+        <h2 className="font-semibold">Prazos operacionais</h2>
+        {deadlines.map(lead=><button key={lead.id} type="button" className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-left" onClick={()=>onSelectLead(lead)}>
+          <strong>{lead.name}</strong><span className="text-sm text-muted-foreground">{breachedLeadIds.has(lead.id)?'SLA vencido':proposalFollowUpLeadIds.has(lead.id)?'Acompanhamento de proposta':'Acompanhamento previsto'}</span>
+        </button>)}
+      </section>}
+      <section aria-label="Ordem de prioridade comercial" className="flex flex-col gap-2 rounded-lg border p-4">
+        <h2 className="font-semibold">Ordem de prioridade comercial</h2>
+        {pending>0&&<p className="text-sm text-muted-foreground">{pending} leads com cálculo em andamento.</p>}
+        {eligible.map(lead=><button key={lead.id} type="button" className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-left" onClick={()=>onSelectLead(lead)}>
+          <span><strong className="block">{lead.name}</strong>{lead.priority?.recommendation&&<span className="text-sm text-muted-foreground">{lead.priority.recommendation}</span>}</span>
+          <PriorityBadge priority={lead.priority!} />
+        </button>)}
+        {!eligible.length&&<p className="text-sm text-muted-foreground">Nenhum lead disponível nesta fila.</p>}
+      </section>
+    </div>
+  }
   const ranked = [...leads]
     .filter(lead => (lead.status || 'open') === 'open')
     .sort((a, b) => (

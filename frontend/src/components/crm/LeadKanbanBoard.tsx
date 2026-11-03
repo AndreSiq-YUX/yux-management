@@ -1,4 +1,5 @@
 import { LeadTemperature } from './scoring/LeadTemperature'
+import { PriorityBadge } from './scoring/LeadPriorityDetails'
 import { LeadDeleteButton } from './LeadDeleteDialog'
 import { LeadHighlights } from './LeadHighlights'
 import { AlertCircle, Clock, Trophy } from 'lucide-react'
@@ -72,7 +73,7 @@ export function LeadKanbanBoard({ stages, leads, onSelectLead, onMoveLead, profi
                         <p className="text-xs text-yx-fg-3">{lead.company || lead.email}</p><LeadHighlights lead={lead} />
                       </div>
                       <div className="flex items-center justify-between gap-2 text-xs text-yx-fg-3">
-                        <span>{scoreLabel} {lead.score} <LeadTemperature temperature={lead.temperature} /></span>
+                        {lead.priority ? <PriorityBadge priority={lead.priority} /> : <span>{scoreLabel} {lead.score} <LeadTemperature temperature={lead.temperature} /></span>}
                         <span>{formatCurrency(lead.value)}</span>
                       </div>
                       <div className={`flex items-center gap-1 text-xs ${attention.className}`}>

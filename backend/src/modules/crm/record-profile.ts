@@ -79,6 +79,10 @@ export function validateProfileValues(definitions: ProfileDefinition[], values: 
 
 export async function getProfileConfiguration(db: ProfileDb, user: AuthUser, instanceId: string) {
   const access = await getInstanceAccess(db, user, instanceId)
+  return { ...await loadProfileCatalog(db,instanceId), canConfigure: canConfigure(access, user), maxFieldCount: access.max_custom_field_count }
+}
+
+export async function loadProfileCatalog(db: ProfileDb, instanceId: string) {
   const [types, fields] = await Promise.all([
     db.query<TypeRow>('SELECT * FROM public.crm_record_types WHERE crm_instance_id = $1 ORDER BY name, id', [instanceId]),
     db.query<DefinitionRow>(`SELECT * FROM public.crm_custom_field_definitions
@@ -92,7 +96,6 @@ export async function getProfileConfiguration(db: ProfileDb, user: AuthUser, ins
   return {
     recordTypes: types.rows.map(mapRecordType),
     fields: [...latest.values()].sort((a, b) => a.order_index - b.order_index).map(mapField),
-    canConfigure: canConfigure(access, user), maxFieldCount: access.max_custom_field_count,
   }
 }
 
@@ -181,7 +184,7 @@ export async function saveLeadProfile(db: ProfileDb, user: AuthUser, leadId: str
   return { recordTypeId: input.recordTypeId, values: { ...previous, ...validated } }
 }
 
-export async function inProfileTransaction<T>(pool: pg.Pool, work: (db: ProfileDb) => Promise<T>) {
+export async function inProfileTransaction<T>(pool: Pick<pg.Pool,'connect'>, work: (db: ProfileDb) => Promise<T>) {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -230,7 +233,7 @@ export const leadProfileScopeSql = `FROM public.leads l JOIN public.crm_pipeline
           )))
     ))`
 
-async function getLeadAccess(db: ProfileDb, user: AuthUser, leadId: string, lock = false, newlyCreated = false) {
+export async function getLeadAccess(db: ProfileDb, user: AuthUser, leadId: string, lock = false, newlyCreated = false) {
   const result = await db.query<LeadAccess>(`SELECT l.id, l.organization_id, ci.id AS crm_instance_id,
       l.record_type_id, l.owner_member_id, l.owner_id, l.assigned_to, l.team_id
     ${leadProfileScopeSql} AND l.id = $1 ${lock ? 'FOR UPDATE OF l' : ''}`,

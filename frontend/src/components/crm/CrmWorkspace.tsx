@@ -3,6 +3,8 @@ import { requestLeadDeletion } from '@/lib/crm/leadDeletionEvents'
 import { FormEvent, useCallback, useEffect, useMemo, useRef,useState, type ReactNode } from 'react'
 import { apiRequest } from '@/lib/apiClient'
 import { LeadTemperature } from './scoring/LeadTemperature'
+import { PriorityBadge } from './scoring/LeadPriorityDetails'
+import { compareLeadPriority, priorityQueueKey } from '@/lib/crm/priorityOrder'
 import { LeadDeleteDialog, LeadDeleteButton } from './LeadDeleteDialog'
 import { LeadTrashPanel } from './LeadTrashPanel'
 import { LeadHighlights } from './LeadHighlights'
@@ -101,7 +103,13 @@ export function CrmWorkspace({ initialPipelineId, initialLeadId, profile = 'inte
   const stages = useMemo(() => sortPipelineStages(pipeline?.stages || []), [pipeline])
   const stageById = useMemo(() => new Map(stages.map(stage => [stage.id, stage])), [stages])
   const sources = useMemo(() => Array.from(new Set(leads.map(lead => lead.source).filter(Boolean))).sort(), [leads])
-  const filteredLeads = useMemo(() => applyCockpitFilters(leads as CrmCockpitLead[], filters), [leads, filters])
+  const hasPriority = leads.some(lead=>lead.priority)
+  const filteredLeads = useMemo(() => {
+    const selected = applyCockpitFilters(leads as CrmCockpitLead[],hasPriority ? {...filters,temperature:undefined} : filters)
+    if (!hasPriority) return selected
+    const queue = filters.priorityQueue
+    return selected.filter(lead=>!queue || priorityQueueKey(lead)===queue).sort(compareLeadPriority)
+  }, [leads,filters,hasPriority])
   const summary = useMemo(() => calculatePipelineSummary(filteredLeads.map(lead => ({
     ...lead,
     stageKey: stageById.get(lead.stageId)?.key,
@@ -184,6 +192,11 @@ export function CrmWorkspace({ initialPipelineId, initialLeadId, profile = 'inte
 
   useEffect(() => { loadPipelines() }, [loadPipelines])
   useEffect(() => { loadLeads(); const reload = () => { void loadLeads() }; window.addEventListener("crm-leads-changed", reload); return () => window.removeEventListener("crm-leads-changed", reload) }, [loadLeads])
+  useEffect(() => {
+    if (!hasPriority) return
+    const timer=window.setInterval(()=>{if(!document.hidden)void loadLeads()},30_000)
+    return ()=>window.clearInterval(timer)
+  },[hasPriority,loadLeads])
   useEffect(() => { setSelectedLead(current => current ? leads.find(item => item.id === current.id) : current) }, [leads])
   useEffect(()=>{
     if(!initialLeadId||openedDeepLink.current===initialLeadId)return
@@ -377,7 +390,9 @@ export function CrmWorkspace({ initialPipelineId, initialLeadId, profile = 'inte
       sources={sources}
       onChange={setFilters}
       showSmartSegmentBuilder
+      priorityMode={hasPriority}
     />
+    <PriorityQueueFilter leads={leads} filters={filters} onChange={setFilters} />
     <CockpitTabs activeTab={activeTab} onTabChange={setActiveTab} />
     {activeTab === 'kanban' && <LeadKanbanBoard stages={stages} leads={filteredLeads} onSelectLead={setSelectedLead} onMoveLead={moveLead} />}
     {activeTab === 'list' && <LeadList stages={stages} leads={filteredLeads} onSelectLead={setSelectedLead} onMoveLead={moveLead} />}
@@ -503,7 +518,7 @@ function PortalLeadsView(props: PortalLeadsViewProps) {
     )
   }
 
-  const hasFilters = Boolean(filters.search || filters.stageId || filters.source || filters.temperature || filters.stalledOnly)
+  const hasFilters = Boolean(filters.search || filters.stageId || filters.source || filters.temperature || filters.stalledOnly || filters.priorityQueue)
 
   return (
     <PortalPage
@@ -543,7 +558,9 @@ function PortalLeadsView(props: PortalLeadsViewProps) {
         sources={sources}
         onChange={onFiltersChange}
         showSmartSegmentBuilder
+        priorityMode={leads.some(lead=>lead.priority)}
       />
+      <PriorityQueueFilter leads={leads} filters={filters} onChange={onFiltersChange} />
       <CockpitTabs profile="portal" activeTab={activeTab} onTabChange={onTabChange} />
       {activeTab === 'kanban' && <LeadKanbanBoard profile="portal" stages={stages} leads={filteredLeads} onSelectLead={onSelectLead} onMoveLead={onMoveLead} />}
       {activeTab === 'list' && (
@@ -633,7 +650,7 @@ function LeadList({
         ),
       },
       { key: 'source', header: 'Origem', render: lead => leadSourceLabel(lead.sourceKind, lead.source) },
-      { key: 'score', header: 'Pontuação', render: lead => <span>{lead.score} <LeadTemperature temperature={lead.temperature} /></span> },
+      { key: 'score', header: 'Pontuação', render: lead => lead.priority ? <PriorityBadge priority={lead.priority} /> : <span>{lead.score} <LeadTemperature temperature={lead.temperature} /></span> },
       { key: 'value', header: 'Valor', render: lead => (lead.value !== undefined ? formatCurrency(lead.value) : 'Sem valor') },
       {
         key: 'stage',
@@ -669,7 +686,7 @@ function LeadList({
             <span className="block text-xs font-normal text-slate-500">{lead.company || lead.email}</span><LeadHighlights lead={lead} />
           </button><LeadDeleteButton lead={lead} /></div>
           <span>{leadSourceLabel(lead.sourceKind, lead.source)}</span>
-          <span>{lead.score} <LeadTemperature temperature={lead.temperature} /></span>
+          {lead.priority ? <PriorityBadge priority={lead.priority} /> : <span>{lead.score} <LeadTemperature temperature={lead.temperature} /></span>}
           <span>{lead.value !== undefined ? lead.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'Sem valor'}</span>
           <Select value={lead.stageId} onValueChange={value => onMoveLead(lead, value)}>
             <SelectTrigger className="h-8 text-xs"><SelectValue placeholder={stageNameById.get(lead.stageId) || 'Etapa'} /></SelectTrigger>
@@ -781,4 +798,21 @@ function normalizeAttributionSourceKind(kind: CrmLead['sourceKind']): LeadSource
   if (kind === 'whatsapp_cta') return 'whatsapp'
   if (kind === 'paid_campaign' || kind === 'landing_page' || kind === 'organic' || kind === 'referral' || kind === 'manual') return kind
   return 'manual'
+}
+function PriorityQueueFilter({leads,filters,onChange}:{leads:CrmLead[];filters:CrmCockpitFilterState;onChange:(filters:CrmCockpitFilterState)=>void}) {
+  const options = new Map<string,string>()
+  for (const lead of leads) {
+    const key = priorityQueueKey(lead)
+    if (key) options.set(key,lead.priority?.queueLabel ?? (key==='pending'?'Calculando':'Fora da fila'))
+  }
+  if (!options.size) return null
+  return <label className="flex flex-wrap items-center gap-2 text-sm">
+    Fila de prioridade
+    <select className="h-9 max-w-full rounded-md border border-input bg-background px-2" value={filters.priorityQueue??''}
+      onChange={event=>onChange({...filters,priorityQueue:event.target.value||undefined})}>
+      <option value="">Todas as filas</option>
+      {filters.priorityQueue&&!options.has(filters.priorityQueue)&&<option value={filters.priorityQueue}>Fila anterior</option>}
+      {[...options].map(([key,label])=><option key={key} value={key}>{label}</option>)}
+    </select>
+  </label>
 }

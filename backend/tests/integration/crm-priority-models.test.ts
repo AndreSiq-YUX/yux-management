@@ -88,17 +88,14 @@ beforeAll(async () => {
 afterAll(async () => { await rig?.close() })
 
 describe('priority model API and PostgreSQL', () => {
-  it('prevents_database_roles_from_publishing_or_activating', async () => {
+  it('allows publication but keeps versions immutable and the worker read-only on configuration', async () => {
     const grants = await rig.sql(`SELECT
-      has_column_privilege('yux_api','public.crm_priority_configs','active_version_id','UPDATE') AS api_can_activate,
       has_column_privilege('yux_api','public.crm_priority_configs','effects_enabled','INSERT') AS api_can_insert_effects,
-      has_table_privilege('yux_api','public.crm_priority_versions','INSERT') AS api_can_publish,
       has_table_privilege('yux_api','public.crm_priority_versions','UPDATE') AS api_can_rewrite_version,
-      has_table_privilege('yux_worker','public.crm_priority_configs','SELECT') AS worker_can_read_drafts
+      has_column_privilege('yux_worker','public.crm_priority_configs','active_activation_id','UPDATE') AS worker_can_activate
     `)
     expect(grants.rows[0]).toEqual({
-      api_can_activate: false, api_can_insert_effects: false, api_can_publish: false,
-      api_can_rewrite_version: false, worker_can_read_drafts: false,
+      api_can_insert_effects: false, api_can_rewrite_version: false, worker_can_activate: false,
     })
   })
 
@@ -120,7 +117,7 @@ describe('priority model API and PostgreSQL', () => {
     for (const role of ['yux_admin', 'yux_operator', 'client_admin_A', 'client_member_A'] as const) {
       const preview = await rig.request(role, 'POST', `${base}/preview`, payload)
       expect(preview.statusCode, JSON.stringify(preview.body)).toBe(200)
-      expect(preview.body.mode).toBe('profile_only')
+      expect(preview.body.mode).toBe('with_signals')
       const complete = await finishPreview(role, revision, preview.body)
       expect(complete.results).toEqual(expect.arrayContaining([expect.objectContaining({
         leadId: ownedLeadId, name: 'Brave Serviços', fitScore: 100, temperatureScore: 0, priorityScore: 65,

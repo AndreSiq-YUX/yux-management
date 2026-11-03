@@ -1,5 +1,6 @@
 import { ActivateQualification } from '@/components/crm/scoring/ActivateQualification'
 import { QualificationSettings } from '@/components/crm/scoring/QualificationSettings'
+import { PrioritySettings } from '@/components/crm/scoring/PrioritySettings'
 import { Gauge, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
@@ -40,6 +41,7 @@ const MAX_LEADS_LISTED = 50
 export function PortalLeadScoringPage() {
   const { organization, role, leads, pipelines } = usePortalCrmContext()
   const [creating,setCreating] = useState(false)
+  const [priorityInstance,setPriorityInstance] = useState<string|null>(null)
   const [governance, setGovernance] = useState<CrmGovernanceContext | null>(null)
   const [model, setModel] = useState<LeadScoringModel | null>(null)
   const [rules, setRules] = useState<LeadScoringRule[]>([])
@@ -51,6 +53,8 @@ export function PortalLeadScoringPage() {
   const [simulation, setSimulation] = useState<Simulation | null>(null)
   const [simulationError, setSimulationError] = useState<string | null>(null)
   const crmInstanceId = governance?.instance.id || pipelines.find(pipeline => pipeline.crmInstanceId)?.crmInstanceId
+  const priorityActive = Boolean(crmInstanceId && priorityInstance === crmInstanceId)
+  const onPriorityActive = useCallback((active:boolean)=>setPriorityInstance(active ? crmInstanceId ?? null : null),[crmInstanceId])
   const canEdit = canEditLeadScoring(governance?.currentMember?.status === 'active' ? governance.currentMember.role : undefined, role?.key)
   const activeRules = useMemo(() => rules.filter(rule => rule.isActive), [rules])
   const rankedLeads = useMemo(() => [...leads].sort((a, b) => b.score - a.score), [leads])
@@ -97,7 +101,10 @@ export function PortalLeadScoringPage() {
       eyebrow="Comercial"
       title="Pontuação de leads"
       description="Entenda como cada lead ganha pontos para você saber quem tem mais chance de fechar e atender essas pessoas primeiro."
-      help={model?.calculationMode==='sum' ? [
+      help={priorityActive ? [
+        'Potencial mede a adequação da conta. Temperatura acompanha as interações comerciais.',
+        'A fila indica o tipo de ação. A prioridade ordena os leads dentro dela.',
+      ] : model?.calculationMode==='sum' ? [
         'A pontuação soma regras do perfil e das atividades, limitada a 0 a 100.',
         'Faixas numéricas usam início incluído e fim não incluído. A mesma mensagem ou tarefa não pontua duas vezes.',
         'Confira a prévia e recalcule os leads existentes depois de alterar as regras.',
@@ -107,7 +114,7 @@ export function PortalLeadScoringPage() {
         'Quem pode editar as regras também consegue simular o efeito de uma ação antes de salvar.',
       ]}
       primaryAction={{ label: 'Ver leads', href: '/portal/comercial/leads' }}
-      metrics={model?.calculationMode === 'sum' ? [
+      metrics={priorityActive ? undefined : model?.calculationMode === 'sum' ? [
         { label: 'Pontuação', value: '0–100', detail: 'Soma do perfil e das atividades.' },
         { label: 'Morno a partir de', value: String(model.warmThreshold ?? 40), detail: 'Limite configurável.' },
         { label: 'Quente a partir de', value: String(model.hotThreshold ?? 70), detail: 'Priorize o contato comercial.' },
@@ -121,7 +128,10 @@ export function PortalLeadScoringPage() {
         { label: 'Tarefas e follow-ups', href: '/portal/comercial/tarefas' },
       ]}
     >
-      {loading ? (
+      {crmInstanceId && <SectionCard title="Prioridade comercial" description="Configure potencial, temperatura e filas para este CRM.">
+        <PrioritySettings key={crmInstanceId} crmInstanceId={crmInstanceId} onActiveChange={onPriorityActive} />
+      </SectionCard>}
+      {priorityActive ? null : loading ? (
         <SkeletonCard lines={5} />
       ) : error ? (
         <ErrorState title="Não foi possível carregar a pontuação" description={error} onRetry={() => void load()} />

@@ -79,6 +79,14 @@ const maintenanceScheduler = schedulerActive ? setInterval(() => {
   void scheduleTraceRetentionPurge().catch((error) => console.error('[worker] trace retention scheduling failed', error))
 }, maintenanceIntervalMs) : undefined
 
+function schedulePriorityRecalculation() {
+  const window = Math.floor(Date.now()/60_000)
+  return maintenanceQueue.add('crm.priorityRecalculate',{window},{jobId:createBullMqJobId('crm-priority-recalculate',window)})
+}
+const tickPriority = () => void schedulePriorityRecalculation().catch(error=>console.error('[worker] priority scheduling failed',error))
+if (schedulerActive) tickPriority()
+const priorityScheduler = schedulerActive ? setInterval(tickPriority,60_000) : undefined
+
 const googleTokenRefreshIntervalMs = Number(process.env.GOOGLE_TOKEN_REFRESH_INTERVAL_MS || 30 * 60 * 1_000)
 
 function scheduleGoogleTokenRefresh() {
@@ -141,6 +149,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   if (scheduler) clearInterval(scheduler)
   clearInterval(heartbeatTimer)
   if (maintenanceScheduler) clearInterval(maintenanceScheduler)
+  if (priorityScheduler) clearInterval(priorityScheduler)
   if (googleTokenRefreshScheduler) clearInterval(googleTokenRefreshScheduler)
   if (domainEventDispatchScheduler) clearInterval(domainEventDispatchScheduler)
   if (radarCaptureScheduler) clearInterval(radarCaptureScheduler)

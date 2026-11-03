@@ -148,6 +148,7 @@ export interface CrmPipelineStageMetrics extends CrmPipelineMetrics {
 }
 
 export interface CrmLead {
+  priority?: import('./crmPriority').PrioritySummary | null
   canDelete?: boolean
   id: string
   organizationId: string

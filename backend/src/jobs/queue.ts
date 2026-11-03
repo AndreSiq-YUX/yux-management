@@ -58,6 +58,7 @@ export const JOB_NAMES = [
   'company-intelligence.discoverWebsite',
   'proposal.convert',
   'maintenance.purgeExpiredTraces',
+  'crm.priorityRecalculate',
   'maintenance.refreshGoogleTokens',
   'maintenance.reconcileRadarCaptures',
 ] as const

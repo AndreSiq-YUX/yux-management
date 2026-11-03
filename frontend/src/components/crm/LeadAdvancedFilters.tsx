@@ -14,6 +14,7 @@ interface LeadAdvancedFiltersProps {
   sources: string[]
   onChange: (filters: CrmCockpitFilterState) => void
   showSmartSegmentBuilder?: boolean
+  priorityMode?: boolean
   /**
    * `portal`: busca sempre visível e filtros avançados recolhidos
    * (no celular abrem em painel inferior).
@@ -43,6 +44,7 @@ export function LeadAdvancedFilters({
   sources,
   onChange,
   showSmartSegmentBuilder,
+  priorityMode,
   profile = 'internal',
 }: LeadAdvancedFiltersProps) {
   if (profile === 'portal') {
@@ -53,6 +55,7 @@ export function LeadAdvancedFilters({
         sources={sources}
         onChange={onChange}
         showSmartSegmentBuilder={showSmartSegmentBuilder}
+        priorityMode={priorityMode}
       />
     )
   }
@@ -86,7 +89,7 @@ export function LeadAdvancedFilters({
             {sources.map(source => <SelectItem key={source} value={source}>{source}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select
+        {!priorityMode && <Select
           value={filters.temperature || emptyValue}
           onValueChange={value => onChange({ ...filters, temperature: value === emptyValue ? undefined : value as CrmLeadTemperature })}
         >
@@ -95,7 +98,7 @@ export function LeadAdvancedFilters({
             <SelectItem value={emptyValue}>Todas temperaturas</SelectItem>
             {temperatures.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
           </SelectContent>
-        </Select>
+        </Select>}
         <ButtonLikeCheckbox checked={Boolean(filters.stalledOnly)} onClick={() => onChange({ ...filters, stalledOnly: !filters.stalledOnly })} />
       </div>
       {showSmartSegmentBuilder && (
@@ -118,9 +121,10 @@ function PortalLeadFilters({
   sources,
   onChange,
   showSmartSegmentBuilder,
+  priorityMode,
 }: Omit<LeadAdvancedFiltersProps, 'profile'>) {
   const [open, setOpen] = useState(false)
-  const activeCount = activeAdvancedCount(filters)
+  const activeCount = activeAdvancedCount(priorityMode ? {...filters,temperature:undefined} : filters)
   const hasAnyFilter = activeCount > 0 || Boolean(filters.search)
 
   return (
@@ -202,7 +206,7 @@ function PortalLeadFilters({
               </SelectContent>
             </Select>
           </div>
-          <div>
+          {!priorityMode && <div>
             <Label htmlFor="lead-filter-temperature" className="text-[13px] text-yx-fg-2">Temperatura</Label>
             <Select
               value={filters.temperature || emptyValue}
@@ -214,7 +218,7 @@ function PortalLeadFilters({
                 {temperatures.map(item => <SelectItem key={item.value} value={item.value}>{portalTemperatureLabel[item.value]}</SelectItem>)}
               </SelectContent>
             </Select>
-          </div>
+          </div>}
           <div className="flex items-end">
             <button
               type="button"

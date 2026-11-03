@@ -3,6 +3,7 @@ import { reconcileRadarMissionOperations } from '../modules/action-engine/radar-
 import type pg from 'pg'
 import type { AppEnv } from '../config/env.js'
 import { processSequenceExecution, runCrmSequenceScheduler } from '../modules/crm/scheduler.js'
+import { runPriorityRecalculation } from '../modules/crm/priority-recalculation.js'
 import { handleAutomationDispatch, handleAutomationRun } from './handlers/automation.js'
 import {
   handleActionEngineCollectMetrics,
@@ -190,6 +191,7 @@ export const jobRegistry = {
   'company-intelligence.discoverWebsite': registered('ingestion', 300_000, ({ pool, env, signal }, data) => handleWebsiteOnboarding(pool, env, data, { signal })),
   'proposal.convert': registered('interactive', 120_000, ({ pool }, data) => handleProposalConversion(pool, data.proposalId)),
   'maintenance.purgeExpiredTraces': registered('maintenance', 180_000, ({ pool }) => purgeExpiredTraces(pool)),
+  'crm.priorityRecalculate': registered('maintenance',120_000,({pool})=>runPriorityRecalculation(pool),z.object({window:z.number().int().nonnegative()})),
   'maintenance.refreshGoogleTokens': registered('maintenance', 180_000, ({ pool, env }) => refreshExpiringGoogleTokens(pool, env)),
   'maintenance.reconcileRadarCaptures': registered('maintenance',60_000,({pool,queue},data)=>reconcileRadarCaptureOutbox(pool,queue,Number(data.window)),z.object({window:z.number().int().nonnegative()})),
 } satisfies Record<JobName, JobRegistration>

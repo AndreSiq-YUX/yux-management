@@ -1,6 +1,7 @@
 import {leadEditableTextColumns} from './lead-editing.js'
 import { projectLeadCommercialProfile,projectLeadAttribution,projectLeadNotes, type LeadCommercialProfile } from './lead-commercial-profile.js'
 import { loadProfileSummaries } from './profile-summary.js'
+import { loadPrioritySummaries } from './priority-views.js'
 import type pg from 'pg'
 import type { AuthUser } from '../../auth/routes.js'
 import { recordDomainEvent } from '../events/repository.js'
@@ -323,8 +324,9 @@ export async function listLeads(
     [user.id, filters.organizationId ?? null, filters.pipelineId ?? null, filters.crmInstanceId ?? null, isInternal(user)],
   )
 
-  const summaries = await loadProfileSummaries(pool, user, result.rows.map(row => row.id))
-  return result.rows.map(row => ({ ...mapLead(row), profileSummary: summaries.get(row.id) }))
+  const ids = result.rows.map(row => row.id)
+  const [summaries,priorities] = await Promise.all([loadProfileSummaries(pool,user,ids),loadPrioritySummaries(pool,user,ids)])
+  return result.rows.map(row => ({ ...mapLead(row), profileSummary:summaries.get(row.id), priority:priorities.get(row.id) ?? null }))
 }
 
 export async function listPipelines(pool: pg.Pool, user: AuthUser, organizationId: string) {
