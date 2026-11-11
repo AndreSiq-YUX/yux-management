@@ -27,6 +27,7 @@ import { LeadDeleteButton } from './LeadDeleteDialog'
 import { LeadContactDetails, LeadResearchDetails } from './LeadContactDetails'
 import { LeadActivityComposer } from './LeadActivityComposer'
 import { LeadEmailComposer } from './LeadEmailComposer'
+import { LeadWhatsAppComposer } from './LeadWhatsAppComposer'
 import { LeadDataEditor } from './LeadDataEditor'
 import { LeadRadarReconciliation } from './LeadRadarReconciliation'
 import { LeadAutomationsPanel } from './LeadAutomationsPanel'
@@ -689,25 +690,24 @@ function LeadWorkspace({
               value="conversations"
               className="mt-0 flex flex-col gap-4"
             >
-              {lead.whatsappPhone ? (
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
-                  <p className="text-sm">
-                    WhatsApp identificado: <strong>{lead.whatsappPhone}</strong>
-                  </p>
-                  <Button asChild variant="outline">
-                    <a
-                      href={`https://wa.me/${lead.whatsappPhone.replace(/\D/g, '')}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      Abrir WhatsApp
-                    </a>
-                  </Button>
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Nenhum WhatsApp identificado. Cadastre um número confirmado em
-                  Editar dados.
+              <LeadWhatsAppComposer
+                key={`whatsapp:${lead.id}`}
+                lead={lead}
+                onSent={ops.changed}
+                onOpenConversation={(id) => navigate(inboxHref(id))}
+              />
+              {lead.whatsappPhone && (
+                <p className="text-xs text-muted-foreground">
+                  Prefere o celular?{' '}
+                  <a
+                    className="underline"
+                    href={`https://wa.me/${lead.whatsappPhone.replace(/\D/g, '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Abrir no WhatsApp
+                  </a>{' '}
+                  (essa conversa não fica registrada no CRM).
                 </p>
               )}
               <LeadConversationWorkspace

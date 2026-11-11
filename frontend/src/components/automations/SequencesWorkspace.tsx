@@ -1,5 +1,6 @@
 import { Plus, Trash2, Clock, MessageSquare, CheckSquare } from 'lucide-react'
 import { useState } from 'react'
+import { automationSequenceService } from '@/services/automationSequenceService'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -45,6 +46,18 @@ export function SequencesWorkspace({
   onDeleteStep,
 }: SequencesWorkspaceProps) {
   const [expandedSequenceId, setExpandedSequenceId] = useState<string | null>(null)
+  const [exitOnReplyOverrides, setExitOnReplyOverrides] = useState<Record<string, boolean>>({})
+  const [exitOnReplyError, setExitOnReplyError] = useState('')
+  const setExitOnReply = async (sequenceId: string, value: boolean) => {
+    setExitOnReplyError('')
+    setExitOnReplyOverrides(current => ({ ...current, [sequenceId]: value }))
+    try {
+      await automationSequenceService.updateSequence(sequenceId, { exitOnReply: value })
+    } catch {
+      setExitOnReplyOverrides(current => ({ ...current, [sequenceId]: !value }))
+      setExitOnReplyError('Não foi possível salvar a regra de resposta.')
+    }
+  }
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [newSequenceName, setNewSequenceName] = useState('')
   const [newSequenceDescription, setNewSequenceDescription] = useState('')
@@ -231,6 +244,19 @@ export function SequencesWorkspace({
 
               {isExpanded && (
                 <div className="border-t bg-yx-surface-2 p-3 space-y-3">
+                  <label className="flex items-start gap-2 rounded-md border bg-white p-2 text-xs">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={exitOnReplyOverrides[sequence.id] ?? sequence.exitOnReply !== false}
+                      onChange={event => void setExitOnReply(sequence.id, event.target.checked)}
+                    />
+                    <span>
+                      <strong className="block text-yx-fg">Encerrar quando o lead responder</strong>
+                      <span className="text-yx-fg-3">Ao receber resposta, os próximos passos não são enviados e o lead fica para atendimento.</span>
+                    </span>
+                  </label>
+                  {exitOnReplyError && <p role="alert" className="text-xs text-yx-crit">{exitOnReplyError}</p>}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <h4 className="text-xs font-semibold text-yx-fg-2">Passos da sequência</h4>

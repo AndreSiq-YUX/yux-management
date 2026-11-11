@@ -31,8 +31,8 @@ export async function assertEmailSendAllowed(
           WHERE organization_id = $1 AND provider = 'smtp2go' AND status = 'connected' LIMIT 1
        ), 500) AS daily_limit,
        COALESCE((
-         SELECT sent_count FROM public.email_usage_counters
-          WHERE organization_id = $1 AND subaccount_id IS NULL AND period_date = CURRENT_DATE LIMIT 1
+         SELECT SUM(sent_count) FROM public.email_usage_counters
+          WHERE organization_id = $1 AND subaccount_id IS NULL AND period_date = CURRENT_DATE
        ), 0) AS sent_count`,
     [input.organizationId],
   )

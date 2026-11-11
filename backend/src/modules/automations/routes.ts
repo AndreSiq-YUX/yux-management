@@ -125,6 +125,7 @@ const sequenceInputSchema = z.object({
   sectorTemplateKey: z.string().nullable().optional(),
   conversionGoal: z.string().nullable().optional(),
   isActive: z.boolean().optional(),
+  exitOnReply: z.boolean().optional(),
 })
 
 const sequencePatchSchema = sequenceInputSchema.partial().extend({

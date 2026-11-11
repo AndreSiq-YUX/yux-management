@@ -13,6 +13,8 @@ import {
   requireActiveLead,
 } from './lead-actions.js'
 import { inProfileTransaction, profileError } from './record-profile.js'
+import { leadWhatsAppCapability, leadWhatsAppSendSchema, queueLeadWhatsApp } from './lead-whatsapp.js'
+import { leadBulkSchema, runLeadBulkAction } from './lead-bulk.js'
 export async function registerLeadActionRoutes(
   app: FastifyInstance,
   authenticate: (
@@ -80,6 +82,46 @@ export async function registerLeadActionRoutes(
       .send(
         await createLeadActivity(app.pg, user, id(request.params), input.data),
       )
+  })
+  app.post('/leads/bulk', async (request, reply) => {
+    const user = await authenticate(request, reply)
+    if (!user) return reply
+    const input = leadBulkSchema.safeParse(request.body)
+    if (!input.success) throw profileError(400, 'Selecione até 100 leads e uma ação válida.')
+    return runLeadBulkAction(app.pg, user, input.data)
+  })
+  app.get('/leads/:id/whatsapp', async (request, reply) => {
+    const user = await authenticate(request, reply)
+    if (!user) return reply
+    return inProfileTransaction(app.pg, async (db) => {
+      const lead = await requireActiveLead(db, user, id(request.params))
+      return leadWhatsAppCapability(db, lead)
+    })
+  })
+  app.post('/leads/:id/whatsapp', async (request, reply) => {
+    const user = await authenticate(request, reply)
+    if (!user) return reply
+    const input = leadWhatsAppSendSchema.safeParse(request.body)
+    if (!input.success)
+      throw profileError(400, 'Escreva a mensagem ou informe o modelo aprovado.')
+    const result = await inProfileTransaction(app.pg, (db) =>
+      queueLeadWhatsApp(db, user, id(request.params), input.data),
+    )
+    if (result.status === 'queued') {
+      try {
+        await app.jobQueue.add(
+          'omnichannel.dispatchOutbound',
+          { messageId: result.messageId },
+          { jobId: `crm-whatsapp-${result.messageId}` },
+        )
+      } catch {
+        throw profileError(
+          503,
+          'A mensagem foi registrada, mas a fila está indisponível. Tente novamente sem fechar a composição.',
+        )
+      }
+    }
+    return reply.code(202).send(result)
   })
   app.get('/leads/:id/email', async (request, reply) => {
     const user = await authenticate(request, reply)

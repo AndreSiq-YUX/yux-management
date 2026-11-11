@@ -9,6 +9,25 @@ export function whatsAppRecipientIdentities(value: string): string[] {
   return [phone]
 }
 
+/**
+ * Digit-only identities that may represent the same WhatsApp sender, used to
+ * link an inbound message to a contact/lead registered by phone. Numbers
+ * without a country code are treated as Brazilian (CRM leads are stored as
+ * typed: "(47) 99999-8888").
+ */
+export function whatsAppPhoneCandidates(...values: Array<string | null | undefined>): string[] {
+  const candidates = new Set<string>()
+  for (const value of values) {
+    const digits = (value ?? '').replace(/\D/g, '')
+    if (!digits) continue
+    const international = /^[1-9]\d9?[6-9]\d{7}$/.test(digits) || /^[1-9]\d[2-5]\d{7}$/.test(digits)
+      ? `55${digits}`
+      : digits
+    for (const identity of whatsAppRecipientIdentities(international)) candidates.add(identity)
+  }
+  return [...candidates]
+}
+
 export function resolveWhatsAppTestRecipient(confirmed: unknown, contactPhone: string): string {
   if (typeof confirmed !== 'string') throw new Error('whatsapp_test_recipient_mismatch')
   const identities = whatsAppRecipientIdentities(confirmed)

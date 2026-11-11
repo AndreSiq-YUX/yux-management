@@ -21,6 +21,7 @@ import { registerCompanyStrategyRoutes } from './modules/company-strategy/routes
 import { registerCrmRoutes } from './modules/crm/routes.js'
 import { registerDataRoutes } from './modules/data/routes.js'
 import { registerEmailTemplateRoutes } from './modules/emailTemplates/routes.js'
+import { registerCommercialEmailRoutes, registerPublicEmailRoutes } from './modules/email-delivery/commercial-routes.js'
 import { registerFunctionRoutes } from './modules/functions/routes.js'
 import { registerFinanceRoutes } from './modules/finance/routes.js'
 import { registerHealthRoutes } from './modules/health/routes.js'
@@ -107,6 +108,8 @@ export async function buildServer(env: AppEnv = loadEnv(), options: BuildServerO
   await app.register(registerPlatformRoutes, { prefix: '/api/platform' })
   await app.register(registerDataRoutes, { prefix: '/api/data' })
   await app.register(registerEmailTemplateRoutes, { prefix: '/api/email-templates' })
+  await app.register(registerCommercialEmailRoutes, { prefix: '/api/commercial-email' })
+  await app.register(registerPublicEmailRoutes, { prefix: '/api/public/email' })
   await app.register(registerFunctionRoutes, { prefix: '/api/functions' })
   await app.register(registerCrmRoutes, { prefix: '/api/crm' })
   await app.register(registerRadarRoutes, { prefix: '/api/radar' })

@@ -24,7 +24,7 @@ export async function sendSmtp2GoEmail(input: Smtp2GoSendInput): Promise<EmailSe
   }
 
   const sender = input.senderName
-    ? `${input.senderName.replace(/[<>]/g, '').trim()} <${input.senderEmail}>`
+    ? `${input.senderName.replace(/[<>\r\n]/g, '').trim()} <${input.senderEmail}>`
     : input.senderEmail
 
   try {
@@ -43,19 +43,24 @@ export async function sendSmtp2GoEmail(input: Smtp2GoSendInput): Promise<EmailSe
         custom_headers: input.customHeaders,
       }),
     })
-    const body = await response.json().catch(() => null) as any
+    const body = await response.json().catch(() => null) as {
+      data?: { failed?: number; failures?: unknown[]; succeeded?: number; error?: string; email_id?: string; email_ids?: string[] }
+    } | null
+    const data = body?.data
+    const providerMessageId = data?.email_id || (Array.isArray(data?.email_ids) ? data.email_ids[0] : undefined)
 
-    if (!response.ok) {
+    if (!response.ok || (data?.failed ?? 0) > 0 || data?.failures?.length
+      || data?.succeeded === 0 || typeof providerMessageId !== 'string' || !providerMessageId.trim()) {
       return {
         sent: false,
         reason: 'smtp2go_rejected',
-        error: typeof body?.data?.error === 'string' ? body.data.error : `SMTP2GO returned ${response.status}`,
+        error: typeof data?.error === 'string' ? data.error : 'SMTP2GO did not confirm acceptance of the message',
       }
     }
 
     return {
       sent: true,
-      providerMessageId: body?.data?.email_id || body?.data?.email_ids?.[0] || undefined,
+      providerMessageId,
     }
   } catch (error) {
     return {

@@ -8,6 +8,7 @@ import type { CrmLead } from '@/types/crm'
 type Capability = {
   canSend: boolean
   message: string
+  sender?: { fromName: string; fromEmail: string }
   requests: Array<{
     id: string
     subject: string
@@ -128,6 +129,11 @@ export function LeadEmailComposer({
       aria-label="Compor e-mail"
     >
       <h3 className="font-semibold">E-mail para {lead.name}</h3>
+      {data?.sender && (
+        <p className="break-words text-sm">
+          De: {data.sender.fromName} &lt;{data.sender.fromEmail}&gt;
+        </p>
+      )}
       <p className="break-words text-sm">
         Para: {validEmail ? lead.email : 'Sem e-mail cadastrado'}
       </p>

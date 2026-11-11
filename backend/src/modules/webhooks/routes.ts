@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
-import { createHash } from 'node:crypto'
+import { createHash, timingSafeEqual } from 'node:crypto'
+import { withDatabaseTransaction } from '../../db/client.js'
 import { runWithDatabaseRequestContext } from '../../db/request-context.js'
 import { normalizeWhatsAppBatch, validateWhatsAppSignature } from '../../lib/edge-compat/whatsappProvider.js'
 import { recordEmailDomainEvent, recordEmailSendEvent } from '../email-delivery/service.js'
@@ -161,8 +162,10 @@ export async function registerWebhookRoutes(app: FastifyInstance) {
     config: { rateLimit: { max: 120, timeWindow: '1 minute' } },
   }, async (request, reply) => {
     if (!app.config.SMTP2GO_WEBHOOK_SECRET) return reply.code(503).send({ error: 'webhook_not_configured' })
-    const supplied = request.headers['x-yux-webhook-secret']
-    if (typeof supplied !== 'string' || supplied !== app.config.SMTP2GO_WEBHOOK_SECRET) return reply.code(401).send({ error: 'invalid_webhook_secret' })
+    const authorization = request.headers.authorization
+    const basic = `Basic ${Buffer.from(`smtp2go:${app.config.SMTP2GO_WEBHOOK_SECRET}`).toString('base64')}`
+    if (!matchesSecret(request.headers['x-yux-webhook-secret'], app.config.SMTP2GO_WEBHOOK_SECRET)
+      && !matchesSecret(authorization, basic)) return reply.code(401).send({ error: 'invalid_webhook_secret' })
     const raw = request.body
     if (!Buffer.isBuffer(raw)) return reply.code(400).send({ error: 'invalid_smtp2go_payload' })
     let payload: unknown
@@ -170,60 +173,70 @@ export async function registerWebhookRoutes(app: FastifyInstance) {
     const parsed = z.record(z.string(), z.unknown()).safeParse(payload)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_smtp2go_payload' })
     const input = parsed.data
-    const organizationId = firstString(input.organizationId, input.organization_id, input.org_id)
-    if (!organizationId || !isUuid(organizationId)) return reply.code(400).send({ error: 'invalid_smtp2go_payload' })
+    const organizationHint = firstString(input.organizationId, input.organization_id, input.org_id)
+    if (organizationHint && !isUuid(organizationHint)) return reply.code(400).send({ error: 'invalid_smtp2go_payload' })
 
     const eventName = firstString(input.event_type, input.event, input.type, input.status).toLowerCase()
     const normalizedEvent = normalizeSmtp2GoEvent(eventName)
     if (!normalizedEvent) return reply.code(200).send({ accepted: true, ignored: 'event_not_supported' })
 
-    const email = firstString(input.email, input.recipient, input.to).toLowerCase()
-    const providerMessageId = firstString(input.message_id, input.provider_message_id, input.smtp2go_message_id)
-    const providerEventId = firstString(input.event_id, input.provider_event_id, input.id)
-      || deterministicProviderEventId(organizationId, normalizedEvent.eventType, providerMessageId, email, input.timestamp)
-    const requestReference = firstString(request.headers['x-yux-send-request-id'], input.request_id, input.send_request_id)
-    const emailRequest = providerMessageId || requestReference
-      ? await findEmailRequest(app.pg, organizationId, providerMessageId, requestReference)
-      : null
+    const email = firstString(input.rcpt, input.email, input.recipient, input.to, input.recipients).toLowerCase()
+    const providerMessageId = firstString(input.email_id, input.message_id, input.provider_message_id, input.smtp2go_message_id)
+    const requestReference = firstString(request.headers['x-yux-send-request-id'], input['X-YUX-Send-Request-ID'],
+      input['x-yux-send-request-id'], input.request_id, input.send_request_id)
+    const timestamp = input.time ?? input.timestamp
+    return runWithDatabaseRequestContext({ role: 'yux_admin', organizationIds: [], serviceRole: 'api' }, () =>
+      withDatabaseTransaction(app.pg, async db => {
+        const emailRequest = providerMessageId || requestReference
+          ? await findEmailRequest(db, organizationHint, providerMessageId, requestReference, email)
+          : null
+        const organizationId = emailRequest?.organizationId || organizationHint
+        if (!organizationId) return { accepted: true, ignored: 'email_request_not_found' }
+        const url = firstString(input.url, input.click_url, input.link)
+        const providerEventId = firstString(input.event_id, input.provider_event_id)
+          || deterministicProviderEventId(organizationId, normalizedEvent.eventType, emailRequest?.id || providerMessageId, email, timestamp, url)
 
-    if (normalizedEvent.suppressionReason && email) {
-      await app.pg.query(
-        `INSERT INTO public.email_suppression_entries (organization_id, email, reason, source)
-         VALUES ($1, lower($2), $3, 'smtp2go')
-         ON CONFLICT (organization_id, email) DO UPDATE SET reason = EXCLUDED.reason, source = EXCLUDED.source`,
-        [organizationId, email, normalizedEvent.suppressionReason],
-      )
-    }
+        const suppress = normalizedEvent.suppressionReason && email
+          && !eventName.includes('reject') && firstString(input.bounce) !== 'soft'
+        if (suppress) {
+          await db.query(
+            `INSERT INTO public.email_suppression_entries (organization_id, email, reason, source)
+             VALUES ($1, lower($2), $3, 'smtp2go')
+             ON CONFLICT (organization_id, email) DO UPDATE SET reason = EXCLUDED.reason, source = EXCLUDED.source`,
+            [organizationId, email, normalizedEvent.suppressionReason],
+          )
+        }
 
-    if (!emailRequest) {
-      if (normalizedEvent.suppressionReason && email) return { accepted: true, suppressed: true }
-      return { accepted: true, ignored: 'email_request_not_found' }
-    }
+        if (!emailRequest) {
+          if (suppress) return { accepted: true, suppressed: true }
+          return { accepted: true, ignored: 'email_request_not_found' }
+        }
 
-    const eventRow = await recordEmailSendEvent(
-      app.pg,
-      { id: emailRequest.id },
-      normalizedEvent.eventType,
-      providerEventId,
-      sanitizeProviderPayload(input),
-      parseProviderDate(input.timestamp),
-    )
-    if (eventRow.inserted) {
-      await updateEmailRequestStatus(app.pg, emailRequest.id, normalizedEvent.eventType)
-      await recordEmailDomainEvent(app.pg, {
-        eventType: normalizedEvent.domainEventType,
-        request: emailRequest,
-        payload: {
-          requestId: emailRequest.id,
-          leadId: emailRequest.leadId,
-          providerMessageId: providerMessageId || emailRequest.providerMessageId,
+        const eventRow = await recordEmailSendEvent(
+          db,
+          { id: emailRequest.id },
+          normalizedEvent.eventType,
           providerEventId,
-          url: firstString(input.url, input.click_url, input.link) || undefined,
-        },
-        correlationId: correlationFromEmailRequest(emailRequest),
-      })
-    }
-    return { accepted: true, duplicate: !eventRow.inserted, event: normalizedEvent.eventType }
+          sanitizeProviderPayload(input),
+          parseProviderDate(timestamp),
+        )
+        if (eventRow.inserted) {
+          await updateEmailRequestStatus(db, emailRequest.id, normalizedEvent.eventType)
+          await recordEmailDomainEvent(db, {
+            eventType: normalizedEvent.domainEventType,
+            request: emailRequest,
+            payload: {
+              requestId: emailRequest.id,
+              leadId: emailRequest.leadId,
+              providerMessageId: providerMessageId || emailRequest.providerMessageId,
+              providerEventId,
+              url: url || undefined,
+            },
+            correlationId: correlationFromEmailRequest(emailRequest),
+          })
+        }
+        return { accepted: true, duplicate: !eventRow.inserted, event: normalizedEvent.eventType }
+      }))
   })
 }
 
@@ -237,16 +250,17 @@ function buildRejectedWebhookKey(rawBody: string, index: string, reason: string)
 
 type EmailRequestReference = { id: string; organizationId: string; leadId: string | null; providerMessageId: string | null; metadata: Record<string, unknown> }
 
-async function findEmailRequest(pool: { query: (...args: any[]) => Promise<any> }, organizationId: string, providerMessageId: string, requestReference: string): Promise<EmailRequestReference | null> {
+async function findEmailRequest(pool: { query: (...args: any[]) => Promise<any> }, organizationId: string, providerMessageId: string, requestReference: string, email: string): Promise<EmailRequestReference | null> {
   const result = await pool.query(
     `SELECT id, organization_id, lead_id, provider_message_id, metadata
      FROM public.email_send_requests
-     WHERE organization_id = $1
-       AND ($2 = '' OR provider_message_id = $2 OR id::text = $3)
-     ORDER BY created_at DESC LIMIT 1`,
-    [organizationId, providerMessageId, requestReference],
+     WHERE ($1::uuid IS NULL OR organization_id = $1)
+       AND (($2 <> '' AND provider_message_id = $2) OR id = $3::uuid)
+       AND ($4 = '' OR lower(recipient_email) = $4)
+     LIMIT 2`,
+    [organizationId || null, providerMessageId, isUuid(requestReference) ? requestReference : null, email],
   )
-  const row = result.rows[0]
+  const row = result.rows.length === 1 ? result.rows[0] : null
   return row ? { id: row.id, organizationId: row.organization_id, leadId: row.lead_id ?? null, providerMessageId: row.provider_message_id ?? null, metadata: row.metadata ?? {} } : null
 }
 
@@ -276,13 +290,20 @@ function firstString(...values: unknown[]): string {
   return ''
 }
 
+function matchesSecret(value: unknown, expected: string) {
+  if (typeof value !== 'string') return false
+  const input = Buffer.from(value)
+  const secret = Buffer.from(expected)
+  return input.length === secret.length && timingSafeEqual(input, secret)
+}
+
 function isUuid(value: string) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) }
-function deterministicProviderEventId(organizationId: string, eventType: string, messageId: string, email: string, timestamp: unknown) {
-  return `smtp2go:${createHash('sha256').update([organizationId, eventType, messageId, email, String(timestamp ?? '')].join('|')).digest('hex')}`
+function deterministicProviderEventId(organizationId: string, eventType: string, messageId: string, email: string, timestamp: unknown, url: string) {
+  return `smtp2go:${createHash('sha256').update(JSON.stringify([organizationId, eventType, messageId, email, timestamp ?? null, url])).digest('hex')}`
 }
 function parseProviderDate(value: unknown) { const date = typeof value === 'string' || typeof value === 'number' ? new Date(value) : new Date(); return Number.isNaN(date.getTime()) ? new Date() : date }
 function sanitizeProviderPayload(input: Record<string, unknown>) {
-  return Object.fromEntries(Object.entries(input).filter(([key]) => !/body|html|token|secret|password|authorization/i.test(key)).map(([key, value]) => [key, typeof value === 'string' ? value.slice(0, 2_000) : value]))
+  return Object.fromEntries(Object.entries(input).filter(([key]) => !/body|html|token|secret|password|^auth/i.test(key)).map(([key, value]) => [key, typeof value === 'string' ? value.slice(0, 2_000) : value]))
 }
 function correlationFromEmailRequest(request: EmailRequestReference) {
   const candidate = request.metadata.correlationId

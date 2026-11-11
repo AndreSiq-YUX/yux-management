@@ -9,6 +9,7 @@ export const buildSequencePayload = (input: {
   sectorTemplateKey?: string
   conversionGoal?: string
   isActive?: boolean
+  exitOnReply?: boolean
 }) => ({
   organization_id: input.organizationId,
   name: input.name.trim(),

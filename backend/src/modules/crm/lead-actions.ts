@@ -5,6 +5,8 @@ import type { AuthUser } from '../../auth/routes.js'
 import { runWithDatabaseRequestContext } from '../../db/request-context.js'
 import { assertEmailSendAllowed } from '../../email/delivery-policy.js'
 import { queueEmailRequest } from '../email-delivery/service.js'
+import { getApprovedCommercialSender } from '../../email/commercial-sender.js'
+import { contactAllowedByPolicy, getContactPolicy } from '../../email/contact-policy.js'
 import { recordDomainEvent } from '../events/repository.js'
 import {
   getLeadProfile,
@@ -151,48 +153,43 @@ export async function leadEmailCapability(db: ProfileDb, lead: any) {
       canSend: false,
       message: 'Cadastre um e-mail válido para este lead.',
     }
-  if (!lead.email_opt_in)
-    return {
-      canSend: false,
-      message:
-        'Registre a autorização de e-mail do contato antes de enviar pelo CRM.',
-    }
-  // The client receives a capability, never platform connection configuration.
-  const ready = await runWithDatabaseRequestContext(
-    { role: 'yux_admin', organizationIds: [] },
-    async () => {
-      const row = (
+  // Policy and sender are organization data; read them with internal scope and
+  // return only a capability to the client, never configuration details.
+  const context = await runWithDatabaseRequestContext(
+    { role: 'yux_admin', organizationIds: [lead.organization_id] },
+    async () => ({
+      policy: await getContactPolicy(db, lead.organization_id),
+      sender: await getApprovedCommercialSender(db, lead.organization_id),
+      revoked: (
         await db.query(
-          "SELECT public_config FROM public.platform_provider_connections WHERE provider_key='smtp2go' AND environment='production' AND status='active' ORDER BY is_default DESC,updated_at DESC LIMIT 1",
+          "SELECT 1 FROM public.lead_channel_permissions WHERE organization_id=$1 AND channel='email' AND lower(address)=lower($2) AND status='revoked' LIMIT 1",
+          [lead.organization_id, lead.email.trim()],
         )
-      ).rows[0]
-      return (
-        !!row &&
-        [
-          'invitationFromEmail',
-          'defaultFromEmail',
-          'senderEmail',
-          'fromEmail',
-        ].some(
-          (key) =>
-            typeof row.public_config?.[key] === 'string' &&
-            !!row.public_config[key].trim(),
-        )
-      )
-    },
+      ).rows.length > 0,
+    }),
   )
-  if (!ready)
+  if (!context.sender)
     return {
       canSend: false,
       message:
-        'O envio de e-mail desta conta precisa ser configurado pela equipe YUX.',
+        'Configure o remetente comercial em Configurações → E-mails. Depois da aprovação da equipe YUX, o envio fica disponível.',
+    }
+  if (context.revoked)
+    return {
+      canSend: false,
+      message: 'Este contato pediu para não receber mais e-mails.',
+    }
+  if (!contactAllowedByPolicy(context.policy.emailBasis, lead.email_opt_in === true))
+    return {
+      canSend: false,
+      message:
+        'A política de contato desta conta exige autorização do contato antes do envio por e-mail.',
     }
   try {
     await assertEmailSendAllowed(db, {
       organizationId: lead.organization_id,
       recipient: lead.email,
-      category: 'marketing',
-      recipientOptIn: lead.email_opt_in,
+      category: 'operational',
     })
   } catch {
     return {
@@ -204,6 +201,9 @@ export async function leadEmailCapability(db: ProfileDb, lead: any) {
   return {
     canSend: true,
     message: 'Revise a mensagem antes de confirmar o envio.',
+    sender: { fromName: context.sender.fromName, fromEmail: context.sender.fromEmail },
+    senderRevision: context.sender.revision,
+    contactBasis: lead.email_opt_in === true ? 'explicit_opt_in' : context.policy.emailBasis,
   }
 }
 export async function queueLeadEmail(
@@ -231,12 +231,14 @@ export async function queueLeadEmail(
         throw profileError(409, 'A mensagem mudou. Abra uma nova composição.')
       return { requestId: prior.id, status: prior.status }
     }
+    // One-to-one commercial message: the contact basis comes from the
+    // organization policy (or the lead's explicit opt-in) and is audited.
     const request = await queueEmailRequest(db, {
       organizationId: lead.organization_id,
       leadId,
       recipientEmail: lead.email,
-      recipientOptIn: lead.email_opt_in,
-      emailKind: 'marketing',
+      recipientOptIn: lead.email_opt_in === true,
+      emailKind: 'operational',
       subject: input.subject,
       bodyText: input.body,
       bodyHtml: '',
@@ -244,6 +246,11 @@ export async function queueLeadEmail(
       moduleKey: 'crm',
       sourceEntityType: 'crm_manual_email',
       sourceEntityId: leadId,
+      metadata: {
+        senderRevision: capability.senderRevision,
+        contactBasis: capability.contactBasis,
+        actorId: user.id,
+      },
     })
     await db.query(
       "INSERT INTO public.interactions(organization_id,lead_id,type,title,description,date) VALUES($1,$2,'email','E-mail colocado na fila',$3,now())",

@@ -19,6 +19,7 @@ export const DOMAIN_EVENT_TYPES = [
   'omnichannel.inbound.received',
   'omnichannel.outbound.requested',
   'email.queued',
+  'email.commercial.requested',
   'email.sent',
   'email.failed',
   'email.delivered',

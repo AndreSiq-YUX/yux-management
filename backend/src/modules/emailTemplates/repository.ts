@@ -302,6 +302,7 @@ export async function listEmailTemplateSendRequests(
   } else {
     values.push(input.organizationId)
     where.push(`organization_id = $${values.length}`)
+    where.push("COALESCE(source_entity_type, '') NOT IN ('crm_manual_email', 'commercial_sender_test')")
   }
 
   values.push(input.limit ?? 50)

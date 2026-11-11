@@ -7,7 +7,9 @@ import { decodeProviderSecretEncryptionKey, loadProviderSecretFromPool } from '.
 import { normalizeWhatsAppInbound, sendWhatsAppTemplateMessage, sendWhatsAppTextMessage, verifyWhatsAppTemplateApproval } from '../../lib/edge-compat/whatsappProvider.js'
 import { evaluateBrandGuardrails, resolveOmnichannelAssistantContext } from '../../modules/omnichannel/assistant-context.js'
 import { evaluateWhatsAppDispatchPolicy } from '../../modules/omnichannel/whatsapp-dispatch-policy.js'
-import { resolveWhatsAppTestRecipient } from '../../modules/omnichannel/whatsapp-recipient.js'
+import { resolveWhatsAppTestRecipient, whatsAppPhoneCandidates } from '../../modules/omnichannel/whatsapp-recipient.js'
+import { ensureLeadConversationLink } from '../../modules/omnichannel/lead-link.js'
+import { stopSequencesOnReply } from '../../modules/crm/sequence-exit.js'
 
 type Row = Record<string, unknown>
 const record = (value: unknown): Row => value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {}
@@ -367,38 +369,92 @@ async function persistInboundWhatsAppMessage(
       `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
       [`${input.organizationId}:${input.externalId}`],
     )
-    const contacts = await client.query<{ id: string }>(
-      `SELECT id FROM public.omnichannel_contacts
+    const identities = whatsAppPhoneCandidates(input.externalId, input.phone)
+    const contacts = await client.query<{ id: string; lead_id: string | null }>(
+      `SELECT id, lead_id FROM public.omnichannel_contacts
         WHERE organization_id = $1 AND external_identities->>'providerExternalId' = $2
         LIMIT 1 FOR UPDATE`,
       [input.organizationId, input.externalId],
     )
-    const contactId = contacts.rows[0]?.id || (await client.query<{ id: string }>(
+    let contact = contacts.rows[0] ?? null
+    if (!contact && identities.length) {
+      // A contact the CRM created before the first reply (sequence or lead
+      // composer) stores the lead's phone but not yet the provider identity.
+      const byPhone = await client.query<{ id: string; lead_id: string | null }>(
+        `SELECT id, lead_id FROM public.omnichannel_contacts
+          WHERE organization_id = $1
+            AND external_identities->>'providerExternalId' IS NULL
+            AND regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') <> ''
+            AND (regexp_replace(phone, '[^0-9]', '', 'g') = ANY($2::text[])
+              OR '55' || regexp_replace(phone, '[^0-9]', '', 'g') = ANY($2::text[]))
+          ORDER BY (lead_id IS NOT NULL) DESC, updated_at DESC
+          LIMIT 2 FOR UPDATE`,
+        [input.organizationId, identities],
+      )
+      if (byPhone.rows.length === 1) {
+        contact = byPhone.rows[0]!
+        await client.query(
+          `UPDATE public.omnichannel_contacts
+              SET external_identities = external_identities || jsonb_build_object('providerExternalId', $2::text),
+                  updated_at = NOW()
+            WHERE id = $1`,
+          [contact.id, input.externalId],
+        )
+      }
+    }
+    let leadId = contact?.lead_id ?? null
+    if (!leadId && identities.length) {
+      // Link only an unambiguous active lead of this organization.
+      const leads = await client.query<{ id: string }>(
+        `SELECT id FROM public.leads
+          WHERE organization_id = $1 AND deleted_at IS NULL
+            AND EXISTS (
+              SELECT 1 FROM unnest(ARRAY[phone, whatsapp_phone]) AS candidate(value)
+               WHERE regexp_replace(COALESCE(candidate.value, ''), '[^0-9]', '', 'g') <> ''
+                 AND (regexp_replace(candidate.value, '[^0-9]', '', 'g') = ANY($2::text[])
+                   OR '55' || regexp_replace(candidate.value, '[^0-9]', '', 'g') = ANY($2::text[]))
+            )
+          LIMIT 2`,
+        [input.organizationId, identities],
+      )
+      if (leads.rows.length === 1) leadId = leads.rows[0]!.id
+    }
+    const contactId = contact?.id || (await client.query<{ id: string }>(
       `INSERT INTO public.omnichannel_contacts (
-         organization_id, display_name, phone, external_identities
-       ) VALUES ($1,$2,$3,$4::jsonb) RETURNING id`,
-      [input.organizationId, input.displayName || input.externalId, input.phone, JSON.stringify({ providerExternalId: input.externalId })],
+         organization_id, display_name, phone, lead_id, external_identities
+       ) VALUES ($1,$2,$3,$4,$5::jsonb) RETURNING id`,
+      [input.organizationId, input.displayName || input.externalId, input.phone, leadId, JSON.stringify({ providerExternalId: input.externalId })],
     )).rows[0]?.id
     if (!contactId) throw new Error('contact_creation_failed')
+    if (contact && !contact.lead_id && leadId) {
+      await client.query('UPDATE public.omnichannel_contacts SET lead_id = $2, updated_at = NOW() WHERE id = $1 AND lead_id IS NULL', [contactId, leadId])
+    }
 
     await client.query(
       `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
       [`${input.organizationId}:${input.connectionId}:${contactId}`],
     )
-    const conversations = await client.query<{ id: string; response_mode: string }>(
-      `SELECT id, response_mode FROM public.conversations
+    const conversations = await client.query<{ id: string; response_mode: string; lead_id: string | null }>(
+      `SELECT id, response_mode, lead_id FROM public.conversations
         WHERE organization_id = $1 AND contact_id = $2 AND connection_id = $3
           AND status NOT IN ('resolved','archived')
         ORDER BY updated_at DESC LIMIT 1 FOR UPDATE`,
       [input.organizationId, contactId, input.connectionId],
     )
-    const conversation = conversations.rows[0] || (await client.query<{ id: string; response_mode: string }>(
+    const conversation = conversations.rows[0] || (await client.query<{ id: string; response_mode: string; lead_id: string | null }>(
       `INSERT INTO public.conversations (
-         organization_id, contact_id, connection_id, channel, status, response_mode, last_message_at
-       ) VALUES ($1,$2,$3,'whatsapp','open','assisted',$4::timestamptz)
-       RETURNING id, response_mode`,
-      [input.organizationId, contactId, input.connectionId, input.occurredAt],
+         organization_id, contact_id, connection_id, channel, status, response_mode, lead_id, last_message_at
+       ) VALUES ($1,$2,$3,'whatsapp','open','assisted',$5,$4::timestamptz)
+       RETURNING id, response_mode, lead_id`,
+      [input.organizationId, contactId, input.connectionId, input.occurredAt, leadId],
     )).rows[0]
+    if (conversation && !conversation.lead_id && leadId) {
+      await client.query('UPDATE public.conversations SET lead_id = $2 WHERE id = $1 AND lead_id IS NULL', [conversation.id, leadId])
+    }
+    const linkedLeadId = conversation?.lead_id ?? leadId
+    if (conversation?.id && linkedLeadId) {
+      await ensureLeadConversationLink(client, { leadId: linkedLeadId, conversationId: conversation.id, matchMethod: 'phone', contactPhone: input.phone })
+    }
     if (!conversation?.id) throw new Error('conversation_creation_failed')
 
     const inserted = await client.query<{ id: string }>(
@@ -425,6 +481,9 @@ async function persistInboundWhatsAppMessage(
         WHERE id = $1`,
       [conversation.id, input.occurredAt],
     )
+    if (inserted.rows[0] && linkedLeadId) {
+      await stopSequencesOnReply(client, { leadId: linkedLeadId, channel: 'whatsapp' })
+    }
     if (inserted.rows[0]) {
       const linked = await client.query<{id:string;crm_instance_id:string}>(`SELECT l.id,l.crm_instance_id FROM public.conversations c JOIN public.leads l ON l.id=c.lead_id AND l.organization_id=c.organization_id WHERE c.id=$1 AND l.deleted_at IS NULL AND l.crm_instance_id IS NOT NULL`,[conversation.id])
       if(linked.rows[0]) await recordDomainEvent(client,{eventId:inboundMessageId,eventType:'lead.response_received',organizationId:input.organizationId,crmInstanceId:linked.rows[0].crm_instance_id,leadId:linked.rows[0].id,aggregateType:'message',aggregateId:inboundMessageId,actor:{type:'lead',id:linked.rows[0].id},payload:{channel:'whatsapp',messageId:inboundMessageId,text:(input.body||'').slice(0,10000)}})

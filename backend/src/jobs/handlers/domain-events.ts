@@ -15,6 +15,7 @@ import { handleAutomationDispatch } from './automation.js'
 import { observeDomainEvent } from '../../modules/action-engine/observer.js'
 import { handleInboundMessage } from './omnichannel.js'
 import { handleCrmSequenceDeliveryRequested } from './crm-dispatch.js'
+import { dispatchCommercialEmail } from '../../modules/email-delivery/commercial-routes.js'
 import { createBullMqJobId } from '../queue.js'
 
 type DomainEventJobData = {
@@ -87,7 +88,9 @@ export async function handleDomainEventDelivery(
     const result = consumerKey === 'strategy_ingestion'
       ? await consumeStrategyIngestion(event, queue)
       : consumerKey === 'crm_dispatch'
-      ? await handleCrmSequenceDeliveryRequested(pool, event, queue)
+      ? event.eventType === 'email.commercial.requested'
+        ? await dispatchCommercialEmail(pool, event, queue)
+        : await handleCrmSequenceDeliveryRequested(pool, event, queue)
       : consumerKey === 'omnichannel'
         ? await consumeOmnichannelInbound(pool, env, event, attempt, queue)
       : consumerKey === 'scoring'

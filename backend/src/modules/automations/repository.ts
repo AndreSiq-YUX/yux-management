@@ -49,6 +49,7 @@ export type SequenceInput = {
   sectorTemplateKey?: string | null
   conversionGoal?: string | null
   isActive?: boolean
+  exitOnReply?: boolean
 }
 
 export type SequenceStepInput = {
@@ -121,6 +122,7 @@ type SequenceRow = {
   conversion_goal: string | null
   active_enrollment_count: number | null
   converted_enrollment_count: number | null
+  exit_on_reply?: boolean | null
 }
 
 type SequenceStepRow = {
@@ -498,7 +500,7 @@ export async function createFlowVersion(
 export async function listSequences(pool: pg.Pool, user: AuthUser, organizationId: string) {
   const result = await pool.query<SequenceRow>(
     `SELECT id, organization_id, name, description, is_active, channel, status, sector_template_key,
-       conversion_goal, active_enrollment_count, converted_enrollment_count
+       conversion_goal, active_enrollment_count, converted_enrollment_count, exit_on_reply
      FROM public.crm_sequences s
      WHERE s.organization_id = $2
        AND (
@@ -518,7 +520,7 @@ export async function listSequences(pool: pg.Pool, user: AuthUser, organizationI
 export async function getSequence(pool: pg.Pool, user: AuthUser, sequenceId: string) {
   const result = await pool.query<SequenceRow>(
     `SELECT id, organization_id, name, description, is_active, channel, status, sector_template_key,
-       conversion_goal, active_enrollment_count, converted_enrollment_count
+       conversion_goal, active_enrollment_count, converted_enrollment_count, exit_on_reply
      FROM public.crm_sequences s
      WHERE s.id = $2
        AND (
@@ -540,11 +542,11 @@ export async function createSequence(pool: pg.Pool, user: AuthUser, input: Seque
   await requireOrganizationWriteAccess(pool, user, input.organizationId)
   const result = await pool.query<SequenceRow>(
     `INSERT INTO public.crm_sequences (
-       organization_id, name, description, channel, sector_template_key, conversion_goal, is_active, status
+       organization_id, name, description, channel, sector_template_key, conversion_goal, is_active, status, exit_on_reply
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING id, organization_id, name, description, is_active, channel, status, sector_template_key,
-       conversion_goal, active_enrollment_count, converted_enrollment_count`,
+       conversion_goal, active_enrollment_count, converted_enrollment_count, exit_on_reply`,
     [
       input.organizationId,
       input.name.trim(),
@@ -554,6 +556,7 @@ export async function createSequence(pool: pg.Pool, user: AuthUser, input: Seque
       input.conversionGoal || null,
       input.isActive ?? true,
       input.isActive === false ? 'paused' : 'active',
+      input.exitOnReply ?? true,
     ],
   )
   return (await hydrateSequences(pool, result.rows))[0]
@@ -570,6 +573,7 @@ export async function updateSequence(pool: pg.Pool, user: AuthUser, sequenceId: 
     ['conversion_goal', input.conversionGoal ?? undefined],
     ['is_active', input.isActive],
     ['status', input.status],
+    ['exit_on_reply', input.exitOnReply],
   ]
   const columns: string[] = []
   const values: unknown[] = []
@@ -853,6 +857,7 @@ async function hydrateSequences(pool: pg.Pool, rows: SequenceRow[]) {
     conversionGoal: row.conversion_goal ?? undefined,
     activeEnrollmentCount: Number(row.active_enrollment_count ?? 0),
     convertedEnrollmentCount: Number(row.converted_enrollment_count ?? 0),
+    exitOnReply: row.exit_on_reply !== false,
     steps: (stepsBySequence.get(row.id) ?? []).map(mapSequenceStep),
   }))
 }

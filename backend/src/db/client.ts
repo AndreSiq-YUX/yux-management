@@ -95,3 +95,18 @@ export function createDb(databaseUrl?: string) {
     db: drizzle(pool, { schema }),
   }
 }
+
+export async function withDatabaseTransaction<T>(pool: pg.Pool, work: (db: pg.PoolClient) => Promise<T>) {
+  const db = await pool.connect()
+  try {
+    await db.query('BEGIN')
+    const result = await work(db)
+    await db.query('COMMIT')
+    return result
+  } catch (error) {
+    await db.query('ROLLBACK').catch(() => undefined)
+    throw error
+  } finally {
+    db.release()
+  }
+}

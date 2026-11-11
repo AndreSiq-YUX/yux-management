@@ -115,7 +115,7 @@ export async function fanOutDomainEvent(
 
 export function consumersForEvent(event: Pick<ClaimedDomainEvent, 'eventType'>): readonly DomainEventConsumerKey[] {
   if (event.eventType === 'strategy.ingestion.queued') return ['strategy_ingestion']
-  if (event.eventType === 'crm.sequence.delivery_requested') return ['crm_dispatch']
+  if (event.eventType === 'crm.sequence.delivery_requested' || event.eventType === 'email.commercial.requested') return ['crm_dispatch']
   if (event.eventType === 'omnichannel.outbound.requested') return ['omnichannel']
   return event.eventType === 'omnichannel.inbound.received'
     ? [...STANDARD_DOMAIN_EVENT_CONSUMERS, 'omnichannel']

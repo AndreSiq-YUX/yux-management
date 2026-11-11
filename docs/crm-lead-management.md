@@ -2,6 +2,17 @@
 
 Atualizado em: 2026-10-29
 
+## Contato comercial, respostas e ações em massa (novembro de 2026)
+
+Detalhes, decisões e próximos passos em `docs/crm-relacionamento-plano.md`.
+
+- **Política de contato por organização** (`organization_contact_policies`, API `/api/commercial-email/organizations/:id/contact-policy`): e-mail usa por padrão o contato divulgado pela empresa sem opt-in; WhatsApp exige autorização. Toda mensagem comercial (ficha e sequência) leva descadastro em um clique (`/api/public/email/unsubscribe/:token`).
+- **E-mail pela ficha** (`/api/crm/leads/:id/email`): exige remetente comercial aprovado; registra a base de contato usada (`metadata.contactBasis`).
+- **WhatsApp pela ficha** (`/api/crm/leads/:id/whatsapp`): texto dentro da janela de 24h, modelo aprovado fora dela; cria/reaproveita contato e conversa e o vínculo `lead_conversation_links`.
+- **Respostas do WhatsApp** são ligadas ao lead pelo telefone normalizado (inclui 9º dígito); lead ambíguo não é ligado.
+- **Encerrar ao responder** (`crm_sequences.exit_on_reply`, padrão ligado): a resposta move a inscrição para `manual` (`exit_reason = lead_replied`) e cancela passos agendados.
+- **Ações em massa** (`POST /api/crm/leads/bulk`, até 100 leads): mover etapa, inscrever em sequência, pausar sequências.
+
 ## Prioridade comercial
 
 O novo motor calcula potencial, temperatura e prioridade separadamente. O

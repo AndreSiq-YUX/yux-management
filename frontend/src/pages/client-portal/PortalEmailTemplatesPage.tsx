@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ErrorState, PageHeader, SkeletonCard } from '@/components/portal-ui'
 import { EmailTemplateWorkspace } from '@/components/email-templates/EmailTemplateWorkspace'
+import { CommercialSenderPanel } from '@/components/email-templates/CommercialSenderPanel'
+import { ContactPolicyPanel } from '@/components/email-templates/ContactPolicyPanel'
+import { usePlatformStore } from '@/stores/platformStore'
 import { emailTemplateService } from '@/services/emailTemplateService'
 import type { EmailTemplate, EmailTemplateSendRequest } from '@/types/emailTemplate'
 
 export function PortalEmailTemplatesPage() {
+  const organizationId = usePlatformStore(state => state.organization?.id)
+  const portalMode = usePlatformStore(state => state.mode)
   const [templates, setTemplates] = useState<EmailTemplate[]>([])
   const [sendRequests, setSendRequests] = useState<EmailTemplateSendRequest[]>([])
   const [loading, setLoading] = useState(true)
@@ -52,17 +57,19 @@ export function PortalEmailTemplatesPage() {
 
   return (
     <div className="w-full space-y-4">
+      {organizationId && <CommercialSenderPanel key={organizationId} organizationId={organizationId} />}
+      {organizationId && <ContactPolicyPanel key={`policy-${organizationId}`} organizationId={organizationId} />}
       {error && (
         <p className="m-0 rounded-lg border border-yx-crit-line bg-yx-crit-soft px-4 py-3 text-sm text-yx-crit" role="alert">
           {error}
         </p>
       )}
-      <EmailTemplateWorkspace
+      {portalMode === 'portal' && !loading && (!error || templates.length > 0) && <EmailTemplateWorkspace
         mode="portal"
         templates={templates}
         sendRequests={sendRequests}
         onReload={loadTemplates}
-      />
+      />}
     </div>
   )
 }

@@ -29,6 +29,7 @@ class FakePool {
 
   async query(sql: string) {
     this.calls.push(sql)
+    if (['BEGIN', 'COMMIT', 'ROLLBACK'].includes(sql)) return { rows: [] }
     if (sql.includes('WHERE phone_number_id')) return { rows: [] }
     if (sql.includes('email_suppression_entries')) return { rows: [] }
     if (sql.includes('FROM public.email_send_requests')) return {
@@ -43,6 +44,7 @@ class FakePool {
     if (sql.includes('UPDATE public.email_send_requests')) return { rows: [] }
     throw new Error(`Unexpected SQL: ${sql}`)
   }
+  async connect() { return { query: this.query.bind(this), release() {} } }
   async end() { return undefined }
 }
 
@@ -248,5 +250,19 @@ describe('Meta webhook routes', () => {
     expect(first.statusCode).toBe(200)
     expect(first.json()).toEqual({ accepted: true, duplicate: false, event: 'opened' })
     expect(second.json()).toEqual({ accepted: true, duplicate: true, event: 'opened' })
+  })
+
+  it('accepts a native SMTP2GO delivery and finds its organization from the stored message', async () => {
+    app = await buildServer(env, { pool: new FakePool() as never, jobQueue })
+    const response = await app.inject({
+      method: 'POST', url: '/api/webhooks/smtp2go',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Basic ${Buffer.from(`smtp2go:${env.SMTP2GO_WEBHOOK_SECRET}`).toString('base64')}`,
+      },
+      payload: { event: 'delivered', email_id: 'provider-1', rcpt: 'lead@example.com', id: 'native-delivery-1' },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({ accepted: true, event: 'delivered' })
   })
 })

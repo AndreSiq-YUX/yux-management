@@ -35,5 +35,7 @@ export interface AutomationSequence {
   conversionGoal?: string
   activeEnrollmentCount: number
   convertedEnrollmentCount: number
+  /** Stop the sequence for a lead as soon as the lead replies (default true). */
+  exitOnReply?: boolean
   steps: AutomationSequenceStep[]
 }

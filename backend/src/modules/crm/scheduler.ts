@@ -1,4 +1,6 @@
 import { createHmac } from 'node:crypto'
+import { contactAllowedByPolicy, getContactPolicy } from '../../email/contact-policy.js'
+import { ensureLeadConversationLink } from '../omnichannel/lead-link.js'
 import type pg from 'pg'
 import { queueEmailRequest } from '../email-delivery/service.js'
 import { recordDomainEvent } from '../events/repository.js'
@@ -162,7 +164,7 @@ export async function processSequenceExecution(pool: pg.Pool, executionId: strin
     const binding=await client.query<{lead_id:string}>('SELECT lead_id FROM public.automation_executions WHERE id=$1',[executionId])
     if(binding.rows[0]) await client.query('SELECT id FROM public.leads WHERE id=$1 FOR KEY SHARE',[binding.rows[0].lead_id])
     const result = await client.query<ExecutionRow & { lead_name: string | null; lead_email: string | null; lead_phone: string | null; lead_deleted_at?: string | null }>(
-      `SELECT x.*, l.name AS lead_name, l.email AS lead_email, l.phone AS lead_phone, l.deleted_at AS lead_deleted_at
+      `SELECT x.*, l.name AS lead_name, l.email AS lead_email, l.phone AS lead_phone, l.deleted_at AS lead_deleted_at, l.email_opt_in AS lead_email_opt_in, l.whatsapp_opt_in AS lead_whatsapp_opt_in
        FROM public.automation_executions x
        JOIN public.leads l ON l.id = x.lead_id
        WHERE x.id = $1
@@ -244,7 +246,7 @@ export async function processSequenceExecution(pool: pg.Pool, executionId: strin
 
 async function executeSequenceAction(
   client: pg.PoolClient,
-  execution: ExecutionRow & { lead_name: string | null; lead_email: string | null; lead_phone: string | null },
+  execution: ExecutionRow & { lead_name: string | null; lead_email: string | null; lead_phone: string | null; lead_email_opt_in?: boolean | null; lead_whatsapp_opt_in?: boolean | null },
   options: CrmSequenceSchedulerOptions,
 ) {
   if (execution.action_type === 'internal_task') {
@@ -277,6 +279,11 @@ async function executeSequenceAction(
     const bodyHtml = textValue(payload.htmlBody) || template?.bodyHtml || (bodyText ? `<p>${escapeHtml(bodyText)}</p>` : '')
     const subject = textValue(payload.subject) || template?.subject || ''
     const emailKind = emailKindValue(payload.emailKind || template?.emailKind)
+    // The organization's contact policy decides whether a published business
+    // contact may receive commercial e-mail without an explicit opt-in.
+    const policy = await getContactPolicy(client, execution.organization_id)
+    const explicitOptIn = payload.recipientOptIn === true || execution.lead_email_opt_in === true
+    const contactBasis = explicitOptIn ? 'explicit_opt_in' : policy.emailBasis
     const request = await queueEmailRequest(client, {
       organizationId: execution.organization_id,
       leadId: execution.lead_id,
@@ -284,7 +291,7 @@ async function executeSequenceAction(
       templateVersionId: template?.templateVersionId ?? textValue(payload.templateVersionId) ?? null,
       emailKind,
       recipientEmail: execution.lead_email || textValue(payload.recipientEmail) || '',
-      recipientOptIn: payload.recipientOptIn === true,
+      recipientOptIn: contactAllowedByPolicy(policy.emailBasis, explicitOptIn),
       subject,
       bodyHtml,
       bodyText,
@@ -297,6 +304,7 @@ async function executeSequenceAction(
         enrollmentId: execution.enrollment_id,
         correlationId: textValue(payload.correlationId) || execution.id,
         unsubscribeUrl: textValue(payload.unsubscribeUrl) || null,
+        contactBasis,
         prospectingPlanId: textValue(payload.prospectingPlanId) || null,
       },
       correlationId: textValue(payload.correlationId) || execution.id,
@@ -346,6 +354,7 @@ async function executeSequenceAction(
       [execution.organization_id, contactId, connection.rows[0].id, execution.lead_id],
     )).rows[0]?.id
     if (!conversationId) throw new Error('whatsapp_conversation_required')
+    await ensureLeadConversationLink(client, { leadId: execution.lead_id, conversationId, matchMethod: 'phone', contactPhone: execution.lead_phone })
     const templateName = textValue(payload.templateName)
     const message = await client.query<{ id: string }>(
       `INSERT INTO public.messages (

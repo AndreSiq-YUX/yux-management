@@ -1,5 +1,5 @@
 import {LeadOperationsModal} from './LeadOperationsModal'
-import { requestLeadDeletion } from '@/lib/crm/leadDeletionEvents'
+import { LeadBulkBar } from './LeadBulkBar'
 import { FormEvent, useCallback, useEffect, useMemo, useRef,useState, type ReactNode } from 'react'
 import { apiRequest } from '@/lib/apiClient'
 import { LeadTemperature } from './scoring/LeadTemperature'
@@ -629,11 +629,11 @@ function LeadList({
   empty?: React.ReactNode
 }) {
   const [selection,setSelection] = useState<string[]>([])
-  useEffect(() => { setSelection(current => { const visible=current.filter(id => leads.some(lead => lead.id===id && lead.canDelete)); return visible.length===current.length?current:visible }) }, [leads])
-  const eligible = leads.filter(lead => lead.canDelete)
+  useEffect(() => { setSelection(current => { const visible=current.filter(id => leads.some(lead => lead.id===id)); return visible.length===current.length?current:visible }) }, [leads])
+  const eligible = leads
   const selected = eligible.filter(lead => selection.includes(lead.id))
-  const selectionBar = eligible.length ? <div className="flex flex-wrap items-center gap-3 border-b p-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" aria-label="Selecionar leads" checked={selected.length > 0 && selected.length === Math.min(100,eligible.length)} onChange={event => setSelection(event.target.checked ? eligible.slice(0,100).map(l => l.id) : [])} />Selecionar até 100 leads</label>{selected.length > 0 && <Button variant="destructive" size="sm" onClick={() => requestLeadDeletion(selected)}>Excluir {selected.length} selecionados</Button>}</div> : null
-  const selectLead = (lead: CrmLead) => lead.canDelete ? <input type="checkbox" aria-label={`Selecionar ${lead.name}`} checked={selection.includes(lead.id)} onChange={event => setSelection(current => event.target.checked ? [...current,lead.id].slice(0,100) : current.filter(id => id!==lead.id))} /> : null
+  const selectionBar = eligible.length ? <div className="flex flex-wrap items-center gap-3 border-b p-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" aria-label="Selecionar leads" checked={selected.length > 0 && selected.length === Math.min(100,eligible.length)} onChange={event => setSelection(event.target.checked ? eligible.slice(0,100).map(l => l.id) : [])} />Selecionar até 100 leads</label><LeadBulkBar selected={selected} stages={stages} onClear={() => setSelection([])} /></div> : null
+  const selectLead = (lead: CrmLead) => <input type="checkbox" aria-label={`Selecionar ${lead.name}`} checked={selection.includes(lead.id)} onChange={event => setSelection(current => event.target.checked ? [...current,lead.id].slice(0,100) : current.filter(id => id!==lead.id))} />
   const stageNameById = new Map((stages || []).map(stage => [stage.id, stage.name]))
 
   if (profile === 'portal') {

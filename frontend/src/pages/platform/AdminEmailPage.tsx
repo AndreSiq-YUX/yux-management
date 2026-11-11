@@ -5,6 +5,7 @@ import { AdminMetricCard } from '@/components/platform/admin/AdminMetricCard'
 import { ProviderConnectionEditor } from '@/components/platform/admin/ProviderConnectionEditor'
 import { Smtp2GoConnectionEditor } from '@/components/platform/admin/Smtp2GoConnectionEditor'
 import { Smtp2GoSubaccountEditor } from '@/components/platform/admin/Smtp2GoSubaccountEditor'
+import { CommercialSenderAdmin } from '@/components/email-templates/CommercialSenderPanel'
 import { smtp2GoProviderDefaults } from '@/lib/platform/providerDefaults'
 import { adminPlatformService } from '@/services/adminPlatformService'
 import { platformService } from '@/services/platformService'
@@ -136,6 +137,10 @@ export function AdminEmailPage() {
           icon={ShieldAlert}
         />
       </div>
+
+      {!loading && !error && (
+        <CommercialSenderAdmin organizations={organizations.filter(organization => organization.kind === 'client')} />
+      )}
 
       {!loading && !error && (
         <div className="grid gap-4 xl:grid-cols-2">

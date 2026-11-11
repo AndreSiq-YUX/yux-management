@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import type pg from 'pg'
 import { sendConfiguredSmtp2GoEmail } from '../../email/smtp2goConfigured.js'
+import { COMMERCIAL_EMAIL_SOURCES, newUnsubscribeToken, unsubscribeUrl } from '../../email/contact-policy.js'
 
 type Queryable = Pick<pg.Pool, 'query'>
 
@@ -21,6 +22,7 @@ export type EmailDeliveryRequest = {
   providerMessageId: string | null
   idempotencyKey: string
   metadata: Record<string, unknown>
+  sourceEntityType: string | null
 }
 
 export type QueueEmailInput = {
@@ -73,7 +75,7 @@ export async function queueEmailRequest(db: Queryable, input: QueueEmailInput) {
      RETURNING id, organization_id, lead_id, template_id, template_version_id,
                email_kind, recipient_email, recipient_opt_in, subject, body_html,
                body_text, rendered_variables, status, provider_message_id,
-               idempotency_key, metadata`,
+               idempotency_key, metadata, source_entity_type`,
     [
       input.organizationId,
       input.leadId,
@@ -121,13 +123,39 @@ export async function getEmailDeliveryRequest(db: Queryable, requestId: string) 
     `SELECT id, organization_id, lead_id, template_id, template_version_id,
             email_kind, recipient_email, recipient_opt_in, subject, body_html,
             body_text, rendered_variables, status, provider_message_id,
-            idempotency_key, metadata
+            idempotency_key, metadata, source_entity_type
      FROM public.email_send_requests
      WHERE id = $1
      LIMIT 1`,
     [requestId],
   )
   return result.rows[0] ? mapEmailDeliveryRequest(result.rows[0]) : null
+}
+
+function commercialSenderFor(request: EmailDeliveryRequest) {
+  if (request.sourceEntityType === 'crm_manual_email' || request.sourceEntityType === 'commercial_sender_test') {
+    return {
+      organizationId: request.organizationId,
+      revision: String(request.metadata.senderRevision ?? ''),
+      leadId: request.sourceEntityType === 'crm_manual_email' ? (request.leadId ?? '') : null,
+    }
+  }
+  // Automated sequences speak with the organization's approved identity when one exists.
+  if (request.sourceEntityType === 'crm_sequence_execution') {
+    return { organizationId: request.organizationId, revision: null, leadId: request.leadId, optional: true }
+  }
+  return undefined
+}
+
+async function optOutUrlFor(db: Queryable, request: EmailDeliveryRequest) {
+  if (!request.leadId || !COMMERCIAL_EMAIL_SOURCES.has(request.sourceEntityType ?? '')) return undefined
+  const result = await db.query<{ unsubscribe_token: string }>(
+    `UPDATE public.email_send_requests SET unsubscribe_token = COALESCE(unsubscribe_token, $2)
+      WHERE id = $1 RETURNING unsubscribe_token`,
+    [request.id, newUnsubscribeToken()],
+  )
+  const token = result.rows[0]?.unsubscribe_token
+  return token ? unsubscribeUrl(token) : undefined
 }
 
 export async function sendEmailRequest(
@@ -143,7 +171,7 @@ export async function sendEmailRequest(
      RETURNING id, organization_id, lead_id, template_id, template_version_id,
                email_kind, recipient_email, recipient_opt_in, subject, body_html,
                body_text, rendered_variables, status, provider_message_id,
-               idempotency_key, metadata`,
+               idempotency_key, metadata, source_entity_type`,
     [requestId],
   )
 
@@ -167,6 +195,8 @@ export async function sendEmailRequest(
     emailCategory: request.emailKind,
     recipientOptIn: request.recipientOptIn,
     customHeaders: [{ header: 'X-YUX-Send-Request-ID', value: request.id }],
+    commercialSender: commercialSenderFor(request),
+    optOutUrl: await optOutUrlFor(pool, request),
   }
 
   let providerResult: Awaited<ReturnType<typeof sendConfiguredSmtp2GoEmail>>
@@ -183,8 +213,8 @@ export async function sendEmailRequest(
   if (providerResult.sent) {
     await pool.query(
       `UPDATE public.email_send_requests
-       SET status = 'sent', provider_message_id = COALESCE($2, provider_message_id),
-           protected_error = NULL, updated_at = NOW()
+       SET status = CASE WHEN status = 'sending' THEN 'sent' ELSE status END,
+           provider_message_id = COALESCE($2, provider_message_id), protected_error = NULL, updated_at = NOW()
        WHERE id = $1`,
       [request.id, providerResult.providerMessageId ?? null],
     )
@@ -332,6 +362,7 @@ type EmailDeliveryRequestRow = {
   provider_message_id: string | null
   idempotency_key: string
   metadata: Record<string, unknown> | null
+  source_entity_type: string | null
 }
 
 function mapEmailDeliveryRequest(row: EmailDeliveryRequestRow): EmailDeliveryRequest {
@@ -352,6 +383,7 @@ function mapEmailDeliveryRequest(row: EmailDeliveryRequestRow): EmailDeliveryReq
     providerMessageId: row.provider_message_id,
     idempotencyKey: row.idempotency_key,
     metadata: row.metadata ?? {},
+    sourceEntityType: row.source_entity_type,
   }
 }
 
