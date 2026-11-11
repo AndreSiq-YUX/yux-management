@@ -210,12 +210,23 @@ export async function queueLeadEmail(
   pool: pg.Pool,
   user: AuthUser,
   leadId: string,
-  input: { requestId: string; subject: string; body: string },
+  input: { requestId: string; subject: string; body: string; replyToInboundId?: string },
 ) {
   return inProfileTransaction(pool, async (db) => {
     const lead = await requireActiveLead(db, user, leadId)
     const capability = await leadEmailCapability(db, lead)
     if (!capability.canSend) throw profileError(422, capability.message)
+    // Answering a received reply keeps the e-mail thread in the contact's mailbox.
+    const inReplyTo = input.replyToInboundId
+      ? (
+          await db.query(
+            'SELECT provider_message_id FROM public.email_inbound_messages WHERE id=$1 AND lead_id=$2 AND organization_id=$3',
+            [input.replyToInboundId, leadId, lead.organization_id],
+          )
+        ).rows[0]?.provider_message_id
+      : undefined
+    if (input.replyToInboundId && !inReplyTo)
+      throw profileError(404, 'A resposta original não foi encontrada.')
     const prior = (
       await db.query(
         'SELECT id,subject,body_text,recipient_email,status FROM public.email_send_requests WHERE idempotency_key=$1 AND lead_id=$2',
@@ -250,6 +261,7 @@ export async function queueLeadEmail(
         senderRevision: capability.senderRevision,
         contactBasis: capability.contactBasis,
         actorId: user.id,
+        ...(inReplyTo ? { inReplyTo, replyToInboundId: input.replyToInboundId } : {}),
       },
     })
     await db.query(

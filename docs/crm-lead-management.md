@@ -12,6 +12,7 @@ Detalhes, decisões e próximos passos em `docs/crm-relacionamento-plano.md`.
 - **Respostas do WhatsApp** são ligadas ao lead pelo telefone normalizado (inclui 9º dígito); lead ambíguo não é ligado.
 - **Encerrar ao responder** (`crm_sequences.exit_on_reply`, padrão ligado): a resposta move a inscrição para `manual` (`exit_reason = lead_replied`) e cancela passos agendados.
 - **Ações em massa** (`POST /api/crm/leads/bulk`, até 100 leads): mover etapa, inscrever em sequência, pausar sequências.
+- **Respostas de e-mail** (`email_inbound_messages`, webhook `/api/webhooks/email-inbound`): e-mails comerciais respondem para `r+<token>@EMAIL_REPLY_DOMAIN`; a resposta aparece na aba E-mail da ficha, encerra sequências, gera `lead.response_received` e é copiada para a caixa comercial. Responder pela ficha mantém o fio (`In-Reply-To`). Respostas automáticas não contam como resposta. Ver `docs/runbooks/email-reply-capture.md`.
 
 ## Prioridade comercial
 
@@ -1103,7 +1104,7 @@ Em **Pontuação de leads**, administradores e gestores autorizados podem **Conf
 
 Escolha um campo comum ou personalizado pelo nome. Campos numéricos aceitam faixas com início incluído e fim não incluído: por exemplo, abaixo de 500, de 500 a 999 e a partir de 1000 refeições. Faixas não podem se sobrepor. Regras diferentes somam; editar a mesma ficha não repete a contribuição. É possível editar/desativar regras e conferir **Ver prévia** antes de **Recalcular pontuação** dos leads existentes, processados em lotes de 50.
 
-Novas regras de atividade acompanham as ações a partir de sua criação. Ao editar pontos, condições ou limites, o recálculo reavalia as ocorrências já acompanhadas por essa regra. Atividades pontuam por ocorrência identificável: a mesma mensagem ou tarefa não conta duas vezes. Defina o limite de contribuição de cada regra. Respostas de WhatsApp são consideradas quando a conversa já está vinculada ao lead. Abertura e clique de e-mail dependem dos eventos reais de rastreamento; **resposta de e-mail é um registro manual em Histórico → Tipo de registro**, pois não existe captura automática de respostas neste módulo. Condições de texto são literais (contém/não contém), sem interpretação por IA.
+Novas regras de atividade acompanham as ações a partir de sua criação. Ao editar pontos, condições ou limites, o recálculo reavalia as ocorrências já acompanhadas por essa regra. Atividades pontuam por ocorrência identificável: a mesma mensagem ou tarefa não conta duas vezes. Defina o limite de contribuição de cada regra. Respostas de WhatsApp são consideradas quando a conversa já está vinculada ao lead. Abertura e clique de e-mail dependem dos eventos reais de rastreamento; **resposta de e-mail é capturada automaticamente quando a captura de respostas está ativa** (`docs/runbooks/email-reply-capture.md`); sem ela, registre manualmente em Histórico → Tipo de registro. Condições de texto são literais (contém/não contém), sem interpretação por IA.
 
 A ficha explica as regras que contribuíram e mostra a temperatura. Os limites iniciais são frio abaixo de 40, morno de 40 a 69 e quente a partir de 70; os limites podem ser editados. Ações de agendar contato/qualificação e preparar proposta levam aos fluxos existentes. Nenhuma ação contextual envia mensagem, muda etapa ou ativa automação sozinha.
 

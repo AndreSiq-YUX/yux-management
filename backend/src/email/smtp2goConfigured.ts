@@ -17,6 +17,8 @@ type Smtp2GoConfiguredInput = Omit<Smtp2GoSendInput, 'apiKey' | 'senderEmail' | 
   commercialSender?: { organizationId: string; revision: string | null; leadId: string | null; optional?: boolean }
   /** One-click opt-out link appended to commercial messages (footer + RFC 8058 headers). */
   optOutUrl?: string
+  /** Routed reply address (reply capture) or the lead's address on reply copies. */
+  replyToOverride?: string
 }
 
 function stringConfig(config: Record<string, unknown>, keys: string[]) {
@@ -106,7 +108,9 @@ export async function sendConfiguredSmtp2GoEmail(
         : null
       const headers = [
         ...(input.customHeaders ?? []),
-        ...(sender ? [{ header: 'Reply-To', value: sender.replyTo }] : []),
+        ...(input.replyToOverride || sender
+          ? [{ header: 'Reply-To', value: input.replyToOverride ?? sender!.replyTo }]
+          : []),
         ...(input.optOutUrl
           ? [
               { header: 'List-Unsubscribe', value: `<${input.optOutUrl}>` },
@@ -114,7 +118,7 @@ export async function sendConfiguredSmtp2GoEmail(
             ]
           : []),
       ]
-      const { optOutUrl: _optOutUrl, commercialSender: _commercialSender, ...providerInput } = input
+      const { optOutUrl: _optOutUrl, commercialSender: _commercialSender, replyToOverride: _replyTo, ...providerInput } = input
       const result = await sendSmtp2GoEmail({
         ...providerInput,
         ...(body ? { textBody: body.text, htmlBody: body.html } : {}),

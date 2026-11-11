@@ -135,7 +135,18 @@ export async function registerLeadActionRoutes(
           [lead.id, lead.organization_id],
         )
       ).rows
-      return { ...capability, requests }
+      // Explicit columns: the reply text is the lead's own message; no routing tokens or provider data.
+      const replies = (
+        await db.query(
+          `SELECT id, from_email AS "fromEmail", from_name AS "fromName", subject, left(text_body, 20000) AS text,
+                  is_auto_reply AS "isAutoReply", received_at AS "receivedAt",
+                  COALESCE((SELECT jsonb_agg(jsonb_build_object('filename', a->>'filename', 'size', a->'size')) FROM jsonb_array_elements(attachments) a), '[]'::jsonb) AS attachments
+             FROM public.email_inbound_messages
+            WHERE lead_id=$1 AND organization_id=$2 ORDER BY received_at DESC LIMIT 20`,
+          [lead.id, lead.organization_id],
+        )
+      ).rows
+      return { ...capability, requests, replies }
     })
   })
   app.post('/leads/:id/email', async (request, reply) => {
@@ -146,6 +157,7 @@ export async function registerLeadActionRoutes(
         requestId: z.uuid(),
         subject: z.string().trim().min(1).max(300),
         body: z.string().trim().min(1).max(20000),
+        replyToInboundId: z.uuid().optional(),
       })
       .strict()
       .safeParse(request.body)

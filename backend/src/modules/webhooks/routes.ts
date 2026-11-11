@@ -5,6 +5,7 @@ import { runWithDatabaseRequestContext } from '../../db/request-context.js'
 import { normalizeWhatsAppBatch, validateWhatsAppSignature } from '../../lib/edge-compat/whatsappProvider.js'
 import { recordEmailDomainEvent, recordEmailSendEvent } from '../email-delivery/service.js'
 import { recordDomainEvent } from '../events/repository.js'
+import { inboundReplySchema, recordInboundReply, verifyInboundSignature } from '../../email/reply-capture.js'
 import { z } from 'zod'
 
 function queryString(value: unknown) {
@@ -156,6 +157,37 @@ export async function registerWebhookRoutes(app: FastifyInstance) {
       ignored: unknownEvents.length,
       rejected: batch.rejected,
     })
+  })
+
+  // Replies to commercial e-mail, delivered by the Cloudflare Email Worker (workers/email-inbound).
+  app.post('/email-inbound', {
+    bodyLimit: 2 * 1024 * 1024,
+    config: { rateLimit: { max: 120, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
+    const secret = app.config.EMAIL_INBOUND_SECRET
+    const domain = app.config.EMAIL_REPLY_DOMAIN?.trim().toLowerCase()
+    if (!secret || !domain) return reply.code(503).send({ error: 'webhook_not_configured' })
+    const raw = request.body
+    if (!Buffer.isBuffer(raw)) return reply.code(400).send({ error: 'invalid_inbound_payload' })
+    if (!verifyInboundSignature({
+      secret,
+      timestamp: request.headers['x-yux-timestamp'],
+      signature: request.headers['x-yux-signature'],
+      rawBody: raw,
+    })) return reply.code(401).send({ error: 'invalid_webhook_signature' })
+    let payload: unknown
+    try { payload = JSON.parse(raw.toString('utf8')) } catch { return reply.code(400).send({ error: 'invalid_inbound_payload' }) }
+    const parsed = inboundReplySchema.safeParse(payload)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_inbound_payload' })
+    const result = await runWithDatabaseRequestContext({ role: 'yux_admin', organizationIds: [], serviceRole: 'api' }, () =>
+      withDatabaseTransaction(app.pg, db => recordInboundReply(db, parsed.data, domain)))
+    if (!result.matched) return reply.code(202).send({ accepted: true, matched: false })
+    if (result.forwardRequestId && !result.duplicate) {
+      // The reply is already stored; a queue failure only delays the courtesy copy.
+      await app.jobQueue.add('email.send', { requestId: result.forwardRequestId }, { jobId: `reply-forward-${result.forwardRequestId}` })
+        .catch(error => request.log.warn({ err: error, requestId: result.forwardRequestId }, 'reply_forward_enqueue_failed'))
+    }
+    return reply.code(202).send({ accepted: true, matched: true, duplicate: result.duplicate })
   })
 
   app.post('/smtp2go', {

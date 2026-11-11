@@ -54,6 +54,9 @@ const envSchema = z.object({
   SMTP2GO_SENDER_EMAIL: optionalEmail,
   SMTP2GO_SENDER_NAME: optionalString,
   SMTP2GO_WEBHOOK_SECRET: optionalString,
+  // Commercial replies: r+<token>@EMAIL_REPLY_DOMAIN, delivered by the inbound e-mail worker.
+  EMAIL_REPLY_DOMAIN: optionalString,
+  EMAIL_INBOUND_SECRET: optionalString,
   YUX_AGENT_RUNTIME_URL: optionalUrl,
   YUX_AGENT_RUNTIME_TOKEN: z.string().optional(),
   ACTION_ENGINE_MUTATION_LEASE_SECRET: z.string().min(32).optional(),

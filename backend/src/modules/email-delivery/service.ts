@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import type pg from 'pg'
 import { sendConfiguredSmtp2GoEmail } from '../../email/smtp2goConfigured.js'
 import { COMMERCIAL_EMAIL_SOURCES, newUnsubscribeToken, unsubscribeUrl } from '../../email/contact-policy.js'
+import { ensureReplyAddress } from '../../email/reply-capture.js'
 
 type Queryable = Pick<pg.Pool, 'query'>
 
@@ -147,6 +148,22 @@ function commercialSenderFor(request: EmailDeliveryRequest) {
   return undefined
 }
 
+/** Commercial messages answer to a routed address so replies reach the CRM; reply copies answer to the lead. */
+async function replyToFor(db: Queryable, request: EmailDeliveryRequest) {
+  if (request.sourceEntityType === 'commercial_reply_forward') {
+    const address = request.metadata.forwardReplyTo
+    return typeof address === 'string' && /^[^\s@<>]+@[^\s@<>]+$/.test(address) ? address : undefined
+  }
+  if (!request.leadId || !COMMERCIAL_EMAIL_SOURCES.has(request.sourceEntityType ?? '')) return undefined
+  return ensureReplyAddress(db, request.id)
+}
+
+function threadHeaders(request: EmailDeliveryRequest) {
+  const messageId = request.metadata.inReplyTo
+  if (typeof messageId !== 'string' || !/^<[^<>\s]{3,900}>$/.test(messageId)) return []
+  return [{ header: 'In-Reply-To', value: messageId }, { header: 'References', value: messageId }]
+}
+
 async function optOutUrlFor(db: Queryable, request: EmailDeliveryRequest) {
   if (!request.leadId || !COMMERCIAL_EMAIL_SOURCES.has(request.sourceEntityType ?? '')) return undefined
   const result = await db.query<{ unsubscribe_token: string }>(
@@ -194,9 +211,10 @@ export async function sendEmailRequest(
     htmlBody: request.bodyHtml || `<p>${escapeHtml(request.bodyText)}</p>`,
     emailCategory: request.emailKind,
     recipientOptIn: request.recipientOptIn,
-    customHeaders: [{ header: 'X-YUX-Send-Request-ID', value: request.id }],
+    customHeaders: [{ header: 'X-YUX-Send-Request-ID', value: request.id }, ...threadHeaders(request)],
     commercialSender: commercialSenderFor(request),
     optOutUrl: await optOutUrlFor(pool, request),
+    replyToOverride: await replyToFor(pool, request),
   }
 
   let providerResult: Awaited<ReturnType<typeof sendConfiguredSmtp2GoEmail>>

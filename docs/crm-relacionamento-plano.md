@@ -14,7 +14,7 @@ Atualizado em 11/11/2026. Escopo: o fluxo de trabalho do cliente da plataforma c
 | 8 | Ficha não enviava WhatsApp | Aba **Conversas** da ficha envia pelo número conectado: texto dentro da janela de 24h, modelo aprovado fora dela, com a política de contato aplicada. O link `wa.me` ficou como alternativa (sem registro). |
 | 9 | Sem ações em massa | Seleção de até 100 leads na lista: mover etapa, inscrever em sequência, pausar sequências, excluir. Cada lead passa pelas mesmas regras de acesso do envio individual. |
 
-Pendências desta entrega: resposta por **e-mail** ainda não é capturada (seção 3); o modo automático da IA continua desligado até o desenho da seção 4 ser implementado; a homologação final da Meta (vídeo) fica por último, como combinado.
+Pendências desta entrega: a captura de resposta por **e-mail** foi entregue depois (seção 3; ativação conforme `docs/runbooks/email-reply-capture.md`); o modo automático da IA continua desligado até o desenho da seção 4 ser implementado; a homologação final da Meta (vídeo) fica por último, como combinado.
 
 ## 2. Regras da sequência (funil de cadência)
 
@@ -56,7 +56,7 @@ O SMTP2GO é focado em envio; não encontramos recebimento/inbound parse documen
 
 ### Recomendação para a YUX
 
-**Fase A (rápida, mantém o SMTP2GO no envio):** caixa de respostas dentro da plataforma.
+**Fase A — implementada em 12/11/2026 com Cloudflare Email Routing + Email Worker (gratuito).** Configuração e verificação: `docs/runbooks/email-reply-capture.md`. Desenho original abaixo.
 
 - Cada e-mail comercial sai com `Reply-To` único (ex.: `r+<token>@respostas.comercial.yux.com.br`). O token identifica empresa, lead e mensagem.
 - O subdomínio de respostas recebe por um serviço de entrada (opções: Postmark Inbound, Mailgun Routes, SendGrid Inbound Parse, ou Cloudflare Email Routing com Worker, se o DNS estiver na Cloudflare). Escolha depende de custo e de onde está o DNS: **decisão sua**, pois é serviço externo.

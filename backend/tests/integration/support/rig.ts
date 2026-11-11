@@ -100,6 +100,8 @@ export async function createIntegrationRig(options: { stubJobQueue?: AppJobQueue
     ACTION_ENGINE_MUTATION_LEASE_SECRET: 'integration-mutation-lease-secret-32-chars',
     ACTION_ENGINE_TELEMETRY_REDACTION_KEY: 'integration-redaction-key-secret-32-chars',
     META_APP_SECRET: 'integration-meta-app-secret',
+    EMAIL_REPLY_DOMAIN: 'respostas.integration.test',
+    EMAIL_INBOUND_SECRET: 'integration-email-inbound-secret',
     ...(options.metaOAuth ? {
       META_APP_ID: '123456789012345',
       META_GRAPH_VERSION: 'v25.0',
