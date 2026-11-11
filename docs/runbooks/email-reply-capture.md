@@ -15,11 +15,24 @@ Sem `EMAIL_REPLY_DOMAIN` na API e nos workers, nada muda: o `Reply-To` continua 
 
 ## Configuração (uma vez)
 
-**Atenção:** o e-mail principal `@yux.com.br` usa Spacemail (MX `mx1/mx2.spacemail.com`). Ativar o Email Routing **somente no subdomínio**. Se a Cloudflare pedir para remover ou substituir os MX do domínio principal, **cancelar**: isso derrubaria o e-mail da YUX. Antes de começar, exportar o DNS (DNS → Records → Export).
+**Atenção:** o e-mail principal `@yux.com.br` usa Spacemail (MX `mx1/mx2.spacemail.com`). Ativar o Email Routing **somente no subdomínio**, pela API (passo 2). Se a Cloudflare pedir para remover ou substituir os MX do domínio principal, **cancelar**: isso derrubaria o e-mail da YUX. Antes de começar, exportar o DNS (DNS → Records → Export).
 
 1. Gerar um segredo: `openssl rand -hex 32` (ou outro gerador seguro). Não colar em chat nem documentação.
-2. Cloudflare → `yux.com.br` → Email → Email Routing → Settings → **Subdomains** → adicionar `respostas`. Conferir que apenas registros de `respostas.yux.com.br` foram criados (MX e TXT/SPF do subdomínio).
-3. Email Routing → Settings → ativar **Subaddressing** (endereços `r+token@...`).
+2. **Não usar o assistente "Email Routing" do painel**: ele ativa o domínio principal e pede para remover os MX da Spacemail. Ativar só o subdomínio pela API, com um token de API restrito a `yux.com.br` (permissões: Zone → Zone Settings → Edit; Zone → Email Routing Rules → Edit; Zone → DNS → Read). Em um terminal (Git Bash), com `CF_API_TOKEN` e `CF_ZONE_ID` (ID da zona, na Visão geral) definidos:
+   ```bash
+   curl -s -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records?per_page=200" -o dns-antes.json
+   ```
+   ```bash
+   curl -s -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/email/routing/dns?subdomain=respostas.yux.com.br"
+   ```
+   ```bash
+   curl -s -X POST -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" -d '{"name":"respostas.yux.com.br"}' "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/email/routing/dns"
+   ```
+   O primeiro comando guarda o DNS atual; o segundo mostra o que será criado (deve ser só `respostas.yux.com.br`); o terceiro ativa. Depois, conferir que os MX `mx1/mx2.spacemail.com` e o SPF da Spacemail do domínio principal continuam iguais. A Cloudflare pode criar o DKIM `cf2024-1._domainkey` no domínio principal: é inofensivo para a Spacemail; manter. O status da zona pode aparecer como "misconfigured" (MX de outro provedor): esperado; vale o status do subdomínio.
+3. Ativar o subendereçamento (`r+token@...`):
+   ```bash
+   curl -s -X PATCH -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" -d '{"support_subaddress":true}' "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/email/routing"
+   ```
 4. (Opcional, recomendado) Destination addresses → adicionar e verificar a caixa de operação da YUX que receberá mensagens não reconhecidas.
 5. Publicar o Worker, no diretório `workers/email-inbound`:
    ```bash
@@ -35,7 +48,10 @@ Sem `EMAIL_REPLY_DOMAIN` na API e nos workers, nada muda: o `Reply-To` continua 
    npx wrangler deploy
    ```
    Para usar o encaminhamento de segurança, descomentar `FALLBACK_TO` no `wrangler.toml` com o endereço verificado no passo 4 antes do deploy.
-6. Email Routing → Routing rules → **Create address**: `r@respostas.yux.com.br` → ação **Send to a Worker** → `yux-email-inbound`.
+6. Criar a regra `r@respostas.yux.com.br` → Worker `yux-email-inbound` (pelo painel, em Routing rules, se o subdomínio aparecer; ou pela API):
+   ```bash
+   curl -s -X POST -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" -d '{"name":"YUX respostas comerciais","enabled":true,"matchers":[{"type":"literal","field":"to","value":"r@respostas.yux.com.br"}],"actions":[{"type":"worker","value":["yux-email-inbound"]}]}' "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/email/routing/rules"
+   ```
 7. Dokploy → variáveis do projeto: `EMAIL_REPLY_DOMAIN=respostas.yux.com.br` e `EMAIL_INBOUND_SECRET=<o mesmo segredo>`. Publicar novamente API e workers.
 
 ## Verificação
