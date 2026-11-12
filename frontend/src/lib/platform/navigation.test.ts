@@ -422,7 +422,7 @@ describe('buildNavigationGroups', () => {
       { label: 'Base de conhecimento', href: '/portal/empresa/conhecimento' },
       { label: 'Equipe', href: '/portal/empresa/usuarios' },
       { label: 'Conexões', href: '/portal/empresa/integracoes' },
-      { label: 'Modelos de e-mail', href: '/portal/configuracoes/emails' },
+      { label: 'E-mails', href: '/portal/configuracoes/emails' },
     ])
   })
 
@@ -470,17 +470,18 @@ describe('buildNavigationGroups', () => {
     expect(buildNavigation(allModulesPortalContext).some(item => item.href.endsWith('/automacoes/logs'))).toBe(false)
   })
 
-  it('adds portal email templates only to the real client portal', () => {
-    const portalItems = buildNavigation({ ...allModulesPortalContext, enabledModuleKeys: [] })
-    const workspaceItems = buildNavigation({
-      ...allModulesPortalContext,
-      mode: 'client_workspace',
-      enabledModuleKeys: [],
-    })
+  it('shows YUX staff operating a client workspace everything the client portal shows', () => {
+    for (const enabledModuleKeys of [[], allModulesPortalContext.enabledModuleKeys]) {
+      const portal = { ...allModulesPortalContext, enabledModuleKeys }
+      const workspace: PlatformContext = { ...portal, mode: 'client_workspace' }
+      const asWorkspace = (items: { label: string; href: string }[]) =>
+        items.map(item => ({ label: item.label, href: item.href.replace(/^\/portal/, '/client-workspaces/org-client-1') }))
 
-    expect(portalItems).toContainEqual({ label: 'Modelos de e-mail', href: '/portal/configuracoes/emails' })
-    expect(workspaceItems.find(item => item.label === 'Modelos de e-mail')).toBeUndefined()
-    expect(workspaceItems).toContainEqual({ label: 'Minha conta', href: '/client-workspaces/org-client-1/configuracoes/conta' })
+      expect(buildNavigation(workspace).map(({ label, href }) => ({ label, href })))
+        .toEqual(asWorkspace(buildNavigation(portal)))
+    }
+    expect(buildNavigation({ ...allModulesPortalContext, mode: 'client_workspace', enabledModuleKeys: [] }))
+      .toContainEqual({ label: 'E-mails', href: '/client-workspaces/org-client-1/configuracoes/emails' })
   })
 
   it('builds client workspace navigation with selected client route prefix', () => {

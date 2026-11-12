@@ -227,6 +227,7 @@ function App() {
               <Route path="suporte" element={<PortalSupportPage />} />
               <Route path="financeiro" element={<PortalFinancePage />} />
               <Route path="configuracoes/conta" element={<PortalAccountSettingsPage />} />
+              <Route path="configuracoes/emails" element={<PortalEmailTemplatesPage />} />
             </Route>
           </>
         )}

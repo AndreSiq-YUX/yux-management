@@ -124,6 +124,9 @@ class FakeEmailTemplatePool {
 
     if (sql.includes('SELECT organization_id') && sql.includes('FROM public.memberships')) return { rows: [] }
     if (sql.includes('SELECT DISTINCT cm.module_key')) return { rows: [] }
+    if (sql.includes('FROM public.organizations WHERE id = $1')) {
+      return { rows: params[0] === ids.org ? [{ id: ids.org }] : [] }
+    }
 
     if (sql.includes('FROM public.memberships')) {
       return {
@@ -325,6 +328,23 @@ describe('email template routes', () => {
     expect(response.statusCode).toBe(200)
     expect(response.json()).toMatchObject([{ id: ids.orgTemplate, organizationId: ids.org }])
     expect(pool.queries.some((query) => query.params[0] === 'organization' && query.params[1] === ids.org)).toBe(true)
+  })
+
+  it('lets YUX staff operating a client workspace use the portal templates of that organization', async () => {
+    const { authStore, token } = buildAuthStore('yux_operator')
+    const pool = new FakeEmailTemplatePool()
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+    const get = (url: string) => app!.inject({ method: 'GET', url, headers: { cookie: sessionCookie(token) } })
+
+    const listed = await get(`/api/email-templates/portal/templates?organizationId=${ids.org}`)
+    expect(listed.statusCode).toBe(200)
+    expect(listed.json()).toMatchObject([{ id: ids.orgTemplate, organizationId: ids.org }])
+    expect((await get(`/api/email-templates/portal/templates/${ids.orgTemplate}?organizationId=${ids.org}`)).statusCode).toBe(200)
+
+    const withoutOrganization = await get('/api/email-templates/portal/templates')
+    expect(withoutOrganization.statusCode).toBe(400)
+    expect(withoutOrganization.json()).toEqual({ error: 'organization_id_required' })
+    expect((await get(`/api/email-templates/portal/templates?organizationId=${ids.user}`)).statusCode).toBe(404)
   })
 
   it('blocks publishing invalid template content', async () => {

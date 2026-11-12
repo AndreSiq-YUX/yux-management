@@ -15,13 +15,17 @@ export function PortalEmailTemplatesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // The client's portal resolves its own company; YUX staff operating the workspace name it.
+  const requestOrganizationId = portalMode === 'client_workspace' ? organizationId : undefined
+
   const loadTemplates = useCallback(async () => {
+    if (portalMode === 'client_workspace' && !organizationId) return
     setLoading(true)
     setError(null)
     try {
       const [templateResult, sendRequestResult] = await Promise.all([
-        emailTemplateService.listPortalTemplates(),
-        emailTemplateService.listPortalSendRequests(),
+        emailTemplateService.listPortalTemplates(requestOrganizationId),
+        emailTemplateService.listPortalSendRequests(50, requestOrganizationId),
       ])
       setTemplates(templateResult)
       setSendRequests(sendRequestResult)
@@ -31,7 +35,7 @@ export function PortalEmailTemplatesPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [portalMode, organizationId, requestOrganizationId])
 
   useEffect(() => {
     void loadTemplates()
@@ -64,11 +68,12 @@ export function PortalEmailTemplatesPage() {
           {error}
         </p>
       )}
-      {portalMode === 'portal' && !loading && (!error || templates.length > 0) && <EmailTemplateWorkspace
+      {!loading && (!error || templates.length > 0) && <EmailTemplateWorkspace
         mode="portal"
         templates={templates}
         sendRequests={sendRequests}
         onReload={loadTemplates}
+        organizationId={requestOrganizationId}
       />}
     </div>
   )

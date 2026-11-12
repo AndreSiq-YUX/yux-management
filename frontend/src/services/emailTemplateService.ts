@@ -36,39 +36,45 @@ export class EmailTemplateService {
     return apiRequest<EmailTemplateSendRequest[]>(`/email-templates/admin/send-requests?limit=${limit}`)
   }
 
-  async listPortalTemplates(): Promise<EmailTemplate[]> {
-    return apiRequest<EmailTemplate[]>('/email-templates/portal/templates')
+  async listPortalTemplates(organizationId?: string): Promise<EmailTemplate[]> {
+    return apiRequest<EmailTemplate[]>(`/email-templates/portal/templates${organizationQuery(organizationId)}`)
   }
 
-  async savePortalTemplate(input: EmailTemplateInput): Promise<EmailTemplate> {
-    return apiRequest<EmailTemplate>('/email-templates/portal/templates', {
+  async savePortalTemplate(input: EmailTemplateInput, organizationId?: string): Promise<EmailTemplate> {
+    return apiRequest<EmailTemplate>(`/email-templates/portal/templates${organizationQuery(organizationId)}`, {
       method: 'POST',
       body: input,
     })
   }
 
-  async publishPortalTemplate(id: string): Promise<EmailTemplate> {
-    return apiRequest<EmailTemplate>(`/email-templates/portal/templates/${id}/publish`, {
+  async publishPortalTemplate(id: string, organizationId?: string): Promise<EmailTemplate> {
+    return apiRequest<EmailTemplate>(`/email-templates/portal/templates/${id}/publish${organizationQuery(organizationId)}`, {
       method: 'POST',
     })
   }
 
-  async testPortalTemplate(id: string, input: EmailTemplateTestSendInput): Promise<EmailTemplateTestSendResult> {
-    return apiRequest<EmailTemplateTestSendResult>(`/email-templates/portal/templates/${id}/test-send`, {
+  async testPortalTemplate(id: string, input: EmailTemplateTestSendInput, organizationId?: string): Promise<EmailTemplateTestSendResult> {
+    return apiRequest<EmailTemplateTestSendResult>(`/email-templates/portal/templates/${id}/test-send${organizationQuery(organizationId)}`, {
       method: 'POST',
       body: input,
     })
   }
 
-  async cloneBlueprint(id: string): Promise<EmailTemplate> {
-    return apiRequest<EmailTemplate>(`/email-templates/portal/blueprints/${id}/clone`, {
+  async cloneBlueprint(id: string, organizationId?: string): Promise<EmailTemplate> {
+    return apiRequest<EmailTemplate>(`/email-templates/portal/blueprints/${id}/clone${organizationQuery(organizationId)}`, {
       method: 'POST',
     })
   }
 
-  async listPortalSendRequests(limit = 50): Promise<EmailTemplateSendRequest[]> {
-    return apiRequest<EmailTemplateSendRequest[]>(`/email-templates/portal/send-requests?limit=${limit}`)
+  async listPortalSendRequests(limit = 50, organizationId?: string): Promise<EmailTemplateSendRequest[]> {
+    const organization = organizationId ? `&organizationId=${encodeURIComponent(organizationId)}` : ''
+    return apiRequest<EmailTemplateSendRequest[]>(`/email-templates/portal/send-requests?limit=${limit}${organization}`)
   }
+}
+
+/** The client's own portal resolves its company; YUX staff operating a workspace name it explicitly. */
+function organizationQuery(organizationId?: string) {
+  return organizationId ? `?organizationId=${encodeURIComponent(organizationId)}` : ''
 }
 
 export const emailTemplateService = new EmailTemplateService()

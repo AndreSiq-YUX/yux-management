@@ -25,6 +25,8 @@ interface EmailTemplateWorkspaceProps {
   templates: EmailTemplate[]
   sendRequests?: EmailTemplateSendRequest[]
   onReload: () => Promise<void>
+  /** Explicit company when YUX staff operate the client workspace. */
+  organizationId?: string
 }
 
 type FilterValue = 'all' | string
@@ -37,7 +39,7 @@ const kindLabels: Record<EmailTemplateKind, string> = {
 
 const statusOrder: EmailTemplateStatus[] = ['draft', 'published', 'paused', 'archived']
 
-export function EmailTemplateWorkspace({ mode, templates, sendRequests = [], onReload }: EmailTemplateWorkspaceProps) {
+export function EmailTemplateWorkspace({ mode, templates, sendRequests = [], onReload, organizationId }: EmailTemplateWorkspaceProps) {
   const [selectedId, setSelectedId] = useState<string | null>(templates[0]?.id ?? null)
   const [draft, setDraft] = useState<EmailTemplateInput | null>(() => (templates[0] ? toInput(templates[0]) : null))
   const [isCreating, setIsCreating] = useState(false)
@@ -245,7 +247,7 @@ export function EmailTemplateWorkspace({ mode, templates, sendRequests = [], onR
     await runAction('save', async () => {
       const saved = mode === 'admin'
         ? await emailTemplateService.saveAdminTemplate(draft)
-        : await emailTemplateService.savePortalTemplate(draft)
+        : await emailTemplateService.savePortalTemplate(draft, organizationId)
 
       setSelectedId(saved.id)
       setDraft(toInput(saved))
@@ -262,7 +264,7 @@ export function EmailTemplateWorkspace({ mode, templates, sendRequests = [], onR
     await runAction('publish', async () => {
       const published = mode === 'admin'
         ? await emailTemplateService.publishAdminTemplate(draft.id!)
-        : await emailTemplateService.publishPortalTemplate(draft.id!)
+        : await emailTemplateService.publishPortalTemplate(draft.id!, organizationId)
 
       setSelectedId(published.id)
       setDraft(toInput(published))
@@ -279,7 +281,7 @@ export function EmailTemplateWorkspace({ mode, templates, sendRequests = [], onR
       const input = { to: testRecipient.trim(), variables: testVariables }
       const result = mode === 'admin'
         ? await emailTemplateService.testAdminTemplate(draft.id!, input)
-        : await emailTemplateService.testPortalTemplate(draft.id!, input)
+        : await emailTemplateService.testPortalTemplate(draft.id!, input, organizationId)
 
       setNotice(result.message || (result.sent ? t.testSent : t.testDone))
       await onReload()
@@ -290,7 +292,7 @@ export function EmailTemplateWorkspace({ mode, templates, sendRequests = [], onR
     if (mode !== 'portal' || selectedTemplate?.scope !== 'blueprint') return
 
     await runAction('clone', async () => {
-      const cloned = await emailTemplateService.cloneBlueprint(selectedTemplate.id)
+      const cloned = await emailTemplateService.cloneBlueprint(selectedTemplate.id, organizationId)
       setSelectedId(cloned.id)
       setDraft(toInput(cloned))
       setIsCreating(false)

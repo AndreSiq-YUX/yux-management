@@ -175,7 +175,7 @@ function buildPortalNavigationGroups(context: PlatformContext, basePath = '/port
         { label: 'Base de conhecimento', href: href('/empresa/conhecimento') },
         { label: 'Equipe', href: href('/empresa/usuarios') },
         { label: 'Conexões', href: href('/empresa/integracoes') },
-        ...(context.mode === 'portal' ? [{ label: 'Modelos de e-mail', href: href('/configuracoes/emails') }] : []),
+        { label: 'E-mails', href: href('/configuracoes/emails') },
       ],
     },
   ]

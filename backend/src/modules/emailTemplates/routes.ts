@@ -20,6 +20,9 @@ import type { EmailTemplateRow, EmailTemplateScope, EmailTemplateStatus } from '
 
 const adminRoles = new Set(['admin', 'manager', 'yux_admin', 'yux_operator'])
 const clientRoles = new Set(['client', 'client_admin', 'client_member'])
+// YUX staff operating a client workspace see and manage what the client sees, for an explicit organization.
+const workspaceOperatorRoles = new Set(['yux_admin', 'yux_operator'])
+const organizationQuerySchema = z.object({ organizationId: z.string().uuid().optional() })
 
 const idParamSchema = z.object({ id: z.string().uuid() })
 const statusSchema = z.enum(['draft', 'published', 'paused', 'archived'])
@@ -86,7 +89,7 @@ function requireAdminUser(user: AuthUser, reply: FastifyReply) {
 }
 
 function requirePortalUser(user: AuthUser, reply: FastifyReply) {
-  if (!clientRoles.has(user.role)) {
+  if (!clientRoles.has(user.role) && !workspaceOperatorRoles.has(user.role)) {
     void reply.code(403).send({ error: 'portal_forbidden' })
     return false
   }
@@ -99,6 +102,19 @@ async function resolvePortalOrganization(
   reply: FastifyReply,
   requestedOrganizationId?: string,
 ) {
+  if (workspaceOperatorRoles.has(user.role)) {
+    if (!requestedOrganizationId) {
+      void reply.code(400).send({ error: 'organization_id_required' })
+      return null
+    }
+    const organization = await app.pg.query('SELECT id FROM public.organizations WHERE id = $1 LIMIT 1', [requestedOrganizationId])
+    if (!organization.rows[0]) {
+      void reply.code(404).send({ error: 'organization_not_found' })
+      return null
+    }
+    return requestedOrganizationId
+  }
+
   const memberships = await getMembershipsForUser(app.pg, user.id)
   const organizationId = requestedOrganizationId ?? memberships[0]?.organizationId
 
@@ -108,6 +124,11 @@ async function resolvePortalOrganization(
   }
 
   return organizationId
+}
+
+function requestedOrganization(request: FastifyRequest) {
+  const parsed = organizationQuerySchema.safeParse(request.query)
+  return parsed.success ? parsed.data.organizationId : undefined
 }
 
 function canReadTemplateAsAdmin(template: EmailTemplateRow) {
@@ -267,7 +288,7 @@ export async function registerEmailTemplateRoutes(app: FastifyInstance) {
     const params = idParamSchema.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_template_id' })
 
-    const organizationId = await resolvePortalOrganization(app, user, reply)
+    const organizationId = await resolvePortalOrganization(app, user, reply, requestedOrganization(request))
     if (!organizationId) return reply
 
     const template = await getEmailTemplateById(app.pg, params.data.id)
@@ -285,7 +306,7 @@ export async function registerEmailTemplateRoutes(app: FastifyInstance) {
     const parsed = templateBodySchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() })
 
-    const organizationId = await resolvePortalOrganization(app, user, reply)
+    const organizationId = await resolvePortalOrganization(app, user, reply, requestedOrganization(request))
     if (!organizationId) return reply
 
     const existing = parsed.data.id ? await getEmailTemplateById(app.pg, parsed.data.id) : null
@@ -333,7 +354,7 @@ export async function registerEmailTemplateRoutes(app: FastifyInstance) {
     const params = idParamSchema.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_template_id' })
 
-    const organizationId = await resolvePortalOrganization(app, user, reply)
+    const organizationId = await resolvePortalOrganization(app, user, reply, requestedOrganization(request))
     if (!organizationId) return reply
 
     const template = await getEmailTemplateById(app.pg, params.data.id)
@@ -365,7 +386,7 @@ export async function registerEmailTemplateRoutes(app: FastifyInstance) {
     const parsed = testSendBodySchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() })
 
-    const organizationId = await resolvePortalOrganization(app, user, reply)
+    const organizationId = await resolvePortalOrganization(app, user, reply, requestedOrganization(request))
     if (!organizationId) return reply
 
     const template = await getEmailTemplateById(app.pg, params.data.id)
@@ -383,7 +404,7 @@ export async function registerEmailTemplateRoutes(app: FastifyInstance) {
     const params = idParamSchema.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_template_id' })
 
-    const organizationId = await resolvePortalOrganization(app, user, reply)
+    const organizationId = await resolvePortalOrganization(app, user, reply, requestedOrganization(request))
     if (!organizationId) return reply
 
     const template = await cloneBlueprintTemplate(app.pg, {
