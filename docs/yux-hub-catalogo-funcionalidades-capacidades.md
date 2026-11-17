@@ -1,6 +1,6 @@
 # Catálogo de funcionalidades e capacidades da YUX Hub
 
-**Versão:** 1.1 — 26/09/2026
+**Versão:** 1.2 — 17/11/2026 (contato comercial por e-mail e WhatsApp, captura de respostas)
 
 **Público:** equipe YUX, administradores e agentes de estratégia e planejamento de missões.
 **Escopo:** produto SaaS para organizações de diferentes setores e regiões do Brasil; funções implementadas, funções condicionais e lacunas verificadas no código. A disponibilidade para uma organização depende de contrato, permissões, configurações, integrações e saúde dos provedores.
@@ -100,6 +100,12 @@ Essas combinações são **padrões adaptáveis**, não pacotes fixos nem promes
 
 **Segmentos, sequências e score.** Os filtros permitem formar públicos por origem, etapa, responsável, atividade, campanha, pontuação e proposta. Há modelos/regras de scoring e simulação; sequências de nutrição podem combinar passos e ser publicadas antes da inscrição de leads. Não se deve chamar todo score de “qualificação automática por IA”: a regra e os dados usados precisam ser examinados.
 
+**Contato comercial pela ficha.** A ficha do lead envia e-mail e WhatsApp e mostra as respostas. O e-mail sai pelo **remetente comercial** da organização (endereço profissional próprio ou gerenciado pela YUX), configurado em Empresa → E-mails e aprovado pela YUX; sem remetente aprovado, a ficha não envia e-mail. A **política de contato** da organização define a base de contato: por padrão, e-mail para o contato divulgado pela própria empresa não exige autorização prévia, e WhatsApp exige autorização registrada. Toda mensagem comercial leva descadastro em um clique; quem se descadastra entra na supressão e tem as sequências pausadas. O WhatsApp pela ficha envia texto livre dentro da janela de 24 horas da última mensagem do contato e modelo aprovado fora dela.
+
+**Respostas e histórico.** As respostas por e-mail voltam para o CRM: cada e-mail comercial usa um endereço de resposta próprio, a resposta aparece na aba E-mail e no histórico da ficha, uma cópia vai para a caixa de respostas da empresa e a equipe responde pela ficha mantendo o mesmo fio. Respostas por WhatsApp são ligadas ao lead pelo telefone (inclusive com ou sem o 9º dígito); se o telefone corresponder a mais de um lead, o vínculo não é feito. Respostas automáticas de ausência são registradas, mas não contam como resposta. Uma resposta real gera o evento `lead.response_received`, usado para prioridade e sugestões. Limite: resposta enviada direto da caixa da empresa, fora da plataforma, chega ao contato mas não fica no CRM; anexos ficam registrados só por nome e tamanho.
+
+**Ações em massa.** Na lista de leads, até 100 leads por vez podem mudar de etapa, ser inscritos em uma sequência ou ter as sequências pausadas, com as mesmas regras da ação individual.
+
 **Uso individual:** localizar oportunidades paradas por um período configurável, distribuir tarefas por responsável e medir quantas voltaram ao estágio ativo; ou segmentar contatos por origem e intenção para uma campanha de nutrição.
 
 ### 3.4 Atendimento, WhatsApp e outros canais
@@ -146,7 +152,7 @@ Essas combinações são **padrões adaptáveis**, não pacotes fixos nem promes
 
 **Ações registradas no fluxo.** O validador aceita criar tarefa, mudar etapa/pipeline, atribuir responsável, atualizar campo, registrar atividade, enviar WhatsApp/e-mail, abrir ticket, chamar webhook/API, converter proposta, criar projeto/fatura, classificar lead ou gerar mensagem/proposta com IA, inscrever/pausar sequência, adicionar tag e ajustar score. A presença de um tipo no validador não prova que todas as integrações externas estejam configuradas; cada ação deve passar pela política e pelo executor. Efeitos externos requerem aprovação no fluxo.
 
-**Sequências comerciais.** Uma cadência publicada pode programar contatos e tarefas com intervalos; o sistema registra inscrição, execução e pausa. Pode acompanhar novo lead, proposta em análise, confirmação, pós-venda ou reativação, sempre de acordo com permissão e contexto. Exemplo genérico: após uma solicitação de contato, criar tarefa, enviar resposta permitida, aguardar sinal e oferecer acompanhamento humano se a pessoa demonstrar interesse ou objeção.
+**Sequências comerciais.** Uma cadência publicada pode programar contatos e tarefas com intervalos; o sistema registra inscrição, execução e pausa. Pode acompanhar novo lead, proposta em análise, confirmação, pós-venda ou reativação, sempre de acordo com permissão e contexto. Por padrão, uma sequência **encerra quando o lead responde** (e-mail ou WhatsApp): a inscrição passa a acompanhamento manual e os passos agendados são cancelados; essa opção pode ser desligada por sequência. E-mails de sequência usam o remetente comercial aprovado (sem ele, o remetente global) e respeitam a política de contato. Exemplo genérico: após uma solicitação de contato, criar tarefa, enviar resposta permitida, aguardar sinal e oferecer acompanhamento humano se a pessoa demonstrar interesse ou objeção.
 
 ### 3.8 Missões, execução e aprendizado
 
@@ -299,9 +305,9 @@ As **46 capacidades abaixo estão registradas no código**. “Registrar” não
 | Chave | Finalidade, entradas e resultado esperado | Efeito / controle |
 | --- | --- | --- |
 | `omnichannel.message.draft` | Prepara mensagem revisável para e-mail ou WhatsApp, com objetivo e fontes, sem envio. | Interno; aprovação conforme risco. |
-| `crm.sequence.enroll` | Inscreve lead em sequência publicada, com política para inscrição existente. | Externo; CRM + automações e aprovação obrigatória. |
-| `email.message.queue` | Enfileira e-mail de template publicado com destinatário, variáveis, consentimento e supressão verificada. | Externo; CRM + e-mail conectado e aprovação obrigatória. |
-| `whatsapp.template.queue` | Enfileira template WhatsApp aprovado para contato com permissão registrada. | Externo; omnichannel + WhatsApp conectado e aprovação obrigatória. |
+| `crm.sequence.enroll` | Inscreve lead em sequência publicada, com política para inscrição existente. É hoje o caminho operacional da missão para contato por e-mail: os envios usam remetente comercial, política de contato, descadastro e captura de respostas, e param quando o lead responde. | Externo; CRM + automações e aprovação obrigatória. |
+| `email.message.queue` | Destinada a enfileirar e-mail de template publicado com destinatário, variáveis, consentimento e supressão verificada. **Ainda não executável:** o comando de envio não está ligado ao executor da missão; usar `crm.sequence.enroll` ou envio pela ficha por uma pessoa. | Externo; CRM + e-mail conectado e aprovação obrigatória. |
+| `whatsapp.template.queue` | Destinada a enfileirar template WhatsApp aprovado para contato com permissão registrada. **Ainda não executável:** comando não ligado ao executor; o envio pela ficha do lead é feito por uma pessoa. | Externo; omnichannel + WhatsApp conectado e aprovação obrigatória. |
 | `automation.flow.execute` | Executa versão publicada de automação para entidades delimitadas como subprocesso da missão. | Externo; automações e aprovação obrigatória. |
 
 **Exemplos de composição das capacidades:**
@@ -337,6 +343,7 @@ O leitor deste documento é o **agente de planejamento de missões**. Seu trabal
 | Radar como SaaS para clientes | Dados separados por `organization_id`; campanha parametrizada por segmento/região/oferta | Navegação/API ainda restritas a usuários internos YUX; mensagens de análise e metadados de conversão ainda assumem oferta YUX; autorização por contrato e papel de cliente precisa de implementação e teste |
 | Radar → prospecção → CRM | Conversão em lead com proveniência; plano interno, permissão por canal, sequência, aprovação e execução controlada | Orquestração integrada e parametrizável para cada cliente, sem etapas manuais não declaradas; instrumentação de ponta a ponta e canário real por canal |
 | IA no atendimento | Worker nativo recebe WhatsApp, consulta Harness, classifica, qualifica, propõe/envia resposta conforme política e grava entrega; várias conversas podem coexistir | Roteamento dinâmico entre perfis especializados no worker nativo; uso efetivo do assistente configurado por conexão; validação de escala/qualidade em produção |
+| Contato comercial por e-mail e WhatsApp | Remetente comercial por organização com aprovação YUX, política de contato, descadastro, envio pela ficha, ações em massa, captura de respostas por e-mail e vínculo de respostas do WhatsApp, sequências que param na resposta | Envio direto pela missão (`email.message.queue`, `whatsapp.template.queue`); prontidão de e-mail da missão considerar o remetente comercial aprovado; sincronização de caixas Gmail/Microsoft 365 para registrar respostas dadas fora da plataforma; regras configuráveis entre passos da sequência |
 | Missão planeja o ecossistema inteiro | Action Engine registra 46 capacidades com controles de execução | Radar e grande parte das funções de tela não são capacidades da missão; documento de produto ainda precisa ser ligado ao contexto do agente e mantido sincronizado |
 
 Até essas lacunas serem resolvidas, a formulação correta é: **a YUX Hub combina módulos capazes de apoiar e executar grande parte da jornada comercial, com níveis de autonomia diferentes por etapa e workspace**. Uma jornada comercial totalmente autônoma, disponível a qualquer cliente SaaS, da busca no Maps ao primeiro contato e transferência entre vários agentes, **ainda não foi demonstrada pelo caminho de código atual**.

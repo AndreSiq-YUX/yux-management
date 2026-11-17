@@ -99,7 +99,13 @@ O Action Engine já tem as capacidades (`crm.sequence.enroll`, `email.message.qu
 2. `docs/crm-lead-management.md`: comportamento e regras.
 3. Os manifestos/descrições das capabilities afetadas (`modules/action-engine/capabilities/*`) e as fontes de conhecimento publicadas para o Harness, com as regras desta entrega: política de contato, remetente comercial obrigatório, descadastro, parada por resposta, envio pela ficha, ações em massa e o vínculo automático de respostas do WhatsApp.
 
-Ainda não atualizado para esta entrega: item 3 (capabilities e conhecimento publicado). Depende de decidir se o agente pode usar a política de contato da organização para enviar sem aprovação.
+Situação em 17/11/2026: itens 1 e 2 atualizados (catálogo versão 1.2, com a captura de respostas e a página Empresa → E-mails). Item 3 continua pendente e envolve código, não só texto:
+
+- `email.message.queue` e `whatsapp.template.queue` estão registradas, mas o executor da missão não fornece os comandos `queueEmail`/`queueWhatsapp` (`modules/action-engine/commands.ts`); executá-las falha com `capability_command_unavailable`. Hoje a missão só contata leads por `crm.sequence.enroll`.
+- A prontidão do canal e-mail para a missão (`channel-readiness-source.ts`) olha apenas a conexão SMTP2GO e não o remetente comercial aprovado nem a política de contato.
+- As descrições dessas capabilities não citam remetente comercial, política de contato, descadastro e captura de respostas.
+
+Decisão necessária antes de ligar: se o agente pode usar a política de contato da organização para enviar sem aprovação individual (hoje as duas capabilities exigem aprovação sempre).
 
 ## 6. Villeman e Massas
 

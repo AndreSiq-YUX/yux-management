@@ -7,6 +7,7 @@ Atualizado em: 2026-10-29
 Detalhes, decisões e próximos passos em `docs/crm-relacionamento-plano.md`.
 
 - **Política de contato por organização** (`organization_contact_policies`, API `/api/commercial-email/organizations/:id/contact-policy`): e-mail usa por padrão o contato divulgado pela empresa sem opt-in; WhatsApp exige autorização. Toda mensagem comercial (ficha e sequência) leva descadastro em um clique (`/api/public/email/unsubscribe/:token`).
+- **Remetente comercial e caixa de respostas**: configurados em **Empresa → E-mails** (portal do cliente ou workspace do cliente operado pela YUX, `/client-workspaces/:id/configuracoes/emails`) e aprovados pela YUX em **Admin → E-mail**. O campo "Caixa que receberá as respostas" define quem recebe a cópia de cada resposta capturada.
 - **E-mail pela ficha** (`/api/crm/leads/:id/email`): exige remetente comercial aprovado; registra a base de contato usada (`metadata.contactBasis`).
 - **WhatsApp pela ficha** (`/api/crm/leads/:id/whatsapp`): texto dentro da janela de 24h, modelo aprovado fora dela; cria/reaproveita contato e conversa e o vínculo `lead_conversation_links`.
 - **Respostas do WhatsApp** são ligadas ao lead pelo telefone normalizado (inclui 9º dígito); lead ambíguo não é ligado.

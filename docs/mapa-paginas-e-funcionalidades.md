@@ -343,7 +343,7 @@ tem o modulo contratado):
 | Execucao YUX | Missoes | `/portal/missoes` | `/client-workspaces/:organizationId/missoes` |
 | Projetos | Projetos e entregas; Documentos; Propostas | `/portal/projetos/*` | `/client-workspaces/:organizationId/projetos/*` |
 | Resultados | Relatorios | `/portal/relatorios` | `/client-workspaces/:organizationId/relatorios` |
-| Empresa | Perfil da empresa; Marca e tom de voz; Base de conhecimento; Equipe; Conexoes; Modelos de e-mail (so no portal) | `/portal/empresa/*`; `/portal/configuracoes/emails` | `/client-workspaces/:organizationId/empresa/*` |
+| Empresa | Perfil da empresa; Marca e tom de voz; Base de conhecimento; Equipe; Conexoes; E-mails | `/portal/empresa/*`; `/portal/configuracoes/emails` | `/client-workspaces/:organizationId/empresa/*`; `.../configuracoes/emails` |
 | Rodape fixo | Financeiro; Ajuda e suporte; Minha conta | `/portal/financeiro`; `/portal/suporte`; `/portal/configuracoes/conta` | `/client-workspaces/:organizationId/financeiro`; `.../suporte`; `.../configuracoes/conta` |
 
 Funcoes que dependem de backend ainda nao implantado ficam visiveis com o selo
@@ -441,14 +441,22 @@ Funcionalidades:
 - ver status de conexao, ultima sincronizacao e necessidade de reautenticacao;
 - acessar atalhos para canais, campanhas e Marketing Studio.
 
-#### Modelos de e-mail
+#### E-mails
 
-Rota:
+Rotas:
 
-- `/portal/configuracoes/emails` (menu: Empresa > Modelos de e-mail; so no Portal do Cliente)
+- `/portal/configuracoes/emails` (menu: Empresa > E-mails; antes "Modelos de e-mail")
+- `/client-workspaces/:organizationId/configuracoes/emails` (mesma tela para a YUX
+  operando o cliente; a YUX ve no workspace tudo o que o cliente ve no portal,
+  garantido por `frontend/src/App.routes.test.ts` e pelo teste de navegacao)
 
 Funcionalidades:
 
+- **Remetente comercial**: tipo (endereco profissional proprio ou gerenciado pela
+  YUX), nome comercial, endereco de envio e **caixa que recebera as respostas**
+  dos leads; a YUX aprova ou pausa em `/admin/email`;
+- **Politica de contato**: e-mail para o contato divulgado pela empresa sem
+  autorizacao previa (padrao) ou exigindo autorizacao; WhatsApp com autorizacao;
 - criar e publicar modelos de e-mail da empresa;
 - inserir variaveis por botoes com nome amigavel (ex.: "Nome do contato"),
   sem digitar a sintaxe tecnica;
