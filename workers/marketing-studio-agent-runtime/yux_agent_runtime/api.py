@@ -17,7 +17,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_serial
 from .queue import AgentEventQueue
 from .knowledge_intelligence import KnowledgeIntelligenceService
 from .strategy_curation import StrategyCurationService
-from .providers import ProviderRequestError,ProviderAuthorizationError
+from .providers import ProviderRequestError, ProviderAuthorizationError, ProviderDeadlineExceededError, provider_request_budget, provider_request_timeout
+from .planning_budget import runtime_budget_from_wire
 from .runtime_factory import build_mission_supervisor, build_strategy_workflow_engine, build_routed_client
 from .llm_routing import effective_legacy_routes
 from .radar_qualification import qualify_radar_business, validate_radar_qualification_response
@@ -27,7 +28,7 @@ from .radar_receipts import execute_radar_receipt, revalidate_radar_receipt
 from .radar_decisions import decide_radar_action, validate_saved_decision, TASKS as DECISION_TASKS
 from .perplexity_research import run_radar_deep_research,normalize_research_response,REMOTE_FINANCIAL_CEILING_SUPPORTED
 from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore, CreditReservationError, WorkflowCreditConflict
-from .strategy_usage import PlanningAttemptLimitExceeded, StrategyUsage
+from .strategy_usage import PlanningLimitExceeded, StrategyUsage
 from .trace import stable_hash
 from .mission import MissionPlanRequest, plan_mission
 from .mission_supervisor import MissionSupervisor, MissionSupervisorError
@@ -761,6 +762,34 @@ def create_app(
     ) -> dict[str, Any]:
         return execute_mission_plan(request, "1", spec_fingerprint)
 
+    def run_governed_mission_plan(value: dict[str, Any], meter: StrategyUsage, spec_fingerprint: str):
+        try:
+            budget = runtime_budget_from_wire(value["planning_budget"])
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail="mission_plan_budget_invalid") from error
+        if budget.latency_ms == 0:
+            raise ProviderDeadlineExceededError("provider_request_deadline_exceeded")
+
+        with provider_request_budget(budget.latency_ms / 1000):
+            try:
+                supervisor, spec = mission_planner(value).govern_execution(value)
+            except (MissionSupervisorError, ProviderRequestError) as error:
+                raise HTTPException(status_code=409, detail="mission_plan_spec_changed") from error
+            estimate = value["planning_budget"]["estimate"]
+            if spec["fingerprint"] != spec_fingerprint or spec["calls"] != estimate.get("calls"):
+                raise HTTPException(status_code=409, detail="mission_plan_spec_changed")
+            meter.max_planning_attempts = spec["calls"]
+            meter.planning_budget = budget
+            meter.check_planning_deadline = provider_request_timeout
+            provider_request_timeout()
+            with meter.activate():
+                try:
+                    return plan_mission(value, supervisor)
+                finally:
+                    # Even a late successful response (or the legacy canonical
+                    # recovery fallback) cannot publish a plan after the deadline.
+                    provider_request_timeout()
+
     def execute_mission_plan(request: MissionPlanRequest, pilot_usage: str | None, spec_fingerprint: str | None = None):
         validate_tenant(request.organization_id, request.client_id, request.contract_id, profile_key="mission_supervisor")
         packs = [request.action_pack, *request.pack_catalog]
@@ -772,31 +801,29 @@ def create_app(
             if spec_fingerprint is not None:
                 if not meter or not governed_plan_supported(request) or not request.planning_budget:
                     raise HTTPException(status_code=400, detail="mission_plan_spec_not_supported")
-                try:
-                    supervisor, spec = mission_planner(value).govern_execution(value)
-                except (MissionSupervisorError, ProviderRequestError) as error:
-                    raise HTTPException(status_code=409, detail="mission_plan_spec_changed") from error
-                estimate = value["planning_budget"].get("estimate")
-                if not isinstance(estimate, dict) or spec["fingerprint"] != spec_fingerprint or spec["calls"] != estimate.get("calls"):
-                    raise HTTPException(status_code=409, detail="mission_plan_spec_changed")
-                meter.max_planning_attempts = spec["calls"]
+                result = run_governed_mission_plan(value, meter, spec_fingerprint)
             else:
                 supervisor = None if request.proposed_plan is not None else mission_planner(value)
-            with meter.activate() if meter else nullcontext():
-                result = plan_mission(value, supervisor)
+                with meter.activate() if meter else nullcontext():
+                    result = plan_mission(value, supervisor)
         except Exception as error:
-            recognized = isinstance(error, (MissionSupervisorError, PlanningAttemptLimitExceeded))
+            limit_reached = spec_fingerprint is not None and isinstance(error, (PlanningLimitExceeded, ProviderDeadlineExceededError))
+            recognized = limit_reached or isinstance(error, MissionSupervisorError)
             if not recognized and not (meter and meter.attempts):
                 raise
             code = str(error) if recognized else "mission_supervisor_processing_failed"
+            if limit_reached and isinstance(error, ProviderDeadlineExceededError):
+                code = "mission_plan_latency_limit_exhausted"
             status_code = (503 if code == "mission_supervisor_model_unavailable" else 422) if recognized else 500
             logger.error("%s", json.dumps(mission_failure_diagnostic(
                 error, stage="planning", status=status_code, context=value,
             )))
             detail = code
-            if meter and meter.attempts:
+            if meter and (meter.attempts or limit_reached):
                 safe_code = code if re.fullmatch(r"(?:mission_supervisor|mission_plan|funnel_nurture|campaign_launch)_[a-z0-9_]{1,80}", code) else "mission_supervisor_processing_failed"
                 detail = {"code": safe_code, "planningMeasurements": meter.planning_measurements()}
+                if limit_reached and not meter.attempts:
+                    detail["confirmedNotStarted"] = True
             raise HTTPException(status_code=status_code, detail=detail) from error
         if meter and meter.attempts:
             trace = result["trace"]

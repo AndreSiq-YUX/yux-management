@@ -7,12 +7,14 @@ from dataclasses import dataclass, field
 from math import isfinite
 from typing import Any, Callable
 
+from .planning_budget import PlanningRuntimeBudget
+
 
 _meter: ContextVar[StrategyUsage | None] = ContextVar("strategy_usage", default=None)
 _stage: ContextVar[str] = ContextVar("strategy_usage_stage", default="retrieval")
 
 
-class PlanningAttemptLimitExceeded(RuntimeError):
+class PlanningLimitExceeded(RuntimeError):
     pass
 
 
@@ -21,6 +23,9 @@ class StrategyUsage:
     record: Callable[[list[dict[str, Any]]], None] | None = None
     attempts: list[dict[str, Any]] = field(default_factory=list)
     max_planning_attempts: int | None = None
+    planning_budget: PlanningRuntimeBudget | None = None
+    check_planning_deadline: Callable[[], float] | None = None
+    _planning_output_caps: list[int] = field(default_factory=list, init=False, repr=False)
 
     @contextmanager
     def activate(self):
@@ -33,6 +38,41 @@ class StrategyUsage:
     def persist(self):
         if self.record is not None:
             self.record(self.attempts)
+
+    def known_tokens(self, kind: str) -> int:
+        return sum((attempt["tokens"] or {}).get(kind) or 0 for attempt in self.attempts)
+
+    def planning_output_committed(self) -> int:
+        committed = 0
+        for attempt, cap in zip(self.attempts, self._planning_output_caps, strict=True):
+            measured = (attempt["tokens"] or {}).get("output")
+            committed += cap if measured is None else measured
+        return committed
+
+    def limit_planning_request(self, payload: dict[str, Any]):
+        assert self.planning_budget is not None and self.max_planning_attempts is not None
+        if self.check_planning_deadline is not None:
+            self.check_planning_deadline()
+        if len(self.attempts) >= self.max_planning_attempts:
+            raise PlanningLimitExceeded("mission_plan_attempt_limit_exhausted")
+        if self.known_tokens("input") >= self.planning_budget.input_tokens:
+            raise PlanningLimitExceeded("mission_plan_input_token_limit_exhausted")
+        # An unconfirmed attempt keeps its output allowance. The receipt still
+        # distinguishes missing measurements from observed zero tokens.
+        remaining = self.planning_budget.output_tokens - self.planning_output_committed()
+        if remaining <= 0:
+            raise PlanningLimitExceeded("mission_plan_output_token_limit_exhausted")
+        cap = min(payload["max_completion_tokens"], remaining)
+        payload["max_completion_tokens"] = cap
+        self._planning_output_caps.append(cap)
+
+    def check_planning_tokens(self):
+        if self.planning_budget is None:
+            return
+        if self.known_tokens("input") > self.planning_budget.input_tokens:
+            raise PlanningLimitExceeded("mission_plan_input_token_limit_exhausted")
+        if self.planning_output_committed() > self.planning_budget.output_tokens:
+            raise PlanningLimitExceeded("mission_plan_output_token_limit_exhausted")
 
     def total_cost_usd(self):
         costs = [attempt["costUsd"] for attempt in self.attempts]
@@ -87,8 +127,8 @@ def strategy_metered_transport(transport, url, headers, payload, method, *, prov
     meter = _meter.get()
     if meter is None:
         return transport(url, headers, payload, method)
-    if meter.max_planning_attempts is not None and len(meter.attempts) >= meter.max_planning_attempts:
-        raise PlanningAttemptLimitExceeded("mission_plan_attempt_limit_exhausted")
+    if meter.planning_budget is not None:
+        meter.limit_planning_request(payload)
     attempt = {
         "stage": _stage.get(), "kind": kind, "provider": provider, "model": payload["model"],
         "requestedModels": payload.get("models") or [payload["model"]],
@@ -113,6 +153,7 @@ def strategy_metered_transport(transport, url, headers, payload, method, *, prov
     if isinstance(response, dict) and isinstance(response.get("model"), str):
         attempt["model"] = response["model"]
     meter.persist()
+    meter.check_planning_tokens()
     return response
 
 

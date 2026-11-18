@@ -182,6 +182,7 @@ export async function settlePlanningCall(client: Queryable, input: {
   providerModelId?: string
   metadata?: Record<string, unknown>
   recordBudgetOverage?: boolean
+  budgetLimit?: string
 } & ({ actual: PlanningUsage; confirmedNotStarted?: false } | { confirmedNotStarted: true })): Promise<{ usage: PlanningUsage; budgetExceeded: boolean }> {
   const result = await client.query<{
     budget: PlanningCycleBudget; usage: PlanningUsage; status: string;
@@ -215,6 +216,7 @@ export async function settlePlanningCall(client: Queryable, input: {
   const actual = input.confirmedNotStarted ? { calls: 0, inputTokens: 0, outputTokens: 0, costBrl: '0', latencyMs: 0 } : input.actual
   const decision = evaluatePlanningReservation(row.budget, base, actual)
   if (!decision.allowed && !input.recordBudgetOverage) throw new Error('planning_actual_budget_exhausted')
+  const terminalReason = decision.allowed ? input.budgetLimit ?? null : decision.reason
   await client.query(
     `INSERT INTO public.action_planning_usage_entries (
        organization_id, cycle_id, specialist_profile, specialist_version, nature,
@@ -230,9 +232,9 @@ export async function settlePlanningCall(client: Queryable, input: {
          status = CASE WHEN $4::text IS NULL THEN status ELSE 'exhausted' END,
          terminal_reason = COALESCE($4, terminal_reason), updated_at = NOW()
      WHERE id = $1 AND organization_id = $2`,
-    [input.cycleId, input.organizationId, decision.projected, decision.allowed ? null : decision.reason],
+    [input.cycleId, input.organizationId, decision.projected, terminalReason],
   )
-  return { usage: decision.projected, budgetExceeded: !decision.allowed }
+  return { usage: decision.projected, budgetExceeded: terminalReason !== null }
 }
 
 function parseDecimal(value: string): bigint {

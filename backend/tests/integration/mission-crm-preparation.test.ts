@@ -16,7 +16,9 @@ import { createSequenceDraft, publishSequenceDraft } from '../../src/modules/aut
 import { buildMissionPlanningCatalog, buildMissionPlanningContext } from '../../src/modules/action-engine/mission-plan-request.js'
 import { getMission, hashCanonical } from '../../src/modules/action-engine/repository.js'
 
-it.each(['success', 'specialist_failure', 'spec_changed', 'calls_exhausted'])('preserves the CRM preparation journey and private accounting in %s', async outcome => {
+const planningOutcomes = ['success', 'specialist_failure', 'spec_changed', 'calls_exhausted', 'deadline_before_call', 'token_limit_with_receipt']
+
+it.each(planningOutcomes)('preserves the CRM preparation journey and private accounting in %s', async outcome => {
   const jobs: Array<{name: string; data: Record<string, unknown>; options?: EnqueueJobOptions}> = []
   const queue = { async add(name: string, data: Record<string, unknown>, options?: EnqueueJobOptions) { jobs.push({name,data,options}); return {id: randomUUID()} }, async close() {} }
   const rig = await createIntegrationRig({queueMode: 'stub', missionConversations: true, stubJobQueue: queue})
@@ -156,6 +158,36 @@ it.each(['success', 'specialist_failure', 'spec_changed', 'calls_exhausted'])('p
       const scope = new URLSearchParams({ organizationId: org, contractId: rig.ids.contractA, missionId })
       const history = await rig.request('yux_admin', 'GET', `/api/strategy-engine/agent-prompts/planning-history?${scope}`)
       expect(history.body.executions).toEqual(changed ? [expect.objectContaining({ totalUsd: 0, reconciledBrl: '0', stages: [] })] : [])
+      expect((await rig.sql('SELECT id FROM public.action_plans WHERE mission_id=$1', [missionId])).rows).toHaveLength(0)
+      expect((await getChat()).body.status).toBe('blocked')
+      expect(await rig.providerCalls()).toHaveLength(0)
+      return
+    }
+    if (outcome === 'deadline_before_call' || outcome === 'token_limit_with_receipt') {
+      const notStarted = outcome === 'deadline_before_call'
+      const code = notStarted ? 'mission_plan_latency_limit_exhausted' : 'mission_plan_output_token_limit_exhausted'
+      const cutoff: typeof fetch = async (url) => {
+        expect(new URL(String(url)).pathname).toBe('/missions/plan-governed')
+        return Response.json({ detail: { code, confirmedNotStarted: notStarted, planningMeasurements: notStarted ? [] : [
+          { node: 'planner', attemptCount: 1, inputTokens: 100, outputTokens: 50, reasoningTokens: 6, reportedCostUsd: 0.014 },
+        ] } }, { status: 422 })
+      }
+      await expect(within(() => handleActionEnginePlanMission(pool as never, env, planJob.data, queue, {
+        resolvePlanningSpec,
+        invokePlan: (config, input, _fetch, meter, fingerprint) => requestMissionPlan(config, input, cutoff, meter, fingerprint),
+      }))).rejects.toThrow(notStarted ? code : 'planning_actual_budget_exhausted')
+      const ledger = await rig.sql(`SELECT cycle.status, cycle.terminal_reason, usage.nature, usage.calls, usage.output_tokens,
+          usage.cost_brl::text FROM public.action_planning_cycles cycle
+        JOIN public.action_planning_usage_entries usage ON usage.cycle_id=cycle.id
+        WHERE cycle.mission_id=$1 AND usage.nature<>'reservation'`, [missionId])
+      expect(ledger.rows).toEqual([notStarted
+        ? { status: 'exhausted', terminal_reason: code, nature: 'release', calls: 0, output_tokens: 0, cost_brl: '0.000000' }
+        : { status: 'exhausted', terminal_reason: code, nature: 'actual', calls: 1, output_tokens: 50, cost_brl: '5.000000' }])
+      const scope = new URLSearchParams({ organizationId: org, contractId: rig.ids.contractA, missionId })
+      const history = await rig.request('yux_admin', 'GET', `/api/strategy-engine/agent-prompts/planning-history?${scope}`)
+      expect(history.body.executions).toEqual([expect.objectContaining({
+        state: 'exhausted', totalUsd: notStarted ? 0 : 0.014, reconciledBrl: notStarted ? '0' : null,
+      })])
       expect((await rig.sql('SELECT id FROM public.action_plans WHERE mission_id=$1', [missionId])).rows).toHaveLength(0)
       expect((await getChat()).body.status).toBe('blocked')
       expect(await rig.providerCalls()).toHaveLength(0)

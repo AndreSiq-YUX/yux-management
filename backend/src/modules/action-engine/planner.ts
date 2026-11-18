@@ -106,10 +106,16 @@ function decimalParameter(value: unknown): bigint {
   return BigInt(whole || '0') * 1_000_000n + BigInt(fraction.slice(0, 6).padEnd(6, '0') || '0')
 }
 
+const planningLimitCode = z.enum([
+  'mission_plan_attempt_limit_exhausted', 'mission_plan_input_token_limit_exhausted',
+  'mission_plan_output_token_limit_exhausted', 'mission_plan_latency_limit_exhausted',
+])
+
 export class MissionPlanningFailure extends Error {
   readonly measurements: ReturnType<typeof normalizePlanningMeasurements>
 
-  constructor(message: string, measurements: unknown) {
+  constructor(message: string, measurements: unknown, readonly limitCode?: z.infer<typeof planningLimitCode>,
+    readonly confirmedNotStarted = false) {
     super(message)
     this.measurements = normalizePlanningMeasurements(measurements)
   }
@@ -156,7 +162,8 @@ export async function requestMissionPlan(
     method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${env.YUX_AGENT_RUNTIME_TOKEN}`,
       ...(usePilotMeasurements ? { 'X-YUX-Mission-Pilot-Usage': '1' } : {}),
       ...(governed ? { 'X-YUX-Mission-Planning-Spec': governed } : {}) },
-    body: JSON.stringify(wire), signal: AbortSignal.timeout(60_000),
+    // A governed runtime stops provider work within 60 seconds. Allow it to return partial receipts.
+    body: JSON.stringify(wire), signal: AbortSignal.timeout(governed ? 70_000 : 60_000),
   })
   if (!response.ok) {
     // Retain only a bounded machine code; runtime bodies can contain private data.
@@ -165,9 +172,11 @@ export async function requestMissionPlan(
       throw new MissionPlanningSpecChanged()
     }
     if (usePilotMeasurements && body?.detail && typeof body.detail === 'object') {
-      const { code, planningMeasurements } = body.detail as Record<string, unknown>
+      const { code, planningMeasurements, confirmedNotStarted } = body.detail as Record<string, unknown>
       if (typeof code === 'string' && /^(mission_supervisor|mission_plan|funnel_nurture|campaign_launch)_[a-z0-9_]{1,80}$/.test(code)) {
-        throw new MissionPlanningFailure(`agent_harness_plan_failed:${response.status}:${code}`, planningMeasurements)
+        const limit = governed && response.status === 422 ? planningLimitCode.safeParse(code).data : undefined
+        const noAttempts = !!limit && confirmedNotStarted === true && Array.isArray(planningMeasurements) && planningMeasurements.length === 0
+        throw new MissionPlanningFailure(`agent_harness_plan_failed:${response.status}:${code}`, planningMeasurements, limit, noAttempts)
       }
     }
     const detail=typeof body?.detail==='string'&&/^[a-z][a-z0-9_]{2,100}$/.test(body.detail)?body.detail:undefined

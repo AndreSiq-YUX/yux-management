@@ -6,6 +6,7 @@ from hashlib import sha256
 import pytest
 from fastapi.testclient import TestClient
 
+from yux_agent_runtime import providers
 from yux_agent_runtime.instruction_preview import preview_mission_supervisor
 from yux_agent_runtime.llm_routing import RoutedLlmClient
 from yux_agent_runtime.mission_supervisor import MissionSupervisor, MissionSupervisorError
@@ -427,7 +428,7 @@ def _planning_budget(max_calls=8):
     return {
         "budget": {"maxCalls": max_calls, "maxInputTokens": 50000, "maxOutputTokens": 10000,
                    "maxCostBrl": "5", "maxLatencyMs": 120000},
-        "usage": {"calls": 0}, "estimate": {"calls": 1},
+        "usage": {"calls": 0}, "estimate": {"calls": 1, "latencyMs": 60000},
     }
 
 
@@ -464,6 +465,10 @@ def test_planning_spec_resolves_specialists_and_rejects_changes_before_transport
     assert changed.status_code == 409 and changed.json() == {"detail": "mission_plan_spec_changed"}
     assert not sent
     active_model[0] = "initial"
+    request["planning_budget"]["budget"]["maxOutputTokens"] -= 1
+    changed_limit = api.post("/missions/plan-governed", json=request, headers=execute_headers)
+    assert changed_limit.status_code == 409 and changed_limit.json() == {"detail": "mission_plan_spec_changed"}
+    request["planning_budget"]["budget"]["maxOutputTokens"] += 1
     request["mission_prompt"] = {"version": 1, "instructions": {"planner": "Revise a logística."}}
     assert api.post("/missions/plan-governed", json=request, headers=execute_headers).json() == {"detail": "mission_plan_spec_changed"}
     assert not sent
@@ -520,3 +525,100 @@ def test_governed_execution_uses_the_validated_route_without_reading_it_again(mo
                       headers={**headers, "X-YUX-Mission-Planning-Spec": spec["fingerprint"]})
     assert result.status_code == 200, result.text
     assert sent == ["validated"]
+
+
+def _run_governed(api, request):
+    headers = {"Authorization": "Bearer synthetic-token"}
+    quoted = api.post("/missions/planning-spec", json=request, headers=headers)
+    assert quoted.status_code == 200, quoted.text
+    spec = quoted.json()
+    request["planning_budget"]["estimate"]["calls"] = spec["calls"]
+    return api.post("/missions/plan-governed", json=request,
+                    headers={**headers, "X-YUX-Mission-Planning-Spec": spec["fingerprint"]})
+
+
+@pytest.mark.parametrize("output_limit, fallback_cap", [(100, None), (150, 50)])
+def test_governed_output_allowance_retains_unconfirmed_attempts(monkeypatch, output_limit, fallback_cap):
+    request = {**_request(), "planning_budget": _planning_budget(max_calls=2)}
+    request["planning_budget"]["budget"]["maxOutputTokens"] = output_limit
+    supervisor = _supervisor(_plan_response())
+    sent = []
+    original = supervisor.client.transport
+
+    def transport(*args):
+        _, _, payload, _ = args
+        sent.append((payload["model"], payload["max_completion_tokens"]))
+        if payload["model"] == "primary":
+            raise ProviderRequestError("simulated timeout")
+        return original(*args)
+
+    supervisor.client.transport = transport
+    routes = [{"agent_type": "mission_supervisor", "routing_tier": "default", "provider": "openrouter",
+               "model_name": "primary", "fallback_model_name": "fallback", "max_output_tokens": 100}]
+    clients = {"openrouter": supervisor.client}
+    supervisor.client = RoutedLlmClient("mission_supervisor", lambda: routes, lambda _: clients)
+    result = _run_governed(_planning_client(supervisor, monkeypatch), request)
+    assert sent[0] == ("primary", 100)
+    if fallback_cap is None:
+        assert result.status_code == 422 and len(sent) == 1
+        detail = result.json()["detail"]
+        assert detail["code"] == "mission_plan_output_token_limit_exhausted"
+        measurements = detail["planningMeasurements"]
+    else:
+        assert result.status_code == 200, result.text
+        assert sent == [("primary", 100), ("fallback", fallback_cap)]
+        measurements = result.json()["trace"]["planningMeasurements"]
+    receipt, = measurements
+    assert receipt["outputTokens"] is None and receipt["attemptsWithoutCost"] > 0
+    assert receipt["knownOutputTokens"] == fallback_cap
+
+
+@pytest.mark.parametrize("input_limit", [99, 100])
+def test_governed_input_limit_blocks_the_next_specialist_and_keeps_receipt(monkeypatch, input_limit):
+    request, response, _ = _crm_preparation_case()
+    request["mission"]["parameters"].update(icp="Cozinhas industriais", offer="Massas congeladas")
+    request["planning_budget"] = _planning_budget()
+    request["planning_budget"]["budget"]["maxInputTokens"] = input_limit
+    supervisor = _supervisor(response)
+    dispatched = []
+    original = supervisor.client.transport
+
+    def capture(*args):
+        dispatched.append(args[2])
+        return original(*args)
+
+    supervisor.client.transport = capture
+    result = _run_governed(_planning_client(supervisor, monkeypatch), request)
+    assert result.status_code == 422 and len(dispatched) == 1, result.text
+    detail = result.json()["detail"]
+    assert detail["code"] == "mission_plan_input_token_limit_exhausted"
+    assert [(entry["node"], entry["inputTokens"]) for entry in detail["planningMeasurements"]] == [("planner", 100)]
+
+
+@pytest.mark.parametrize("latency_ms", [0, 20])
+def test_governed_deadline_preserves_known_receipt_and_refuses_a_late_plan(monkeypatch, latency_ms):
+    request = {**_request(), "planning_budget": _planning_budget()}
+    request["planning_budget"]["estimate"]["latencyMs"] = latency_ms
+    supervisor = _supervisor(_plan_response())
+    original = supervisor.client.transport
+    clock = [10.0]
+    monkeypatch.setattr(providers, "monotonic", lambda: clock[0])
+
+    def late(*args):
+        assert 0 < providers.provider_request_timeout() <= 0.02
+        result = original(*args)
+        result["usage"]["cost"] = 0.004
+        clock[0] += 0.03
+        return result
+
+    supervisor.client.transport = late
+    result = _run_governed(_planning_client(supervisor, monkeypatch), request)
+    assert result.status_code == 422, result.text
+    detail = result.json()["detail"]
+    assert detail["code"] == "mission_plan_latency_limit_exhausted"
+    if latency_ms == 0:
+        assert detail["confirmedNotStarted"] is True and detail["planningMeasurements"] == []
+    else:
+        receipt, = detail["planningMeasurements"]
+        assert "confirmedNotStarted" not in detail
+        assert receipt["reportedCostUsd"] == 0.004 and receipt["attemptCount"] == 1

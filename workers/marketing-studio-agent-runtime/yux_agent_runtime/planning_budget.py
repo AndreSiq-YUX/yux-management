@@ -29,6 +29,33 @@ class PlanningEstimate(PlanningUsage):
 
 
 @dataclass(frozen=True)
+class PlanningRuntimeBudget:
+    input_tokens: int
+    output_tokens: int
+    latency_ms: int
+
+
+def runtime_budget_from_wire(value: dict[str, Any]) -> PlanningRuntimeBudget:
+    budget, usage, estimate = (value.get(key) for key in ("budget", "usage", "estimate"))
+    if not all(isinstance(item, dict) for item in (budget, usage, estimate)):
+        raise ValueError("mission_plan_budget_invalid")
+
+    def counter(raw):
+        if type(raw) is not int or not 0 <= raw <= 2_147_483_647:
+            raise ValueError("mission_plan_budget_invalid")
+        return raw
+
+    def remaining(maximum, consumed):
+        return max(0, counter(budget.get(maximum)) - counter(usage.get(consumed, 0)))
+
+    return PlanningRuntimeBudget(
+        input_tokens=remaining("maxInputTokens", "inputTokens"),
+        output_tokens=remaining("maxOutputTokens", "outputTokens"),
+        latency_ms=min(60_000, counter(estimate.get("latencyMs")), remaining("maxLatencyMs", "latencyMs")),
+    )
+
+
+@dataclass(frozen=True)
 class PlanningReservationDecision:
     allowed: bool
     reason: str | None

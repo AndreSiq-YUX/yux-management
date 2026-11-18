@@ -223,7 +223,7 @@ class OpenRouterClient:
             } if usage else None,
             "cost_usd": float(usage["cost"]) if isinstance(usage.get("cost"), (int, float)) else None,
             "raw_response_id": response.get("id"),
-            "request_parameters": {"temperature": temperature, "max_tokens": max_tokens,
+            "request_parameters": {"temperature": temperature, "max_tokens": payload["max_completion_tokens"],
                                    **({"reasoning": reasoning} if self.provider_name == "openrouter" and reasoning is not None else {})},
             "prompt_hash": sha256(json.dumps(messages, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest(),
             "provider_request_fingerprint": stable_hash({key: value for key, value in payload.items() if key != "session_id"}),

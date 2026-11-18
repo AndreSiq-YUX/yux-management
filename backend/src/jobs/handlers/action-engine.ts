@@ -640,10 +640,12 @@ export async function handleActionEnginePlanMission(
     try {
       rawPlan = await (dependencies.invokePlan ?? requestMissionPlan)(env, payload, undefined, governedPlanning, spec?.fingerprint)
     } catch (error) {
-      if (spec && error instanceof MissionPlanningSpecChanged) {
+      if (spec && (error instanceof MissionPlanningSpecChanged || (error instanceof MissionPlanningFailure && error.confirmedNotStarted))) {
+        const limit = error instanceof MissionPlanningFailure ? error.limitCode : undefined
         await transaction(pool, client => settlePlanningCall(client, {
           cycleId: planningCycle.id, organizationId, reservationId, confirmedNotStarted: true,
-          metadata: { reason: 'mission_plan_spec_changed' },
+          budgetLimit: limit,
+          metadata: { reason: limit ?? 'mission_plan_spec_changed', confirmedNotStarted: true },
         }))
       }
       if (!governedPlanning || !(error instanceof MissionPlanningFailure) || !error.measurements.length) throw error
@@ -663,6 +665,7 @@ export async function handleActionEnginePlanMission(
     const settlement = await transaction(pool, client => settlePlanningCall(client, {
       cycleId: planningCycle.id, organizationId, reservationId,
       actual, recordBudgetOverage: governedPlanning,
+      budgetLimit: planningFailure?.limitCode,
       providerModelId: typeof rawTrace.resolvedModelId === 'string' ? rawTrace.resolvedModelId : undefined,
       metadata: {
         profileKey: rawTrace.profileKey ?? 'mission_supervisor', promptHash: rawTrace.promptHash ?? null,

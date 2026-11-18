@@ -128,8 +128,8 @@ class MissionSupervisor:
     def govern_execution(self, value: dict[str, Any]):
         """Resolve the exact requests and ordered routes without calling the models."""
         budget = value["planning_budget"]
-        ceiling, usage = budget.get("budget"), budget.get("usage")
-        if not isinstance(ceiling, dict) or not isinstance(usage, dict):
+        ceiling, usage, estimate = (budget.get(key) for key in ("budget", "usage", "estimate"))
+        if not all(isinstance(item, dict) for item in (ceiling, usage, estimate)):
             raise MissionSupervisorError("mission_plan_budget_invalid")
         maximum, used = ceiling.get("maxCalls"), usage.get("calls")
         if type(maximum) is not int or type(used) is not int or maximum < 0 or used < 0:
@@ -162,8 +162,9 @@ class MissionSupervisor:
         possible_attempts = sum(len(group["requests"]) * group["attempts"] for group in descriptor)
         # Keep the full primary requirement so the worker can reject an undersized budget.
         calls = max(primary_calls, min(possible_attempts, maximum - used))
-        return prepared, {"calls": calls, "profileVersion": self.profile.version,
-                          "fingerprint": stable_hash({"routes": descriptor, "calls": calls})}
+        fingerprint = stable_hash({"routes": descriptor, "calls": calls, "ceiling": ceiling, "usage": usage,
+                                   "estimate": {key: item for key, item in estimate.items() if key != "calls"}})
+        return prepared, {"calls": calls, "profileVersion": self.profile.version, "fingerprint": fingerprint}
 
     def propose(self, value: dict[str, Any]) -> dict[str, Any]:
         route, request = self.prepare_request(value)
