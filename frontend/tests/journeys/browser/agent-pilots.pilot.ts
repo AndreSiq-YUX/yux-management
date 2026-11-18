@@ -203,6 +203,56 @@ test('compares pilot prompts, imports a CRM draft and executes a scoped preparat
       emails: ['draft', 'draft', 'draft'], active_sequences: [false], sequence_versions: ['draft'], ...noEffects,
     }], providerCalls: 0 })
   })
+
+  await test.step('plan the agency mission using only its own offer and available actions', async () => {
+    await page.goto(`/client-workspaces/${data.presalesOrg}/missoes`)
+    await page.getByRole('button', { name: 'Conversar com o agente' }).click()
+    await page.getByRole('textbox', { name: 'Mensagem para o agente de missões' }).fill(data.agencyObjective)
+    const create = await postThroughUi(page, '/api/action-engine/mission-conversations', 'Enviar mensagem')
+    const { conversation } = await create.json()
+    await tick()
+    await expect(page.getByText('Posso preparar a captação com a auditoria de aquisição. O WhatsApp está sem conexão nesta conta.')).toBeVisible()
+
+    const conversationPath = `http://127.0.0.1:4188/api/action-engine/mission-conversations/${conversation.id}`
+    const scoped = await page.request.get(`${conversationPath}?organizationId=${data.presalesOrg}`)
+    expect(scoped.ok(), await scoped.text()).toBe(true)
+    const conversationBody = await scoped.text()
+    expect(conversationBody).toContain(data.agencySourceTitle)
+    expect(conversationBody).not.toContain(data.sourceTitle)
+    const foreign = await page.request.get(`${conversationPath}?organizationId=${data.missionOrg}`)
+    expect(foreign.status()).toBe(404)
+
+    const confirmed = await postThroughUi(page, `/api/action-engine/mission-conversations/${conversation.id}/confirm`, 'Confirmar e preparar plano')
+    const { missionId } = await confirmed.json()
+    await tick()
+    await expect(page.getByText('Plano aguardando decisão', { exact: true }).first()).toBeVisible()
+
+    const missionPath = `http://127.0.0.1:4188/api/action-engine/missions/${missionId}`
+    const plans = await page.request.get(`${missionPath}/plans?organizationId=${data.presalesOrg}`)
+    expect(plans.ok(), await plans.text()).toBe(true)
+    const planList = await plans.json()
+    expect(planList).toEqual([expect.objectContaining({
+      status: 'pending_approval', parameters: expect.objectContaining({ offer: 'Auditoria de aquisição' }),
+    })])
+    const details = await page.request.get(`http://127.0.0.1:4188/api/action-engine/plans/${planList[0].id}?organizationId=${data.presalesOrg}`)
+    expect(details.ok(), await details.text()).toBe(true)
+    const plan = await details.json()
+    expect(plan.proposedPayload).toMatchObject({ plan: { actionPack: { key: 'crm_preparation' } } })
+    expect(plan.steps.map((step: { capabilityKey: string }) => step.capabilityKey)).toEqual([
+      'system.readiness.check', 'crm.pipeline.inspect', 'crm.pipeline.simulate', 'crm.pipeline.create_draft',
+      'email.template.create_draft', 'email.template.create_draft', 'email.template.create_draft', 'crm.sequence.create_draft',
+    ])
+    const actions = await page.request.get(`${missionPath}/actions?organizationId=${data.presalesOrg}`)
+    expect(actions.ok(), await actions.text()).toBe(true)
+    expect(await actions.json()).toEqual([])
+    const otherPlans = await page.request.get(`${missionPath}/plans?organizationId=${data.missionOrg}`)
+    expect(otherPlans.ok(), await otherPlans.text()).toBe(true)
+    expect(await otherPlans.json()).toEqual([])
+
+    const evidence = await request.get(`${control}/evidence`, { headers: controlHeaders })
+    expect(evidence.ok(), await evidence.text()).toBe(true)
+    expect(await evidence.json()).toMatchObject({ providerCalls: 0 })
+  })
 })
 
 type PromptRequest = { stage: string; fingerprint: string; request: { messages: Array<{ role: string; content: string }> } }

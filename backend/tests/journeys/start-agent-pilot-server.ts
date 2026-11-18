@@ -46,7 +46,7 @@ const queue: AppJobQueue = {
 }
 const rig = await createIntegrationRig({
   queueMode: 'stub', stubJobQueue: queue, missionConversations: true, corsOrigin: 'http://127.0.0.1:4187',
-  agentPilots: { presalesOrganizationId: presalesOrg, missionOrganizationId: missionOrg },
+  agentPilots: { presalesOrganizationId: presalesOrg, missionOrganizationIds: [missionOrg, presalesOrg] },
   drainStubQueue: async processJob => {
     for (let drained = 0; jobs.length > 0; drained++) {
       assert(drained < 50, 'Pilot job queue did not drain')
@@ -71,14 +71,17 @@ const leadId = randomUUID()
 const names = { presales: 'YUX Captação · teste local', mission: 'Villeman e Massas · teste local', lead: `Prospect de acompanhamento ${leadId.slice(0, 8)}` }
 const budget = 'Orçamento confirmado de R$ 2.000 para recuperar oportunidades já geradas.'
 const objective = 'Prepare a captação de cozinhas industriais em São Paulo para a oferta de massas congeladas.'
+const agencyObjective = 'Prepare a captação da agência para cozinhas industriais em São Paulo. Confira se o WhatsApp pode ser usado.'
 const revisedAudience = 'Cozinhas industriais na Grande São Paulo com retirada agendada'
 await rig.sql('UPDATE public.organizations SET name=CASE WHEN id=$1 THEN $3 ELSE $4 END WHERE id IN ($1,$2)', [missionOrg, presalesOrg, names.mission, names.presales])
 // The shared integration fixture uses a synthetic pack with no metrics collector.
 await rig.sql('DELETE FROM public.action_missions WHERE id=$1 AND create_idempotency_key=$2', [fixtureIds.missionA, 'integration-mission-a'])
-await rig.sql(`INSERT INTO public.contract_modules(contract_id,module_key,enabled) VALUES ($1,'action_engine',TRUE)
-  ON CONFLICT(contract_id,module_key) DO UPDATE SET enabled=TRUE`, [missionContract])
+await rig.sql(`INSERT INTO public.contract_modules(contract_id,module_key,enabled)
+  VALUES ($1,'action_engine',TRUE),($2,'action_engine',TRUE)
+  ON CONFLICT(contract_id,module_key) DO UPDATE SET enabled=TRUE`, [missionContract, presalesContract])
 await rig.sql(`INSERT INTO public.ai_credit_wallets(organization_id,client_id,contract_id,current_balance)
-  VALUES ($1,$2,$3,10) ON CONFLICT(contract_id) DO UPDATE SET current_balance=10`, [missionOrg, fixtureIds.clientA, missionContract])
+  VALUES ($1,$2,$3,10),($4,$5,$6,10) ON CONFLICT(contract_id) DO UPDATE SET current_balance=10`,
+  [missionOrg, fixtureIds.clientA, missionContract, presalesOrg, fixtureIds.clientB, presalesContract])
 await rig.sql(`INSERT INTO public.crm_instances(organization_id,contract_id,status)
   VALUES ($1,$2,'active'),($3,$4,'draft') ON CONFLICT(contract_id) DO UPDATE SET status=EXCLUDED.status`,
   [presalesOrg, presalesContract, missionOrg, missionContract])
@@ -109,25 +112,53 @@ await rig.sql(`INSERT INTO public.strategy_agent_prompt_versions
   VALUES ($1,1,'Compare as ofertas elegíveis e preserve o orçamento.','publish','Cenário local',ARRAY[]::text[],$2)
   ON CONFLICT (organization_id,version) DO NOTHING`, [presalesOrg, fixtureUsers.yux_admin.id])
 
-const strategyPath = `/api/company-intelligence/organizations/${missionOrg}/strategies`
 const sourceTitle = 'Representante sintético de alimentos'
-const created = await rig.request('client_admin_A', 'POST', strategyPath, {
-  expectedVersion: null, idempotencyKey: randomUUID(), content: {
-    schemaVersion: 1, title: sourceTitle, objective: 'Captação de cozinhas industriais',
-    summary: 'Representação de massas congeladas em São Paulo.',
-    sections: [{ id: randomUUID(), kind: 'constraints', title: 'Oferta', body: 'Massas congeladas com retirada agendada.', agentUse: 'internal' }],
-    references: { productIds: [], documentIds: [] },
-  },
-})
-assert.equal(created.statusCode, 200, JSON.stringify(created.body))
-const sourceId = created.body.draftRevision.id
-const published = await rig.request('client_admin_A', 'POST', `${strategyPath}/${created.body.id}/publish`, {
-  expectedVersion: created.body.version, revisionId: sourceId,
-  expectedContentHash: created.body.draftRevision.contentHash, idempotencyKey: randomUUID(),
-})
-assert.equal(published.statusCode, 200, JSON.stringify(published.body))
-const primary = await rig.request('client_admin_A', 'POST', `${strategyPath}/${created.body.id}/primary`, { expectedVersion: published.body.version })
-assert.equal(primary.statusCode, 200, JSON.stringify(primary.body))
+const agencySourceTitle = 'Estratégia sintética de captação da agência'
+const sourceByOrganization = new Map<string, { sourceId: string; contractId: string }>([
+  [missionOrg, await publishCompanyStrategy({
+    organizationId: missionOrg, clientId: fixtureIds.clientA, contractId: missionContract, actor: 'client_admin_A',
+    title: sourceTitle, product: 'Lasanha congelada em caixa piloto', offer: 'Massas congeladas com retirada agendada.',
+  })],
+  [presalesOrg, await publishCompanyStrategy({
+    organizationId: presalesOrg, clientId: fixtureIds.clientB, contractId: presalesContract, actor: 'client_admin_B',
+    title: agencySourceTitle, product: 'Diagnóstico de aquisição PME', offer: 'Auditoria de aquisição para cozinhas industriais.',
+  })],
+])
+
+async function publishCompanyStrategy(input: {
+  organizationId: string; clientId: string; contractId: string; actor: 'client_admin_A' | 'client_admin_B'
+  title: string; product: string; offer: string
+}) {
+  const { organizationId, clientId, contractId, actor, title, product, offer } = input
+  const { rows: [item] } = await rig.sql(`INSERT INTO public.marketing_products_services
+    (organization_id,client_id,contract_id,name,description,status)
+    VALUES($1,$2,$3,$4,$5,'active') RETURNING id`, [organizationId, clientId, contractId, product, offer])
+  const path = `/api/company-intelligence/organizations/${organizationId}/strategies`
+  const created = await rig.request(actor, 'POST', path, {
+    expectedVersion: null, idempotencyKey: randomUUID(), content: {
+      schemaVersion: 1, title, objective: 'Captação de cozinhas industriais em São Paulo', summary: offer,
+      sections: [{ id: randomUUID(), kind: 'constraints', title: 'Oferta', body: offer, agentUse: 'internal' }],
+      references: { productIds: [item.id], documentIds: [] },
+    },
+  })
+  assert.equal(created.statusCode, 200, JSON.stringify(created.body))
+  const sourceId = created.body.draftRevision.id as string
+  const published = await rig.request(actor, 'POST', `${path}/${created.body.id}/publish`, {
+    expectedVersion: created.body.version, revisionId: sourceId,
+    expectedContentHash: created.body.draftRevision.contentHash, idempotencyKey: randomUUID(),
+  })
+  assert.equal(published.statusCode, 200, JSON.stringify(published.body))
+  const primary = await rig.request(actor, 'POST', `${path}/${created.body.id}/primary`, { expectedVersion: published.body.version })
+  assert.equal(primary.statusCode, 200, JSON.stringify(primary.body))
+  return { sourceId, contractId }
+}
+
+function missionScope(input: { organization_id: string; contract_id?: string | null }) {
+  const scope = sourceByOrganization.get(input.organization_id)
+  assert(scope, 'Unexpected mission organization')
+  assert.equal(input.contract_id, scope.contractId)
+  return scope
+}
 const presalesTurns: string[] = []
 const missionTurns: string[] = []
 const listener = createServer(async (req, res) => {
@@ -138,7 +169,8 @@ const listener = createServer(async (req, res) => {
   if (req.headers.authorization !== `Bearer ${token}`) return respond(401, { error: 'fixture_token_required' })
   try {
     if (req.method === 'GET' && req.url === '/fixture') {
-      return respond(200, { names, budget, objective, revisedAudience, sourceTitle, leadId, missionOrg, missionContract, presalesOrg, presalesContract })
+      return respond(200, { names, budget, objective, agencyObjective, revisedAudience, sourceTitle, agencySourceTitle,
+        leadId, missionOrg, missionContract, presalesOrg, presalesContract })
     }
     if (req.method === 'POST' && req.url === '/worker-tick') {
       await rig.workerTick()
@@ -181,25 +213,27 @@ const listener = createServer(async (req, res) => {
       assert.equal(context.commercial_catalog.offers.length, 1)
       presalesTurns.push(input.message)
     } else if (req.url === '/missions/conversations/turn') {
-      assert.equal(input.organization_id, missionOrg)
-      assert.equal(input.contract_id, missionContract)
-      missionTurns.push(input.user_message)
+      missionScope(input)
+      if (input.organization_id === missionOrg) missionTurns.push(input.user_message)
     } else if (req.url === '/missions/planning-spec' || req.url === '/missions/plan-governed') {
       const planInput: MissionPlanRequestWire = input
-      assert.equal(planInput.organization_id, missionOrg)
-      assert.equal(planInput.contract_id, missionContract)
-      assert(planInput.allowed_source_ids?.includes(sourceId))
+      const { sourceId } = missionScope(planInput)
+      const allowedSourceIds = planInput.allowed_source_ids ?? []
+      assert(allowedSourceIds.includes(sourceId))
+      for (const [organizationId, scope] of sourceByOrganization) {
+        if (organizationId !== planInput.organization_id) assert(!allowedSourceIds.includes(scope.sourceId))
+      }
       const { id } = planInput.mission
       assert(typeof id === 'string')
       if (req.url === '/missions/plan-governed') {
         const { rows: [reservation] } = await rig.sql(`SELECT entry.calls, entry.metadata->>'specificationFingerprint' AS fingerprint
           FROM public.action_planning_cycles cycle JOIN public.action_planning_usage_entries entry ON entry.cycle_id=cycle.id
-          WHERE cycle.mission_id=$1 AND cycle.organization_id=$2 AND entry.nature='reservation'`, [id, missionOrg])
+          WHERE cycle.mission_id=$1 AND cycle.organization_id=$2 AND entry.nature='reservation'`, [id, planInput.organization_id])
         assert(reservation.calls >= 5 && reservation.calls <= 8)
         assert.equal(reservation.calls, input.planning_budget.estimate.calls)
         assert.equal(reservation.fingerprint, req.headers['x-yux-mission-planning-spec'])
         assert.match(reservation.fingerprint, /^[a-f0-9]{64}$/)
-        plannedMissions.push(id)
+        if (planInput.organization_id === missionOrg) plannedMissions.push(id)
       }
     } else if (!req.url.startsWith('/instructions/preview/')) {
       return respond(404, { error: 'fixture_route_not_found' })
