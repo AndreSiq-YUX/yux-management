@@ -21,6 +21,10 @@ O Admin YUX comparou as duas configurações do estrategista para o contrato **C
 
 O ponto de retorno está em `codex/agentes-yux-retorno`, fixado em `020308a`. A [verificação da candidata](https://github.com/AndreSiq-YUX/yux-management/actions/runs/44289348517) passou no teste novo de histórico de consumo e repetiu falhas de integração já registradas na [versão anterior](https://github.com/AndreSiq-YUX/yux-management/actions/runs/44090602700). As auditorias gerais de dependências e imagens continuam pendentes.
 
+Na revisão `424a021e387211f4d1fb983f4c30f64cedcde317`, o Dokploy concluiu a publicação dos avisos de catálogo e da proteção dos rascunhos aprovados. Essa revisão reaproveita as migrações existentes. O ponto de retorno imediato dessa atualização é `836b9875`. A sondagem de prontidão retornou 404 durante a troca e voltou a 200 cerca de 22 segundos depois do primeiro 404 observado. A consulta sem autenticação ao inventário de agentes retornou 401.
+
+A prévia simulada do estrategista de **Captação** e da conversa de missão do contrato **Personalizado** voltou a carregar, com os dois pilotos desativados. A lista de propostas abriu nos dois contratos. A Captação mostrou a ausência de modelos comerciais ativos. A correção da proteção de preços e a edição de propostas comuns foram exercitadas com registros sintéticos fora da produção. Nenhuma proposta foi enviada e nenhuma chamada paga foi feita. [Verificações automatizadas da revisão](https://github.com/AndreSiq-YUX/yux-management/actions/runs/44296236124).
+
 ## Operação em homologação
 
 1. Abra **Admin → IA/LLM → Agentes e prompts**. Escolha o fluxo, a subconta e o contrato quando aplicável. Use uma mensagem sintética para o estrategista ou a conversa de missão. Para o supervisor, selecione uma missão existente nesse escopo e inspecione as requisições do planejamento, incluindo as etapas condicionais.
