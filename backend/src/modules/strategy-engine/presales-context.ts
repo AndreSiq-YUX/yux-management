@@ -1,9 +1,20 @@
 import { createHash } from 'node:crypto'
 import type pg from 'pg'
 import { z } from 'zod'
+import type { AppEnv } from '../../config/env.js'
 import { ApiError } from '../../http/errors.js'
 
 type Queryable = Pick<pg.Pool, 'query'>
+
+export function presalesRuntimeClientId(
+  env: Pick<AppEnv, 'STRATEGY_PRESALES_BILLABLE_CONTRACT_IDS'>,
+  contractId: string | undefined,
+  scopedClientId: string | null,
+  explicitClientId?: string,
+) {
+  const billableContracts = (env.STRATEGY_PRESALES_BILLABLE_CONTRACT_IDS ?? '').split(',').map(id => id.trim())
+  return explicitClientId ?? (contractId && billableContracts.includes(contractId) ? scopedClientId ?? undefined : undefined)
+}
 
 export const recommendationSchema = z.discriminatedUnion('decision', [
   z.object({
@@ -53,6 +64,20 @@ export async function loadCommercialCatalog(pool: Queryable, organizationId: str
     [organizationId],
   )
   return { offers: rows, version: createHash('sha256').update(JSON.stringify(rows)).digest('hex') }
+}
+
+export async function listPresalesCatalogTemplates(pool: Queryable, organizationId: string, clientSetupAllowed: boolean) {
+  const { rows } = await pool.query<{ id: string; label: string; approved: boolean }>(
+    `SELECT t.id, p.name || ' · ' || t.name AS label, t.presales_sellable AS approved
+       FROM public.proposal_templates t JOIN public.organizations o ON o.id = t.organization_id
+       JOIN public.packages p ON p.id = t.package_id
+      WHERE t.organization_id = $1 AND t.is_active AND (o.kind = 'yux' OR $2::boolean) AND p.key <> 'yux_internal_growth'
+        AND EXISTS (SELECT 1 FROM public.proposal_price_rules r
+          WHERE r.organization_id = t.organization_id AND r.package_id = t.package_id AND r.item_key = 'base')
+      ORDER BY label, t.id`,
+    [organizationId, clientSetupAllowed],
+  )
+  return rows
 }
 
 export async function listPresalesLeads(pool: Queryable, organizationId: string, contractId?: string) {

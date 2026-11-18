@@ -15,7 +15,8 @@ import { changeMissionPromptVersion, intakePromptScope, listMissionPromptVersion
 import { strategyAdminChatRequestSchema } from './admin-chat.js'
 import { changePromptVersion, listPromptVersions, presalesPilotEnabled, presalesPilotScope, promptInstructionSchema, promptSettings,
   stageKeySchema, strategistModeSchema } from './prompt-versions.js'
-import { listPresalesLeads, loadCommercialCatalog } from './presales-context.js'
+import { listPresalesCatalogTemplates, listPresalesLeads, loadCommercialCatalog, loadPresalesLead,
+  presalesRuntimeClientId } from './presales-context.js'
 import { loadPlanningHistory } from './planning-history.js'
 import { listMissionUsageConversations, loadMissionTurnHistory } from './mission-turn-history.js'
 import { loadPresalesHistory } from './presales-history.js'
@@ -52,6 +53,7 @@ const previewScenario = tenantSchema.and(z.discriminatedUnion('flow', [
   z.object({
     flow: z.literal('strategist'),
     message: scenarioMessage,
+    leadId: z.uuid().optional(),
     mode: strategyAdminChatRequestSchema.shape.mode,
     candidateInstruction: promptInstructionSchema.optional(),
     candidateStage: stageKeySchema.optional(),
@@ -75,6 +77,7 @@ const versionChange = versionMetadata.and(z.object({
     message: scenarioMessage,
     stage: stageKeySchema.optional(),
     contractId: z.uuid().optional(),
+    leadId: z.uuid().optional(),
     mode: strategyAdminChatRequestSchema.shape.mode,
   }),
   z.object({ operation: z.literal('restore'), restoreVersion: z.number().int().nonnegative() }),
@@ -159,6 +162,7 @@ async function strategistPreview(app: FastifyInstance, input: {
   organizationId: string
   clientId: string | null
   contractId?: string
+  leadId?: string
   message: string
   mode: z.infer<typeof strategistModeSchema>
   candidateInstruction?: string
@@ -167,9 +171,14 @@ async function strategistPreview(app: FastifyInstance, input: {
   version?: Awaited<ReturnType<typeof listPromptVersions>>[number]
 }) {
   const published = promptSettings(input.version, input.mode)
+  if (input.leadId && !input.contractId) throw new ApiError(409, 'presales_preview_contract_required')
+  const [catalog, opportunity] = await Promise.all([
+    loadCommercialCatalog(app.pg, input.organizationId),
+    input.leadId ? loadPresalesLead(app.pg, input.organizationId, input.leadId, input.contractId) : null,
+  ])
   const preview = await invokeAgentRuntime<StrategistPreview>(app.config, '/instructions/preview/strategist', {
     organization_id: input.organizationId,
-    client_id: input.clientId,
+    client_id: presalesRuntimeClientId(app.config, input.contractId, input.clientId) ?? null,
     contract_id: input.contractId,
     message: input.message,
     mode: input.mode,
@@ -180,12 +189,13 @@ async function strategistPreview(app: FastifyInstance, input: {
     published_prompt_version: published.active ? input.version?.version : undefined,
     published_source_rules: published.sourceRules,
     candidate_source_rules: input.candidateSourceRules,
-    commercial_catalog: await loadCommercialCatalog(app.pg, input.organizationId),
+    commercial_catalog: catalog,
+    opportunity,
   })
   return { ...preview, publishedVersion: input.version?.version ?? 0 }
 }
 
-export async function loadAgentPromptScope(pool: Queryable, organizationId: string) {
+export async function loadAgentPromptScope(pool: Queryable, organizationId: string, contractId?: string) {
   const { rows } = await pool.query<{
     client_id: string | null
     contracts: Array<{ id: string; name: string }>
@@ -202,6 +212,9 @@ export async function loadAgentPromptScope(pool: Queryable, organizationId: stri
     [organizationId],
   )
   if (!rows[0]) throw new ApiError(404, 'agent_prompt_organization_not_found')
+  if (contractId && !rows[0].contracts.some(contract => contract.id === contractId)) {
+    throw new ApiError(409, 'agent_prompt_contract_out_of_scope')
+  }
   return rows[0]
 }
 
@@ -233,20 +246,25 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
     const [scope, versions, catalog] = await Promise.all([
       loadAgentPromptScope(app.pg, organizationId),
       listPromptVersions(app.pg, organizationId),
-      app.pg.query<{ id: string; label: string; approved: boolean }>(
-        `SELECT t.id, p.name || ' · ' || t.name AS label, t.presales_sellable AS approved
-           FROM public.proposal_templates t JOIN public.organizations o ON o.id = t.organization_id
-           JOIN public.packages p ON p.id = t.package_id
-          WHERE t.organization_id = $1 AND t.is_active AND (o.kind = 'yux' OR $2::boolean) AND p.key <> 'yux_internal_growth'
-            AND EXISTS (SELECT 1 FROM public.proposal_price_rules r
-              WHERE r.organization_id = t.organization_id AND r.package_id = t.package_id AND r.item_key = 'base')
-          ORDER BY label, t.id`,
-        [organizationId, activation.organizationEnabled || activation.contractIds.length > 0],
-      ),
+      listPresalesCatalogTemplates(app.pg, organizationId, activation.organizationEnabled || activation.contractIds.length > 0),
     ])
     reply.header('Cache-Control', 'no-store')
     const pilotContractIds = scope.contracts.filter(({ id }) => activation.organizationEnabled || activation.contractIds.includes(id)).map(({ id }) => id)
-    return { contracts: scope.contracts, versions, pilotEnabled: activation.organizationEnabled, pilotContractIds, catalog: catalog.rows }
+    return { contracts: scope.contracts, versions, pilotEnabled: activation.organizationEnabled, pilotContractIds, catalog }
+  })
+
+  app.get('/agent-prompts/presales-scenario', async (request, reply) => {
+    requireAdminRole(request)
+    const parsed = tenantSchema.extend({ contractId: z.uuid() }).safeParse(request.query)
+    if (!parsed.success) throw new ApiError(400, 'invalid_presales_preview_scope')
+    const { organizationId, contractId } = parsed.data
+    await loadAgentPromptScope(app.pg, organizationId, contractId)
+    const [leads, catalog] = await Promise.all([
+      listPresalesLeads(app.pg, organizationId, contractId),
+      listPresalesCatalogTemplates(app.pg, organizationId, true),
+    ])
+    reply.header('Cache-Control', 'no-store')
+    return { leads, catalog }
   })
 
   app.get('/agent-prompts/opportunities', async (request, reply) => {
@@ -271,19 +289,23 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
 
   app.put('/agent-prompts/catalog', async request => {
     requireAdminRole(request)
-    const parsed = z.object({ organizationId: z.uuid(), templateId: z.uuid(), approved: z.boolean() }).safeParse(request.body)
+    const parsed = tenantSchema.extend({ templateId: z.uuid(), approved: z.boolean() }).safeParse(request.body)
     if (!parsed.success) throw new ApiError(400, 'invalid_presales_catalog')
-    const { organizationId, templateId, approved } = parsed.data
+    const { organizationId, contractId, templateId, approved } = parsed.data
     const activation = presalesPilotScope(app.config, organizationId)
+    if (contractId) await loadAgentPromptScope(app.pg, organizationId, contractId)
     try {
       const result = await app.pg.query(
         `UPDATE public.proposal_templates t SET presales_sellable = $3
          FROM public.packages p, public.organizations o
          WHERE t.organization_id = $1 AND t.id = $2 AND o.id = t.organization_id AND (o.kind = 'yux' OR $4::boolean)
            AND p.id = t.package_id AND p.key <> 'yux_internal_growth' AND t.is_active
+           AND ($5::uuid IS NULL OR EXISTS (SELECT 1 FROM public.contracts c
+             WHERE c.id = $5 AND c.client_id = o.client_id AND c.status = 'active'))
            AND EXISTS (SELECT 1 FROM public.proposal_price_rules r
              WHERE r.organization_id = t.organization_id AND r.package_id = t.package_id AND r.item_key = 'base')`,
-        [organizationId, templateId, approved, activation.organizationEnabled || activation.contractIds.length > 0],
+        [organizationId, templateId, approved, Boolean(contractId) || activation.organizationEnabled || activation.contractIds.length > 0,
+          contractId ?? null],
       )
       if (result.rowCount !== 1) throw new ApiError(409, 'presales_template_ineligible')
       return { approved }
@@ -298,10 +320,7 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
     const sourceChange = sourcePublication.safeParse(request.body)
     if (sourceChange.success) {
       const input = sourceChange.data
-      const scope = await loadAgentPromptScope(app.pg, input.organizationId)
-      if (input.contractId && !scope.contracts.some(contract => contract.id === input.contractId)) {
-        throw new ApiError(409, 'agent_prompt_contract_out_of_scope')
-      }
+      const scope = await loadAgentPromptScope(app.pg, input.organizationId, input.contractId)
       reply.header('Cache-Control', 'no-store')
       const shared = { ...input, authorId: actor.userId }
       const scenario = { ...input, candidateInstruction: undefined, candidateStage: undefined, candidateSourceRules: input.sourceRules }
@@ -462,10 +481,7 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
     const parsed = previewRequest.safeParse(request.body)
     if (!parsed.success) throw new ApiError(400, 'invalid_agent_prompt_preview')
     const input = parsed.data
-    const scope = await loadAgentPromptScope(app.pg, input.organizationId)
-    if (input.contractId && !scope.contracts.some(contract => contract.id === input.contractId)) {
-      throw new ApiError(409, 'agent_prompt_contract_out_of_scope')
-    }
+    const scope = await loadAgentPromptScope(app.pg, input.organizationId, input.contractId)
     reply.header('Cache-Control', 'no-store')
     if (input.flow === 'strategist') {
       const [version] = await listPromptVersions(app.pg, input.organizationId, 1)

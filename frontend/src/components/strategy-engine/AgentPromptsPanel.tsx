@@ -9,6 +9,8 @@ import { PresalesUsageHistory } from './PresalesUsageHistory'
 type Consumer = { key: string; name: string; owner: string; audience: string; state: string; instructions: string }
 type Contract = { id: string; name: string }
 type Mission = { id: string; title: string }
+type CatalogTemplate = { id: string; label: string; approved: boolean }
+type PresalesScenario = { leads: Array<{ id: string; name: string; company: string | null }>; catalog: CatalogTemplate[] }
 const sourceLabels = {
   methodology: 'Metodologia publicada',
   company_strategy: 'Estratégia publicada da subconta',
@@ -70,7 +72,7 @@ type AccountScope = {
   versions: Version[]
   pilotEnabled: boolean
   pilotContractIds?: string[]
-  catalog: Array<{ id: string; label: string; approved: boolean }>
+  catalog: CatalogTemplate[]
 }
 
 const endpoint = '/strategy-engine/agent-prompts'
@@ -87,6 +89,9 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
   const [availableMissions, setAvailableMissions] = useState<{ scope: string; items: Mission[] } | null>(null)
   const [missionId, setMissionId] = useState('')
   const [missionError, setMissionError] = useState(false)
+  const [leadId, setLeadId] = useState('')
+  const [presalesScenario, setPresalesScenario] = useState<(PresalesScenario & { scope: string }) | null>(null)
+  const [presalesError, setPresalesError] = useState(false)
   const missionScope = `${organizationId}/${contractId}`
   const inspectingSupervisor = flow === 'mission-supervisor'
   const [mode, setMode] = useState('diagnostic_48h')
@@ -141,10 +146,20 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
     return () => controller.abort()
   }, [inspectingSupervisor, organizationId, contractId, missionScope])
 
+  useEffect(() => {
+    if (!isStrategist || !organizationId || !contractId) return
+    const controller = new AbortController()
+    const params = new URLSearchParams({ organizationId, contractId })
+    apiRequest<PresalesScenario>(`${endpoint}/presales-scenario?${params}`, { signal: controller.signal })
+      .then(data => { if (!controller.signal.aborted) setPresalesScenario({ scope: missionScope, ...data }) })
+      .catch(() => { if (!controller.signal.aborted) setPresalesError(true) })
+    return () => controller.abort()
+  }, [isStrategist, organizationId, contractId, missionScope])
+
   const scenario = {
     flow, organizationId, contractId: contractId || undefined,
     ...(inspectingSupervisor ? { missionId } : { message: message.trim() }),
-    ...(isStrategist ? { mode } : flow === 'mission-intake' ? { audience } : {}),
+    ...(isStrategist ? { mode, leadId: leadId || undefined } : flow === 'mission-intake' ? { audience } : {}),
   }
 
   async function simulate(event: FormEvent) {
@@ -204,11 +219,15 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
     setSaving(true)
     setFeedback('')
     try {
-      await apiRequest(`${endpoint}/catalog`, { method: 'PUT', body: { organizationId, templateId, approved } })
+      await apiRequest(`${endpoint}/catalog`, { method: 'PUT', body: { organizationId, contractId: contractId || undefined, templateId, approved } })
+      const updateApproval = (item: CatalogTemplate) => item.id === templateId ? { ...item, approved } : item
       setScope(current => current && ({
         ...current,
-        catalog: current.catalog.map(item => item.id === templateId ? { ...item, approved } : item),
+        catalog: current.catalog.map(updateApproval),
       }))
+      setPresalesScenario(current => current?.scope === missionScope ? ({
+        ...current, catalog: current.catalog.map(updateApproval),
+      }) : current)
       setPreview(null)
       setFeedback(approved ? 'Oferta aprovada para o estrategista.' : 'Oferta retirada do catálogo do estrategista.')
     } catch {
@@ -226,6 +245,14 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
     setRestoreVersion('0')
     setFeedback('')
     setScopeError(false)
+    setPreview(null)
+    setError('')
+  }
+
+  function clearPresalesScope() {
+    setLeadId('')
+    setPresalesError(false)
+    setPresalesScenario(null)
   }
 
   const control = 'mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2'
@@ -233,6 +260,8 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
   const pilotEnabled = scopeReady && (contractId && scope.pilotContractIds
     ? scope.pilotContractIds.includes(contractId) : scope.pilotEnabled)
   const scopedMissions = availableMissions?.scope === missionScope ? availableMissions.items : []
+  const scopedPresales = presalesScenario?.scope === missionScope ? presalesScenario : undefined
+  const catalogTemplates = contractId ? scopedPresales?.catalog : scope?.catalog
   const hasPreviewInput = inspectingSupervisor ? scopedMissions.some(mission => mission.id === missionId) : Boolean(message.trim())
   const appliedCandidate = preview?.candidate?.requests.length && preview.publishedVersion !== undefined && ((!candidateStage && isStrategist) || preview.candidate.requests.some(
     stage => stage.stage === candidateStage && stage.stageInstructionApplied,
@@ -287,6 +316,7 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
             <select aria-label="Fluxo" value={flow} onChange={event => {
               setFlow(event.target.value)
               clearStageEditor()
+              clearPresalesScope()
               setMissionId('')
               setMissionError(false)
             }} className={control}>
@@ -299,6 +329,7 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
             <select aria-label="Subconta" required value={organizationId} onChange={event => {
               setOrganizationId(event.target.value)
               clearStageEditor()
+              clearPresalesScope()
               setContractId('')
               setMissionId('')
               setMissionError(false)
@@ -312,6 +343,7 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
             <select aria-label="Contrato" disabled={!scopeReady} value={contractId} onChange={event => {
               setContractId(event.target.value)
               clearStageEditor()
+              clearPresalesScope()
               setMissionId('')
               setMissionError(false)
             }} className={control}>
@@ -356,14 +388,29 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
               </select>
             </label>
           )}
+          {isStrategist && contractId && <label>Oportunidade da prévia
+            <select aria-label="Oportunidade da prévia" value={leadId} disabled={!scopedPresales?.leads.length} onChange={event => {
+              setLeadId(event.target.value)
+              clearStageEditor()
+            }} className={control}>
+              <option value="">Sem oportunidade selecionada</option>
+              {scopedPresales?.leads.map(lead => <option key={lead.id} value={lead.id}>
+                {lead.company ? `${lead.name} · ${lead.company}` : lead.name}
+              </option>)}
+            </select>
+          </label>}
           {!inspectingSupervisor && <label className="md:col-span-2">Mensagem de teste
-            <textarea aria-label="Mensagem de teste" required value={message} maxLength={8_000} onChange={event => setMessage(event.target.value)} rows={3} className={control} />
+            <textarea aria-label="Mensagem de teste" required value={message} maxLength={8_000} onChange={event => {
+              setMessage(event.target.value)
+              setPreview(null)
+            }} rows={3} className={control} />
           </label>}
           <div className="md:col-span-2">
             <label>Etapa da instrução
               <select value={candidateStage} disabled={!isStrategist && !editableStages.length} onChange={event => {
                 setCandidateStage(event.target.value)
                 setCandidateInstruction('')
+                setPreview(null)
               }} className={control}>
                 <option value="">{isStrategist ? 'Instrução-base da síntese de pré-venda' : 'Selecione uma etapa'}</option>
                 {editableStages.map(stage => <option key={stage.stage} value={stage.stage}>{stage.stage} · {stage.profile}</option>)}
@@ -372,7 +419,10 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
             {!editableStages.length && !preview && <p className="mt-1 text-gray-600">Simule o cenário para listar as etapas editáveis.</p>}
           </div>
           {(isStrategist || candidateStage) && <label className="md:col-span-2">Instrução candidata (opcional)
-            <textarea value={candidateInstruction} maxLength={4_000} onChange={event => setCandidateInstruction(event.target.value)} rows={3} className={control} />
+            <textarea value={candidateInstruction} maxLength={4_000} onChange={event => {
+              setCandidateInstruction(event.target.value)
+              setPreview(null)
+            }} rows={3} className={control} />
           </label>}
           {candidateStage && (
             <p className="md:col-span-2 whitespace-pre-wrap text-gray-600">
@@ -391,7 +441,10 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
               {sources.map(source => (
                 <label key={source}>{sourceLabels[source]}
                   <select value={(sourceDraft ?? publishedRules)[source]} className={control}
-                    onChange={event => setSourceDraft({ ...(sourceDraft ?? publishedRules), [source]: event.target.value as SourceUse })}>
+                    onChange={event => {
+                      setSourceDraft({ ...(sourceDraft ?? publishedRules), [source]: event.target.value as SourceUse })
+                      setPreview(null)
+                    }}>
                     {Object.entries(useLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                   </select>
                 </label>
@@ -401,6 +454,7 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
           </fieldset>
         )}
         {scopeError && <p role="alert" className="text-sm text-red-700">Não foi possível consultar os contratos da subconta.</p>}
+        {isStrategist && contractId && presalesError && <p role="alert" className="text-sm text-red-700">Não foi possível consultar as oportunidades e ofertas deste contrato.</p>}
         {inspectingSupervisor && missionError && <p role="alert" className="text-sm text-red-700">Não foi possível consultar as missões deste escopo.</p>}
         {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
         <button type="submit" disabled={!scopeReady || !hasPreviewInput || running || saving} className="rounded-md bg-yux-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
@@ -485,8 +539,8 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
           )}
           {isStrategist && <div className="space-y-2 border-t pt-4">
             <h3 className="font-semibold">Catálogo comercial do CRM</h3>
-            {!scope.catalog.some(item => item.approved) && <p className="text-amber-800">Esta subconta não tem oferta aprovada para o estrategista.</p>}
-            {scope.catalog.map(item => (
+            {catalogTemplates && !catalogTemplates.some(item => item.approved) && <p className="text-amber-800">Esta subconta não tem oferta aprovada para o estrategista.</p>}
+            {catalogTemplates?.map(item => (
               <label key={item.id} className="flex items-center gap-2">
                 <input type="checkbox" checked={item.approved} disabled={saving || running} onChange={event => changeCatalog(item.id, event.target.checked)} />
                 {item.label}

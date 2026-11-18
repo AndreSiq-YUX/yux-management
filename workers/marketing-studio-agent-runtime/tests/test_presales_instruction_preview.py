@@ -47,12 +47,14 @@ def test_preview_and_real_adapter_share_messages_without_persisting_preview():
         "answer": "Simulação", "supporting_cards": [], "supporting_sources": [{"ref": "yux:invented"}],
     })])
     frozen = execution([])
+    frozen["retrieval_context"]["opportunity"] = {"name": "Prospect sintético", "budget": "R$ 2.000"}
     preview = preview_workflow(engine, frozen)
     assert calls == []
     assert engine.store.tables == {}
     assert engine.execute(**frozen)["synthesis"]["supporting_sources"] == []
     sent = calls[0]
     stage = preview["requests"][0]
+    assert "Prospect sintético" in stage["request"]["messages"][1]["content"]
     assert stage["providerPayload"] == {key: value for key, value in sent.items() if key != "session_id"}
     assert stage["providerFingerprint"] == stable_hash(stage["providerPayload"])
     assert stage["fingerprint"] == stable_hash(stage["request"])

@@ -246,6 +246,7 @@ class PreviewStrategistRequest(BaseModel):
     published_source_rules: AgentSourceRulesWire | None = None
     candidate_source_rules: AgentSourceRulesWire | None = None
     commercial_catalog: dict[str, Any] | None = None
+    opportunity: dict[str, Any] | None = None
 
 
 class CandidateMissionPrompt(BaseModel):
@@ -670,7 +671,11 @@ def create_app(
             "presales_stage_instructions": request.published_stage_instructions,
             "presales_prompt_version": request.published_prompt_version,
             "presales_source_rules": request.published_source_rules.model_dump() if request.published_source_rules else None,
-            "retrieval_context": {"commercial_catalog": request.commercial_catalog},
+            "retrieval_context": {
+                "commercial_catalog": request.commercial_catalog,
+                "opportunity": request.opportunity,
+                "conversation_history": [],
+            },
         }
         baseline = preview_workflow(selected, {**execution, **published} if published["presales_candidate"] else execution)
         scoped_edit = {request.candidate_stage: request.candidate_instruction} if request.candidate_stage and request.candidate_instruction else {}

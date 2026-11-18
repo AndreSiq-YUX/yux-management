@@ -8,7 +8,7 @@ import { verifyMissionKnowledgeContext } from '../action-engine/mission-source-v
 import { agentSourceRulesSchema, requiredSourcesMessage } from '../action-engine/agent-source-rules.js'
 import { listPromptVersions, presalesPilotEnabled, promptInstructionSchema, promptSettings,
   stageInstructionMapSchema, strategistModeSchema } from './prompt-versions.js'
-import { loadCommercialCatalog, loadPresalesLead, validateRecommendation } from './presales-context.js'
+import { loadCommercialCatalog, loadPresalesLead, presalesRuntimeClientId, validateRecommendation } from './presales-context.js'
 
 type Queryable = Pick<pg.Pool, 'query'>
 type ChatRow = Record<string, unknown>
@@ -222,10 +222,7 @@ export async function processStrategyAdminChat(
     let runtimeClientId = request.clientId
     if (presales && request.organizationId) {
       const scopedClientId = await assertScope(pool, request.organizationId, request.clientId, request.contractId)
-      const billableContracts = (env.STRATEGY_PRESALES_BILLABLE_CONTRACT_IDS ?? '').split(',').map(id => id.trim())
-      if (!runtimeClientId && request.contractId && billableContracts.includes(request.contractId)) {
-        runtimeClientId = scopedClientId ?? undefined
-      }
+      runtimeClientId = presalesRuntimeClientId(env, request.contractId, scopedClientId, runtimeClientId)
     }
     const organizationId = request.organizationId
     const [catalog, prospect, history] = presales && organizationId ? await Promise.all([

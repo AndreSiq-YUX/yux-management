@@ -215,6 +215,76 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     }
   })
 
+  it('prepares and simulates a scoped CRM opportunity before enabling presales', async () => {
+    const root = '/api/strategy-engine/agent-prompts'
+    const { organizationA, organizationB, clientA, contractB } = fixtureIds
+    const [offer, template, first, second, crm, lead] = Array.from({ length: 6 }, () => randomUUID())
+    await admin.query("INSERT INTO public.packages(id,key,name) VALUES($1,$2,'Oferta para ensaio')", [offer, 'pilot-' + offer])
+    try {
+      await admin.query("INSERT INTO public.contracts(id,client_id,package_id,status) VALUES($1,$3,$4,'active'),($2,$3,$4,'active')",
+        [first, second, clientA, offer])
+      await admin.query("INSERT INTO public.crm_instances(id,organization_id,contract_id,status) VALUES($1,$2,$3,'active')",
+        [crm, organizationA, first])
+      await admin.query("INSERT INTO public.leads(id,organization_id,crm_instance_id,name,email,stage,status) VALUES($1,$2,$3,'Prospect de ensaio','scenario@simulated.test','NEW','open')",
+        [lead, organizationA, crm])
+      await admin.query("INSERT INTO public.proposal_templates(id,organization_id,package_id,name,scope) VALUES($1,$2,$3,'Modelo de ensaio','Escopo do ensaio')",
+        [template, organizationA, offer])
+      await admin.query(`INSERT INTO public.proposal_price_rules
+        (organization_id,package_id,item_key,label,minimum_value,recommended_value,maximum_value)
+        VALUES ($1,$2,'base','Preço sintético',100,200,300)`, [organizationA, offer])
+
+      const params = `organizationId=${organizationA}&contractId=${first}`
+      const setup = `${root}/presales-scenario?${params}`
+      const approve = { organizationId: organizationA, contractId: first, templateId: template, approved: true }
+      const input = { flow: 'strategist', organizationId: organizationA, contractId: first,
+        leadId: lead, message: 'Qual oferta se aplica?', mode: 'proposal' }
+      const runtime = vi.fn(async (url: string, init: RequestInit) => {
+        expect(url).toBe('http://127.0.0.1:4109/instructions/preview/strategist')
+        expect(JSON.parse(String(init.body))).toMatchObject({
+          organization_id: organizationA, contract_id: first, client_id: null,
+          opportunity: { id: lead, crmInstanceId: crm, name: 'Prospect de ensaio' },
+          commercial_catalog: { offers: [expect.objectContaining({ packageId: offer, templateId: template })] },
+        })
+        return Response.json({ baseline: { requests: [] }, candidate: { requests: [] } })
+      })
+      vi.stubGlobal('fetch', runtime)
+
+      for (const cookie of deniedCookies) {
+        expect((await call('GET', setup, undefined, cookie)).statusCode).toBe(403)
+        expect((await call('PUT', root + '/catalog', approve, cookie)).statusCode).toBe(403)
+        expect((await call('POST', root + '/preview', input, cookie)).statusCode).toBe(403)
+      }
+      const prepared = await call('GET', setup)
+      expect(prepared.statusCode, prepared.body).toBe(200)
+      expect(prepared.headers['cache-control']).toBe('no-store')
+      expect(prepared.json()).toMatchObject({
+        leads: expect.arrayContaining([expect.objectContaining({ id: lead })]),
+        catalog: expect.arrayContaining([expect.objectContaining({ id: template, approved: false })]),
+      })
+      const differentContract = await call('GET', setup.replace(first, second))
+      expect(differentContract.statusCode).toBe(200)
+      expect(differentContract.json().leads).not.toContainEqual(expect.objectContaining({ id: lead }))
+      expect((await call('PUT', root + '/catalog', { ...approve, contractId: contractB })).statusCode).toBe(409)
+      expect((await call('PUT', root + '/catalog', approve)).statusCode).toBe(200)
+      expect((await call('GET', `${root}/opportunities?${params}&mode=proposal`)).json()).toMatchObject({ enabled: false, leads: [] })
+      const queued = job.mock.calls.length
+      expect((await call('POST', root + '/preview', { ...input, contractId: undefined })).statusCode).toBe(409)
+      expect((await call('POST', root + '/preview', { ...input, contractId: second })).statusCode).toBe(404)
+      expect((await call('POST', root + '/preview', { ...input, organizationId: organizationB, contractId: contractB })).statusCode).toBe(404)
+      const preview = await call('POST', root + '/preview', input)
+      expect(preview.statusCode, preview.body).toBe(200)
+      expect(runtime).toHaveBeenCalledTimes(1)
+      expect(job.mock.calls).toHaveLength(queued)
+    } finally {
+      await admin.query('DELETE FROM public.leads WHERE id=$1', [lead])
+      await admin.query('DELETE FROM public.crm_instances WHERE id=$1', [crm])
+      await admin.query('DELETE FROM public.proposal_price_rules WHERE package_id=$1', [offer])
+      await admin.query('DELETE FROM public.proposal_templates WHERE id=$1', [template])
+      await admin.query('DELETE FROM public.contracts WHERE id=ANY($1::uuid[])', [[first, second]])
+      await admin.query('DELETE FROM public.packages WHERE id=$1', [offer])
+    }
+  })
+
   it('inspects the supervisor only as global admin and leaves the mission unchanged', async () => {
     const missionId = await createSupervisorScenario()
     const runtime = vi.fn(async (url: string, init: RequestInit) => {
