@@ -119,6 +119,7 @@ export function projectLeadAttribution(
       sizeAssessment: facts.sizeAssessment,
       activity: facts.activity,
       triageReasons: facts.reasons,
+      qualificationStatus: z.literal('pending').optional().catch(undefined),
       targetStatus: z
         .enum(['confirmed', 'review', 'not_target', 'insufficient'])
         .optional()

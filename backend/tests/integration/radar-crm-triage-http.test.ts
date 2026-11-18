@@ -29,5 +29,15 @@ it('delivers discovery triage over HTTP only for YUX admin, with scoped commerci
   }
   const foreign=await rig.request('client_admin_B','GET',`/api/crm/leads?organizationId=${org}&pipelineId=${pipeline}`)
   expect(foreign.statusCode).toBe(200);expect(foreign.body).toEqual([])
+  await rig.sql(`UPDATE public.leads SET attribution_context=attribution_context || '{"qualificationStatus":"private-provider"}'::jsonb
+    WHERE id=$1 AND organization_id=$2`,[leadId,org])
+  for(const role of ['yux_admin','yux_operator','client_admin_A','client_member_A'] as const){
+   const list=await rig.request(role,'GET',`/api/crm/leads?organizationId=${org}&pipelineId=${pipeline}`)
+   expect(list.statusCode).toBe(200)
+   const lead=list.body.find((item:any)=>item.id===leadId)
+   expect(lead.attributionContext).toMatchObject({radarCnpj:'12345678000190'})
+   expect(lead.attributionContext).not.toHaveProperty('qualificationStatus')
+   expect(JSON.stringify(lead)).not.toContain('private-provider')
+  }
  }finally{await rig.close()}
 },30000)
