@@ -81,3 +81,21 @@ Use o [catálogo funcional](../yux-hub-catalogo-funcionalidades-capacidades.md) 
 - O aceite permanece separado por subconta, fluxo e público. A preparação das fontes reais, a avaliação paga sob autorização explícita e as ondas de migração A8 e A9 seguem os critérios do plano original.
 
 Para reproduzir a integração, aplique as migrações num banco local dedicado `yux_agent_pilot_test`, com os papéis de serviço do projeto. Execute `npm run test:integration -- strategy-agent-pilot` no backend com `YUX_AGENT_PILOT_TEST_DATABASE_URL` apontando para esse banco. Use a mesma variável no teste `test_workflow_credits_postgres.py` após a criação dos dados sintéticos pela integração do backend. Os testes `test_presales_instruction_preview.py`, `test_mission_supervisor.py` e `test_customer_context.py` exercitam a composição e a recuperação do runtime sem geração externa.
+
+## Comparação cega e aceite dos pilotos
+
+O lote reaproveita os 24 casos de Missões, com seus seis reservados, e acrescenta oito cenários sintéticos para cada piloto, com dois reservados em cada um. São 160 respostas previstas para a comparação entre configuração atual e candidata, com duas repetições por caso. Esta amostra tem um orçamento próprio, a definir antes da rodada paga.
+
+No diretório do runtime, prepare o lote e confira a identidade das versões antes de capturar as respostas.
+
+```powershell
+python scripts/compare_agent_pilots.py template --output .\pilot-capture.json
+python scripts/compare_agent_pilots.py blind --capture .\pilot-capture.json --output .\pilot-blind.json
+python scripts/compare_agent_pilots.py score --capture .\pilot-capture.json --review-a .\review-a.jsonl --review-b .\review-b.jsonl --output .\pilot-result.json
+```
+
+- Preencha a captura com as requisições e respostas das duas versões no ambiente aprovado. Registre em cada linha o identificador da execução em `traceId`, as impressões digitais das configurações por caminho, o contexto congelado, o modelo efetivo, as fontes autorizadas com suas versões e as referências recuperadas e citadas. Use `reviewContext` para fatos liberados aos avaliadores e `reviewExcerpt` para trechos de evidência com a mesma liberação. Quando o trecho não puder ser incluído, valide a referência no acervo com acesso autorizado. O comparador exige as mesmas entradas, fontes autorizadas e o mesmo modelo dentro de cada caso.
+- Registre as tentativas de geração e recuperação em `attempts`, inclusive falhas e contingências. Use `null` para uma medição ausente. Use uma lista vazia quando o registro confirmar que nenhuma chamada ocorreu. Em cada tentativa, informe tipo, custo conciliado em BRL e tokens disponíveis. Em `outcome`, registre o aceite, o aceite na primeira revisão e a correção de preço ou escopo quando observados.
+- Entregue o pacote cego a dois avaliadores distintos. Use a [rubrica](../../workers/marketing-studio-agent-runtime/evals/strategic-quality/rubric.md) para notas e justificativas. No lugar de `validReferences`, registre em `validCitationIndexes` as posições das citações verificadas na lista `citations`, começando em zero. Além dos seis critérios binários da rubrica, registre `commercialIntegrity`, `externalAudience` e `executionTruth` em `gates`. Uma diferença superior a um ponto em qualquer dimensão exige desempate documentado via `--adjudications`.
+- Para a rodada paga, registre a autorização explícita, as combinações de serviço e modelo aprovadas e o teto em `authorization.approvalReference`, `authorization.routes` e `authorization.ceilingBrl`. A medição de qualidade usa a procedência `live` somente quando a geração e as revisões ocorreram. O comparador opera em arquivos locais e preserva o estado `not_evaluated` para capturas simuladas.
+- Confira os três grupos separadamente. O relatório mantém o custo por diagnóstico aceito, proposta aprovada e missão aprovada pendente quando faltam medições ou aprovações. O comando de pontuação encerra com código 2 se a comparação ou o teto do lote não estiverem comprovados. A decisão de ativar exige também os aceites comercial e técnico e a observação supervisionada de cada piloto.

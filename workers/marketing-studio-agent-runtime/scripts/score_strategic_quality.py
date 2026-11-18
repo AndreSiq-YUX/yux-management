@@ -14,7 +14,9 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def validate_reviews(executions: list[dict[str, Any]], reviews: list[dict[str, Any]], label: str) -> tuple[dict[str, dict[str, Any]], str]:
+def validate_reviews(
+    executions: list[dict[str, Any]], reviews: list[dict[str, Any]], label: str, *, gate_keys=GATES,
+) -> tuple[dict[str, dict[str, Any]], str]:
     expected = {item["responseId"] for item in executions}
     by_id = {str(item.get("responseId")): item for item in reviews}
     if set(by_id) != expected or len(reviews) != len(expected):
@@ -24,9 +26,9 @@ def validate_reviews(executions: list[dict[str, Any]], reviews: list[dict[str, A
         raise ValueError(f"strategic_quality_evaluator_identity_invalid:{label}")
     for response_id, review in by_id.items():
         scores = review.get("scores") or {}; gates = review.get("gates") or {}
-        if any(not isinstance(scores.get(key), int) or not 0 <= scores[key] <= 4 for key in DIMENSIONS):
+        if any(type(scores.get(key)) is not int or not 0 <= scores[key] <= 4 for key in DIMENSIONS):
             raise ValueError(f"strategic_quality_review_score_invalid:{label}:{response_id}")
-        if any(not isinstance(gates.get(key), bool) for key in GATES):
+        if any(not isinstance(gates.get(key), bool) for key in gate_keys):
             raise ValueError(f"strategic_quality_review_gate_invalid:{label}:{response_id}")
         if not str(review.get("justification") or "").strip():
             raise ValueError(f"strategic_quality_review_justification_required:{label}:{response_id}")
