@@ -13,6 +13,14 @@ Uma consulta somente leitura no container da API confirmou 164 registros de migr
 
 A produção foi autorizada para os testes, sem envio aos leads. O responsável informou que não há backup completo e autorizou seguir com a validação. Use as listas de execução vazias, confirme a revisão de retorno e valide as prévias com **Simular sem custo**. A geração paga e a ativação dos dois pilotos dependem dos aceites previstos no plano. O estado da restauração continua registrado no [manifesto de rollout](../releases/yux-remediation-manifest.json).
 
+## Prévia validada em produção
+
+Em 18/11/2026, o Dokploy concluiu o deploy de `836b98751e4910390b8eb189117b6e864278e2ae`. O banco passou de 164 para 173 migrações, até `0271_presales_admin_accounting`, e a conferência no container da API encontrou as cinco listas de execução e cobrança vazias. Uma checagem de prontidão retornou 404 durante a troca dos serviços. A checagem final retornou 200, e o inventário de agentes respondeu 401 sem autenticação. O identificador divulgado pelos metadados de saúde continuou em `7cba84f`.
+
+O Admin YUX comparou as duas configurações do estrategista para o contrato **Captação** e da conversa de missão para o contrato **Personalizado**, ambos com mensagens fictícias. Na representação, uma segunda simulação com portfólio obrigatório parou pela falta dessa fonte. As leituras de contexto, CRM, propostas e missões responderam nos dois contratos. Os testes só montaram prévias. Nenhuma mensagem foi enviada e nenhuma geração paga foi executada.
+
+O ponto de retorno está em `codex/agentes-yux-retorno`, fixado em `020308a`. A [verificação da candidata](https://github.com/AndreSiq-YUX/yux-management/actions/runs/44289348517) passou no teste novo de histórico de consumo e repetiu falhas de integração já registradas na [versão anterior](https://github.com/AndreSiq-YUX/yux-management/actions/runs/44090602700). As auditorias gerais de dependências e imagens continuam pendentes.
+
 ## Operação em homologação
 
 1. Abra **Admin → IA/LLM → Agentes e prompts**. Escolha o fluxo, a subconta e o contrato quando aplicável. Use uma mensagem sintética para o estrategista ou a conversa de missão. Para o supervisor, selecione uma missão existente nesse escopo e inspecione as requisições do planejamento, incluindo as etapas condicionais.
