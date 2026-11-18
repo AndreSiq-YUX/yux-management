@@ -9,6 +9,8 @@ Em 18/11/2026, o Dokploy registrava a revisão `020308a` como última implantaç
 
 O ensaio em PostgreSQL local partiu das 140 migrações versionadas na revisão histórica `7cba84f`, inseriu registros sintéticos e aplicou a candidata com 173 migrações. Contratos, subcontas, leads, propostas, projetos, conversas e missões preservaram os campos conferidos. A repetição aplicou zero migrações e a contagem de mensagens de saída permaneceu igual. Entre a revisão implantada `020308a` e a candidata há nove migrações novas.
 
+Uma consulta somente leitura no container da API confirmou 164 registros de migração em produção, até `0262_email_reply_capture`. Em banco local, o ensaio aplicou as nove migrações e testou o retorno da API para `020308a` com o esquema atualizado. O retorno manteve a leitura de projetos, análises, diagnósticos, rascunhos e missões, o isolamento de propostas e a filtragem de leads na lixeira. A API de `7cba84f` voltou a listar um lead sintético na lixeira. O ponto de retorno desta implantação é `020308a`.
+
 A produção foi autorizada para os testes, sem envio aos leads. O responsável informou que não há backup completo e autorizou seguir com a validação. Use as listas de execução vazias, confirme a revisão de retorno e valide as prévias com **Simular sem custo**. A geração paga e a ativação dos dois pilotos dependem dos aceites previstos no plano. O estado da restauração continua registrado no [manifesto de rollout](../releases/yux-remediation-manifest.json).
 
 ## Operação em homologação

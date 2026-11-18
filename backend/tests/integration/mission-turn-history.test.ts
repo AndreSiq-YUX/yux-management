@@ -67,7 +67,7 @@ it('shows mission turn usage and credit settlement only to a scoped global admin
         'SELECT operation_id FROM private.strategy_workflow_credit_holds WHERE operation_id=ANY($1::uuid[])', [[settled, uncertain, strategist]],
       ).then(result => result.rows.map(row => row.operation_id).sort()),
     )
-    expect(await visible('yux_admin', [org])).toEqual([settled, uncertain].sort())
+    expect(await visible('yux_admin', [org])).toEqual([settled, uncertain, strategist].sort())
     expect(await visible('yux_admin', [otherOrg])).toEqual([])
     expect(await visible('yux_operator', [org])).toEqual([])
     expect(await rig.providerCalls()).toHaveLength(0)
