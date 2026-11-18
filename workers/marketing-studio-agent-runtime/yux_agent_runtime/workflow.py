@@ -15,6 +15,7 @@ from .contracts import (
 )
 from .harness import Harness
 from .mission_prompt import format_stage_adjustment
+from .source_rules import apply_source_rules
 from .radar import RadarCompanyInput, build_radar_workflow_spec, synthesize_radar_output
 from .runtime_store import AgentRuntimeStore
 from .strategy_usage import strategy_usage_stage
@@ -299,6 +300,7 @@ class StrategyWorkflowEngine:
         presales_instruction: str | None = None,
         presales_stage_instructions: dict[str, str] | None = None,
         presales_prompt_version: int | None = None,
+        presales_source_rules: dict[str, str] | None = None,
         mission_prompt: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         workflow_spec = self.resolve_workflow_spec(mode, source, workflow_spec)
@@ -309,9 +311,11 @@ class StrategyWorkflowEngine:
             and workflow_key in ("diagnostic_48h", "proposal_consultative")
         ) else {}
         organization_prompt_version = presales_prompt_version
+        source_rules = presales_source_rules if presales_candidate and profile_key == "growth_strategist" else None
         if source == "mission_intake" and workflow_key == "mission_intake_conversation" and mission_prompt:
             stage_instructions = mission_prompt["instructions"]
             organization_prompt_version = mission_prompt["version"]
+            source_rules = mission_prompt.get("source_rules")
         run = self.trace.start_run(
             {
                 "organization_id": organization_id,
@@ -337,7 +341,7 @@ class StrategyWorkflowEngine:
             requested_audience = (retrieval_context or {}).get("audience")
             retrieval_audience = resolve_retrieval_audience(source, requested_audience)
             retrieved: dict[str, Any] = {}
-            if self.retrieval_service is not None:
+            if self.retrieval_service is not None and (not source_rules or source_rules["methodology"] != "forbidden"):
                 agent = self.agent_profiles.get(profile_key) or {}
                 retrieved = self.retrieval_service.retrieve_strategy_context(
                     profile_key=profile_key,
@@ -368,6 +372,7 @@ class StrategyWorkflowEngine:
                     external=retrieval_audience == "external_contact",
                     audience=retrieval_audience,
                     **({"scoped_workflow_key": workflow_key} if presales_candidate or source == "mission_intake" else {}),
+                    **({"include_knowledge": False} if source_rules and source_rules["company_documents"] == "forbidden" else {}),
                 )
             supplied = retrieval_context or {}
             if retrieved or company_context or supplied:
@@ -386,6 +391,7 @@ class StrategyWorkflowEngine:
                     "brand_rules": company_context.get("brand_rules") or {},
                 }
 
+            source_report = apply_source_rules(retrieval_context or {}, source_rules) if source_rules else None
             if retrieval_context:
                 with self.trace.step(run_id, "retrieval", "retrieval", trace_query if presales_candidate else {"query": message}) as step:
                     step_record = step.succeed({"result_ids": (retrieval_context.get("retrieval_log") or {}).get("result_ids", [])})
@@ -506,6 +512,8 @@ class StrategyWorkflowEngine:
                 },
             )
             result = {"run": completed, "synthesis": synthesis, "policy": decision.to_dict(), "subagents": subagent_outputs}
+            if source_report is not None:
+                result["sourcePolicy"] = source_report
             if generation_receipts:
                 costs = [receipt["reportedCostUsd"] for receipt in generation_receipts]
                 result["usage"] = {
@@ -903,7 +911,7 @@ class StrategyWorkflowEngine:
             "agent": agent,
             "stage_key": stage_key,
             "stage_instruction_applied": bool(stage_instruction),
-            "organization_prompt_version": organization_prompt_version if presales_candidate or stage_instruction else None,
+            "organization_prompt_version": organization_prompt_version if presales_candidate or output_contract else None,
             "record_workflow_attempts": presales_candidate,
             "context": {
                 "objective": None if presales_candidate else objective,
@@ -938,7 +946,7 @@ class StrategyWorkflowEngine:
             raise AgentContractError("mission_conversation_output_truncated")
         run = result["agent_runs"][-1]
         trace = run.get("model_request_hash")
-        if trace and (presales_candidate or stage_instruction):
+        if trace and (presales_candidate or stage_instruction or organization_prompt_version and output_contract):
             self.trace.record_context(
                 run_id=run_id, step_id=None, profile_key=profile_key, context_kind="runtime",
                 safe_context={

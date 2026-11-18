@@ -100,7 +100,7 @@ class MissionConversationTurnRequestWire(StrictWireModel):
     @field_validator("mission_prompt")
     @classmethod
     def conversation_stage_only(cls, value):
-        if value and set(value.instructions) != {"synthesizer"}:
+        if value and any(stage != "synthesizer" for stage in value.instructions):
             raise ValueError("mission_prompt_stage_out_of_scope")
         return value
 

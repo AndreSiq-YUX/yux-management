@@ -2,6 +2,7 @@ import type { MissionSourceRefWire } from './generated/mission-wire.js'
 import { verifyMissionKnowledgeContext } from './mission-source-verifier.js'
 import { hashCanonical, type Queryable } from './repository.js'
 import type { MissionConversation } from './types.js'
+import type { AgentSource } from './agent-source-rules.js'
 
 type Audience = 'client_user' | 'internal_operator'
 
@@ -9,6 +10,7 @@ export type MissionConversationTurnContext = {
   audience: Audience
   historyAfterSequence: number
   inputSources: MissionSourceRefWire[]
+  excludedSources?: AgentSource[]
 }
 
 export function missionIntakeSourceScope(conversation: MissionConversation, audience: Audience) {
@@ -30,7 +32,7 @@ export function missionSourceFingerprint(source: MissionSourceRefWire) {
   ])
 }
 
-export async function resolveMissionTurnHistory(pool: Queryable, conversation: MissionConversation, audience?: Audience) {
+export async function resolveMissionTurnHistory(pool: Queryable, conversation: MissionConversation, audience?: Audience, excludedSources: AgentSource[] = []) {
   const latestSequence = conversation.messages.at(-1)?.sequence ?? 0
   if (!conversation.messages.some(message => message.actorType === 'agent')) {
     return { messages: conversation.messages, currentBrief: conversation.currentBrief, historyAfterSequence: 0,
@@ -42,8 +44,9 @@ export async function resolveMissionTurnHistory(pool: Queryable, conversation: M
     history_after_sequence: number
     audience: Audience
     input_sources: MissionSourceRefWire[]
+    excluded_sources: AgentSource[]
   }>(
-    `SELECT message_sequence, history_after_sequence, audience, input_sources
+    `SELECT message_sequence, history_after_sequence, audience, input_sources, excluded_sources
      FROM private.mission_conversation_turn_context
      WHERE organization_id=$1 AND conversation_id=$2 AND message_sequence <= $3
      ORDER BY message_sequence DESC`,
@@ -58,7 +61,8 @@ export async function resolveMissionTurnHistory(pool: Queryable, conversation: M
     (source.kind.startsWith('knowledge_') || source.kind === 'company_strategy') && source.visibility === 'internal',
   ) ? 'internal_operator' : 'client_user')
   const sources = new Map<string, MissionSourceRefWire>()
-  let reset = currentAudience === 'client_user' && retainedTurns.some(turn => turn.audience === 'internal_operator')
+  let reset = (currentAudience === 'client_user' && retainedTurns.some(turn => turn.audience === 'internal_operator'))
+    || excludedSources.some(source => !rows[0]?.excluded_sources?.includes(source))
   for (const source of [...retainedTurns.flatMap(turn => turn.input_sources), ...citedSources]) {
     const previous = sources.get(source.ref)
     if (previous && missionSourceFingerprint(previous) !== missionSourceFingerprint(source)) reset = true

@@ -47,6 +47,7 @@ class CustomerContextService:
         external: bool = False,
         audience: str | None = None,
         scoped_workflow_key: str | None = None,
+        include_knowledge: bool = True,
     ) -> dict[str, Any]:
         if not organization_id:
             return {}
@@ -81,9 +82,10 @@ class CustomerContextService:
         brand = _latest(contract_brands) or _latest(active_brands)
         products=[{**item,'value_proposition':item.get('valueProposition'),'target_audience':item.get('targetAudience'),'proof_points':item.get('proofPoints',[]),'objections':item.get('objections',[]),'cta':item.get('cta')} for item in portfolio['items']]
         authorized_search = getattr(self.store, "retrieve_authorized_knowledge", None)
-        if callable(authorized_search):
-            query_embedding = self.embedding_service.embed_query(query) if not contract_required and self.embedding_service is not None else None
-            records = [] if contract_required else authorized_search(
+        if callable(authorized_search) or not include_knowledge:
+            recover = include_knowledge and not contract_required
+            query_embedding = self.embedding_service.embed_query(query) if recover and self.embedding_service is not None else None
+            records = authorized_search(
                 organization_id=organization_id,
                 contract_id=contract_id,
                 profile_key=profile_key,
@@ -96,7 +98,7 @@ class CustomerContextService:
                 query_embedding=query_embedding,
                 embedding_model=getattr(self.embedding_service, "model", None),
                 namespace="company",
-            )
+            ) if recover else []
             context_items = [
                 {
                     "id": f"company:{item.get('id')}",

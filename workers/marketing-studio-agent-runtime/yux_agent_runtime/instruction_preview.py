@@ -13,6 +13,7 @@ from .mission_prompt import planning_prompt_configuration
 from .planning_budget import decision_from_wire
 from .providers import OpenRouterClient, ProviderRequestError
 from .runtime_store import InMemoryAgentRuntimeStore
+from .source_rules import RequiredSourcesMissing
 from .trace import stable_hash
 from .workflow import StrategyWorkflowEngine
 
@@ -113,11 +114,15 @@ def preview_workflow(engine: StrategyWorkflowEngine, execution: dict[str, Any]) 
         ),
     )
     preview = replace(engine, store=InMemoryAgentRuntimeStore(), harness=harness)
-    preview.execute(**execution)
+    try:
+        source_report = preview.execute(**execution).get("sourcePolicy")
+    except RequiredSourcesMissing as error:
+        source_report = error.report
     return {
         "generation": "simulated",
         "retrieval": "lexical",
         "requests": requests,
+        **({"sourcePolicy": source_report} if source_report is not None else {}),
     }
 
 def _capture_transport(

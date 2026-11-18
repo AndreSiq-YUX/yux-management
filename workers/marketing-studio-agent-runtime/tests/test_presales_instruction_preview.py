@@ -1,10 +1,12 @@
 import json
+import pytest
 
 from yux_agent_runtime.customer_context import CustomerContextService
 from yux_agent_runtime.instruction_preview import preview_workflow
 from yux_agent_runtime.mission_contracts import MissionConversationTurnRequestWire
 from yux_agent_runtime.mission_conversation import MissionConversationWorkflow
 from yux_agent_runtime.runtime_store import InMemoryAgentRuntimeStore
+from yux_agent_runtime.source_rules import RequiredSourcesMissing
 from yux_agent_runtime.trace import stable_hash
 from yux_agent_runtime.workflow import estimate_workflow_credits
 
@@ -128,3 +130,49 @@ def test_mission_portfolio_excludes_other_contracts_and_accounts():
     assert [item["name"] for item in items("contract-a")] == ["Oferta A"]
     assert [item["name"] for item in items("contract-b")] == ["Oferta B"]
     assert items(None) == []
+
+
+def test_source_rules_filter_before_generation_and_block_without_a_required_source():
+    engine, calls = test_live_workflows.LiveWorkflowTest().make_engine([
+        json.dumps({"answer": "Simulação", "supporting_cards": ["approved"]}),
+    ])
+    frozen = execution([])
+    frozen["retrieval_context"].update(
+        chunks=[{"id": "company:document", "chunk_text": "REGRA-DO-DOCUMENTO"}],
+        knowledge_snippets=["REGRA-DO-DOCUMENTO"],
+        company_strategy_context={"selected": [{"revisionId": "not-allowed", "revisionNumber": 1, "summary": "ESTRATÉGIA-VEDADA"}]},
+        company_strategy_sources=[],
+        portfolio_context={"items": [{"id": "product", "name": "PRODUTO-VEDADO"}]},
+    )
+    rules = dict(methodology="required", company_strategy="forbidden", company_documents="forbidden", portfolio="forbidden")
+    configured = {**frozen, "presales_source_rules": rules, "presales_prompt_version": 3}
+    preview = preview_workflow(engine, configured)
+    assert not calls
+    assert preview["sourcePolicy"]["counts"] == dict(methodology=2, company_strategy=0, company_documents=0, portfolio=0)
+    content = preview["requests"][0]["request"]["messages"][1]["content"]
+    assert "Confirmar condições." in content
+    assert not any(value in content for value in ["REGRA-DO-DOCUMENTO", "ESTRATÉGIA-VEDADA", "PRODUTO-VEDADO"])
+    assert "R$ 4.000" in content
+    engine.execute(**configured)
+    assert preview["requests"][0]["providerPayload"] == {key: value for key, value in calls[0].items() if key != "session_id"}
+
+    missing = {**configured, "presales_source_rules": {**rules, "company_strategy": "required"},
+               "retrieval_context": {**frozen["retrieval_context"], "company_strategy_context": {}}}
+    assert preview_workflow(engine, missing)["requests"] == []
+    with pytest.raises(RequiredSourcesMissing) as failure:
+        engine.execute(**missing)
+    assert failure.value.report["missing"] == ["company_strategy"]
+    assert len(calls) == 1
+
+    turn = MissionConversationTurnRequestWire.model_validate({
+        "schemaVersion": 1, "organization_id": "empresa-a", "conversation_id": "fixture",
+        "audience": "client_user", "user_message": "Quero preparar a prospecção.",
+        "mission_prompt": {"version": 1, "instructions": {}, "source_rules": {
+            **rules, "methodology": "optional", "company_documents": "required",
+        }},
+    })
+    intake = MissionConversationWorkflow(engine)
+    intake_preview = preview_workflow(engine, intake.prepare_turn(turn))
+    assert intake_preview["requests"] == []
+    assert intake_preview["sourcePolicy"]["missing"] == ["company_documents"]
+    assert len(calls) == 1

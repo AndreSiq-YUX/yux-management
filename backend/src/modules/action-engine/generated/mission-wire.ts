@@ -239,6 +239,10 @@ export type Audience = 'internal_operator' | 'client_user'
 export type ClientId = string | null
 export type ContractId = string | null
 export type ConversationId = string
+export type CompanyDocuments = 'required' | 'optional' | 'forbidden'
+export type CompanyStrategy = 'required' | 'optional' | 'forbidden'
+export type Methodology = 'required' | 'optional' | 'forbidden'
+export type Portfolio = 'required' | 'optional' | 'forbidden'
 export type Version1 = number
 export type OrganizationId = string
 export type Rollingsummary = string
@@ -1085,10 +1089,17 @@ export interface Currentbrief {
 }
 export interface MissionPromptConfigurationWire {
   instructions: Instructions
+  source_rules?: AgentSourceRulesWire | null
   version: Version1
 }
 export interface Instructions {
   [k: string]: string
+}
+export interface AgentSourceRulesWire {
+  company_documents: CompanyDocuments
+  company_strategy: CompanyStrategy
+  methodology: Methodology
+  portfolio: Portfolio
 }
 export interface Operationalcontext {
   [k: string]: unknown

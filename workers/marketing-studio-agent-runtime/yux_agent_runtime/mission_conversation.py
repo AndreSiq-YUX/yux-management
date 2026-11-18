@@ -536,7 +536,7 @@ class MissionConversationWorkflow:
                 "mission_request": typed.model_dump(exclude={"mission_prompt"}),
                 "mission_context": mission_context,
             },
-            **({"mission_prompt": typed.mission_prompt.model_dump()} if typed.mission_prompt else {}),
+            **({"mission_prompt": typed.mission_prompt.model_dump(exclude_none=True)} if typed.mission_prompt else {}),
         )
 
     def prepare_turn(self, request: MissionConversationTurnRequestWire) -> dict[str, Any]:

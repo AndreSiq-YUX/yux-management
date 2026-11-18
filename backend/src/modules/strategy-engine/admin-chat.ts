@@ -5,6 +5,7 @@ import { ApiError } from '../../http/errors.js'
 import { invokeAgentRuntime } from '../../lib/agent-runtime-client.js'
 import type { MissionSourceRefWire } from '../action-engine/generated/mission-wire.js'
 import { verifyMissionKnowledgeContext } from '../action-engine/mission-source-verifier.js'
+import { agentSourceRulesSchema, requiredSourcesMessage } from '../action-engine/agent-source-rules.js'
 import { listPromptVersions, presalesPilotEnabled, promptInstructionSchema, promptSettings,
   stageInstructionMapSchema, strategistModeSchema } from './prompt-versions.js'
 import { loadCommercialCatalog, loadPresalesLead, validateRecommendation } from './presales-context.js'
@@ -28,6 +29,7 @@ export const presalesJobSchema = z.object({
   version: z.number().int().positive(),
   instruction: promptInstructionSchema.nullable(),
   stageInstructions: stageInstructionMapSchema.optional(),
+  sourceRules: agentSourceRulesSchema.optional(),
   userMessageId: z.uuid(),
 })
 
@@ -186,7 +188,7 @@ export async function prepareStrategyAdminChat(
       leadId: optionalString(session.presales_lead_id),
       ...(version && settings.active ? {
         presales: { version: version.version, instruction: settings.instruction, userMessageId: String(userMessage.id),
-          stageInstructions: settings.stageInstructions },
+          stageInstructions: settings.stageInstructions, sourceRules: settings.sourceRules },
       } : {}),
     },
   }
@@ -242,6 +244,7 @@ export async function processStrategyAdminChat(
         presales_instruction: presales.instruction,
         presales_stage_instructions: presales.stageInstructions,
         presales_prompt_version: presales.version,
+        ...(presales.sourceRules ? { presales_source_rules: presales.sourceRules } : {}),
         strategy_operation_id: request.assistantMessageId,
         retrieval_context: {
           conversation_history: history,
@@ -315,11 +318,13 @@ export async function processStrategyAdminChat(
     return { session: updatedSession, assistantMessage: completed }
   } catch (error) {
     const protectedMessage = protectRuntimeError(error)
+    const content = protectedMessage === 'agent_runtime_409:agent_required_sources_missing'
+      ? requiredSourcesMessage : 'Nao foi possivel concluir a analise estrategica.'
     await pool.query(
       `UPDATE public.yux_strategy_chat_messages
-          SET content='Nao foi possivel concluir a analise estrategica.',status='failed',error_message=$3
+          SET content=$4,status='failed',error_message=$3
         WHERE id=$1 AND session_id=$2 AND role='assistant'`,
-      [request.assistantMessageId, request.sessionId, protectedMessage],
+      [request.assistantMessageId, request.sessionId, protectedMessage, content],
     )
     throw error
   }

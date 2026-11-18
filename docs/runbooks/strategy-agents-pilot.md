@@ -22,6 +22,14 @@ O histórico da conversa é separado entre usuário do portal e operador interno
 
 A migração 0267 deve ser aplicada antes da atualização dos serviços. Após os aceites, a configuração `ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS` indica as subcontas aprovadas, em lista separada por vírgula, para a execução no worker e a indicação de status na API. A lista inicia vazia. O turno ou planejamento conserva a versão registrada na primeira execução, inclusive ao reprocessar. Para reverter com operações em andamento, restaure a configuração herdada ou uma versão anterior, mantenha a subconta na lista até concluir os reprocessamentos e retire-a depois, se o piloto for encerrado.
 
+## Regras de fontes dos pilotos
+
+Em **Agentes e prompts**, selecione o fluxo, a subconta e o cenário. Na conversa de missão, selecione também o público. Classifique a metodologia publicada, a estratégia da subconta, os documentos da empresa e o portfólio de produtos. **Obrigatória** exige pelo menos um item autorizado no cenário e impede a geração quando falta contexto. **Opcional** usa os itens disponíveis. **Vedada** exclui a categoria do contexto do agente. Briefings confirmados e mensagens fornecidas pelo usuário são entradas da operação.
+
+Use **Simular regras de fontes** para conferir o que entra na requisição e quais publicações faltam. Informe a justificativa e publique. A versão registrada inclui as regras e as instruções do fluxo. O histórico permite restaurar versões anteriores. O planejamento considera os documentos e a metodologia verificados na conversa vinculada, além da estratégia e do portfólio vigentes. As regras do Radar são protegidas.
+
+Aplique a migração 0269 antes da atualização dos serviços. Atualize o runtime e os serviços do backend antes de liberar publicações no editor. A ativação segue as listas de subcontas do estrategista e do Action Engine. Quando uma nova regra veda uma categoria, a conversa recompõe o contexto a partir das mensagens do usuário e das fontes permitidas.
+
 ## Conciliação do estrategista
 
 O chat do Admin mostra o custo em USD informado pelo provedor e os créditos comerciais lançados. O custo inclui recuperação vetorial e tentativas de geração. Quando faltar o custo de alguma tentativa, o total aparece como indisponível. A conciliação de créditos usa as unidades do fluxo, com uma unidade pela síntese e uma por especialista concluído sem falha na verificação.

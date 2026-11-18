@@ -66,6 +66,55 @@
       "title": "ActionPackWire",
       "type": "object"
     },
+    "AgentSourceRulesWire": {
+      "additionalProperties": false,
+      "properties": {
+        "company_documents": {
+          "enum": [
+            "required",
+            "optional",
+            "forbidden"
+          ],
+          "title": "Company Documents",
+          "type": "string"
+        },
+        "company_strategy": {
+          "enum": [
+            "required",
+            "optional",
+            "forbidden"
+          ],
+          "title": "Company Strategy",
+          "type": "string"
+        },
+        "methodology": {
+          "enum": [
+            "required",
+            "optional",
+            "forbidden"
+          ],
+          "title": "Methodology",
+          "type": "string"
+        },
+        "portfolio": {
+          "enum": [
+            "required",
+            "optional",
+            "forbidden"
+          ],
+          "title": "Portfolio",
+          "type": "string"
+        }
+      },
+      "required": [
+        "methodology",
+        "company_strategy",
+        "company_documents",
+        "portfolio"
+      ],
+      "title": "AgentSourceRulesWire",
+      "type": "object"
+    },
     "CapabilityWire": {
       "additionalProperties": false,
       "properties": {
@@ -1256,7 +1305,6 @@
             "type": "string"
           },
           "maxProperties": 10,
-          "minProperties": 1,
           "propertyNames": {
             "enum": [
               "synthesizer",
@@ -1273,6 +1321,17 @@
           },
           "title": "Instructions",
           "type": "object"
+        },
+        "source_rules": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentSourceRulesWire"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "version": {
           "minimum": 1,

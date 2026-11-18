@@ -32,6 +32,7 @@ import { buildMissionPlanningCatalog, buildMissionPlanningContext, buildMissionP
 import { buildMissionTurnRequest } from '../../modules/action-engine/mission-turn-request.js'
 import { missionIntakeSourceScope, missionSourceFingerprint, resolveMissionTurnHistory } from '../../modules/action-engine/mission-conversation-history.js'
 import { intakePromptScope, pinMissionPromptVersion } from '../../modules/action-engine/mission-prompt-versions.js'
+import { agentSourceCategory, excludedAgentSources, requiredSourcesMessage } from '../../modules/action-engine/agent-source-rules.js'
 import {
   completeAgentConversationTurn,
   getMissionConversation,
@@ -75,7 +76,11 @@ export async function handleActionEngineProcessMissionConversation(
   if (!userMessage) throw new Error('mission_conversation_user_message_missing')
   const startedAt = Date.now()
   try {
-    const history = await resolveMissionTurnHistory(pool, conversation, audience)
+    const missionPrompt = await pinMissionPromptVersion(pool, env, {
+      organizationId, scope: intakePromptScope(audience), operationId: userMessage.id, operationVersion: requestedVersion,
+    })
+    const excludedSources = excludedAgentSources(missionPrompt?.source_rules)
+    const history = await resolveMissionTurnHistory(pool, conversation, audience, excludedSources)
     const { request, access } = await buildMissionTurnRequest(pool, env, {
       organizationId, contractId: conversation.contractId, actorId: conversation.createdBy,
       conversationId: conversation.id, audience, message: userMessage.content,
@@ -83,9 +88,6 @@ export async function handleActionEngineProcessMissionConversation(
     })
     if (request.allowedCapabilityKeys?.includes('crm.pipeline.create_draft')
       && access.enabledModules.includes('automations')) await ensureCrmPreparationPackVersion(pool, conversation.createdBy)
-    const missionPrompt = await pinMissionPromptVersion(pool, env, {
-      organizationId, scope: intakePromptScope(audience), operationId: userMessage.id, operationVersion: requestedVersion,
-    })
     if (missionPrompt) request.mission_prompt = missionPrompt
     const operationId = request.client_id && request.contract_id ? userMessage.id : undefined
     const response = await (dependencies.invokeTurn ?? invokeMissionConversationTurn)(env, request, operationId)
@@ -93,6 +95,9 @@ export async function handleActionEngineProcessMissionConversation(
     const cited = response.sources ?? []
     const citedFingerprints = new Set(cited.map(missionSourceFingerprint))
     const inputSources = response.retrievedSources ?? []
+    if ([...cited, ...inputSources].some(source => excludedSources.includes(agentSourceCategory(source.kind)))) {
+      throw new Error('mission_source_policy_violation')
+    }
     const remaining = new Map([...history.sources, ...inputSources].map(source => [missionSourceFingerprint(source), source]))
     for (const fingerprint of citedFingerprints) remaining.delete(fingerprint)
     await verifyMissionKnowledgeContext(pool, { ...sourceScope, sourceRefs: [...cited, ...remaining.values()] })
@@ -121,7 +126,7 @@ export async function handleActionEngineProcessMissionConversation(
       contextHash: response.contextHash,
       currentBrief: response.brief as unknown as Record<string, unknown>,
       contextReadiness: response.readiness as unknown as Record<string, unknown>,
-      promptContext: { audience, historyAfterSequence: history.historyAfterSequence, inputSources },
+      promptContext: { audience, historyAfterSequence: history.historyAfterSequence, inputSources, excludedSources },
       ...(strategyProposal?{strategyProposalAccess:{organizationId,actorId:conversation.createdBy,role:access.role}}:{}),
     })
     return { skipped: false, conversation: updated }
@@ -142,6 +147,7 @@ export async function handleActionEngineProcessMissionConversation(
 function safeConversationError(error: unknown): string {
   const message = error instanceof Error ? error.message : 'unknown'
   if (message === 'mission_conversation_output_truncated') return 'harness_response_incomplete'
+  if (message === 'agent_required_sources_missing') return 'agent_required_sources_missing'
   if (['mission_conversation_runtime_contract_invalid', 'mission_conversation_wire_response_invalid', 'mission_conversation_runtime_422'].includes(message)) return 'harness_response_invalid'
   if (message.includes('timeout') || message.includes('aborted')) return 'harness_timeout'
   if (message.includes('mission_conversation_runtime_402')) return 'insufficient_ai_credits'
@@ -544,7 +550,10 @@ export async function handleActionEnginePlanMission(
     const missionPrompt = await pinMissionPromptVersion(pool, env, {
       organizationId, scope: 'mission-planning', operationId: missionId, operationVersion: requestedVersion,
     })
-    const { planningContext, groundingMetadata, linkedConversation } = await buildMissionPlanningContext(pool, mission, catalog)
+    const { planningContext, groundingMetadata, linkedConversation, sourcePolicy } = await buildMissionPlanningContext(
+      pool, mission, catalog, false, missionPrompt?.source_rules ?? undefined,
+    )
+    if (sourcePolicy?.missing.length) throw new Error('agent_required_sources_missing')
     const contextSnapshot = await transaction(pool, (client) => insertMissionContextSnapshot(client, {
       organizationId, missionId, query: planningContext.query, companyContext: planningContext.companyContext,
       knowledgeItems: planningContext.knowledgeItems, strategyItems: planningContext.strategyItems,
@@ -765,7 +774,8 @@ export async function handleActionEnginePlanMission(
         })
         await projectMissionConversationPlanningResult(client, {
           organizationId, missionId, status: 'blocked', messageKind: 'error',
-          content: 'Não consegui preparar um plano seguro com o contexto atual. Revise as pendências e tente novamente.',
+          content: safeErrorCode(error) === 'agent_required_sources_missing'
+            ? requiredSourcesMessage : 'Não consegui preparar um plano seguro com o contexto atual. Revise as pendências e tente novamente.',
           structuredPayload: { kind: 'blocked', projectionKey: `planning-blocked:${requestedVersion}`, errorCode: safeErrorCode(error) },
           contextReadiness: { status: 'needs_configuration', missing: [], processingError: safeErrorCode(error) },
         })

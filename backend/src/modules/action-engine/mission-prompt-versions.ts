@@ -5,6 +5,7 @@ import { withDatabaseTransaction } from '../../db/client.js'
 import { ApiError } from '../../http/errors.js'
 import type { MissionPromptConfigurationWire } from './generated/mission-wire.js'
 import type { Queryable } from './repository.js'
+import { agentSourceRulesSchema, type AgentSourceRules } from './agent-source-rules.js'
 
 export const missionPromptScopeSchema = z.enum(['mission-planning', 'mission-intake-internal', 'mission-intake-client'])
 export const missionPromptStageSchema = z.enum([
@@ -20,6 +21,7 @@ type MissionPromptStage = z.infer<typeof missionPromptStageSchema>
 export type MissionPromptVersion = {
   version: number
   instructions: Partial<Record<MissionPromptStage, string>>
+  source_rules?: AgentSourceRules | null
   operation: 'publish' | 'restore'
   restored_from_version: number | null
   reason: string
@@ -37,14 +39,15 @@ export function missionPromptPilotEnabled(env: AppEnv, organizationId: string) {
     .some(id => id.trim().toLowerCase() === organizationId.toLowerCase())
 }
 
-export function missionPromptConfiguration(version: Pick<MissionPromptVersion, 'version' | 'instructions'> | undefined): MissionPromptConfigurationWire | undefined {
-  if (!version || !Object.keys(version.instructions).length) return
-  return { version: version.version, instructions: version.instructions }
+export function missionPromptConfiguration(version: Pick<MissionPromptVersion, 'version' | 'instructions' | 'source_rules'> | undefined): MissionPromptConfigurationWire | undefined {
+  if (!version || (!Object.keys(version.instructions).length && !version.source_rules)) return
+  return { version: version.version, instructions: version.instructions,
+    ...(version.source_rules ? { source_rules: agentSourceRulesSchema.parse(version.source_rules) } : {}) }
 }
 
 export async function listMissionPromptVersions(pool: Queryable, organizationId: string, scope: MissionPromptScope, limit = 20) {
   return (await pool.query<MissionPromptVersion>(
-    `SELECT version, instructions, operation, restored_from_version, reason, test_fingerprints, author_id, created_at
+    `SELECT version, instructions, source_rules, operation, restored_from_version, reason, test_fingerprints, author_id, created_at
      FROM private.mission_prompt_versions WHERE organization_id=$1 AND scope=$2 ORDER BY version DESC LIMIT $3`,
     [organizationId, scope, limit],
   )).rows
@@ -56,7 +59,8 @@ export async function changeMissionPromptVersion(pool: pg.Pool, input: {
   authorId: string
   expectedVersion: number
   reason: string
-} & ({ stage: MissionPromptStage; instruction: string; fingerprints: string[] } | { restoreVersion: number })) {
+} & ({ stage: MissionPromptStage; instruction: string; fingerprints: string[] }
+  | { sourceRules: AgentSourceRules; fingerprints: string[] } | { restoreVersion: number })) {
   return withDatabaseTransaction(pool, async client => {
     const { organizationId, scope } = input
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended('mission-prompt:' || $1::text || ':' || $2::text, 0))", [organizationId, scope])
@@ -65,19 +69,22 @@ export async function changeMissionPromptVersion(pool: pg.Pool, input: {
 
     const restoring = 'restoreVersion' in input
     const restored = restoring && input.restoreVersion > 0 ? (await client.query<MissionPromptVersion>(
-      `SELECT instructions, test_fingerprints FROM private.mission_prompt_versions
+      `SELECT instructions, source_rules, test_fingerprints FROM private.mission_prompt_versions
        WHERE organization_id=$1 AND scope=$2 AND version=$3`, [organizationId, scope, input.restoreVersion],
     )).rows[0] : undefined
     if (restoring && input.restoreVersion > 0 && !restored) throw new ApiError(404, 'agent_prompt_version_not_found')
-    const instructions = restoring ? restored?.instructions ?? {} : { ...current?.instructions, [input.stage]: input.instruction }
+    const instructions = restoring ? restored?.instructions ?? {}
+      : 'stage' in input ? { ...current?.instructions, [input.stage]: input.instruction } : current?.instructions ?? {}
+    const sourceRules = restoring ? restored?.source_rules ?? null
+      : 'sourceRules' in input ? input.sourceRules : current?.source_rules ?? null
     const fingerprints = restoring ? restored?.test_fingerprints ?? [] : input.fingerprints
     return (await client.query<MissionPromptVersion>(
       `INSERT INTO private.mission_prompt_versions
-         (organization_id, scope, version, instructions, operation, restored_from_version, reason, test_fingerprints, author_id)
-       VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9) RETURNING version, instructions, operation,
+         (organization_id, scope, version, instructions, operation, restored_from_version, reason, test_fingerprints, author_id, source_rules)
+       VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9,$10::jsonb) RETURNING version, instructions, source_rules, operation,
          restored_from_version, reason, test_fingerprints, author_id, created_at`,
       [organizationId, scope, input.expectedVersion + 1, JSON.stringify(instructions), restoring ? 'restore' : 'publish',
-        restoring ? input.restoreVersion : null, input.reason, fingerprints, input.authorId],
+        restoring ? input.restoreVersion : null, input.reason, fingerprints, input.authorId, sourceRules ? JSON.stringify(sourceRules) : null],
     )).rows[0]
   })
 }
@@ -98,8 +105,8 @@ export async function pinMissionPromptVersion(pool: Queryable, env: AppEnv, inpu
                             WHERE organization_id=$1 AND scope=$2 ORDER BY version DESC LIMIT 1))
        ON CONFLICT (organization_id, scope, operation_id, operation_version) DO NOTHING`, values,
   )
-  const pinned = (await pool.query<{ prompt_version: number | null; instructions: MissionPromptVersion['instructions'] | null }>(
-    `SELECT execution.prompt_version, publication.instructions
+  const pinned = (await pool.query<{ prompt_version: number | null; instructions: MissionPromptVersion['instructions'] | null; source_rules: MissionPromptVersion['source_rules'] }>(
+    `SELECT execution.prompt_version, publication.instructions, publication.source_rules
        FROM private.mission_prompt_execution_versions execution LEFT JOIN private.mission_prompt_versions publication
          ON publication.organization_id=execution.organization_id AND publication.scope=execution.scope
          AND publication.version=execution.prompt_version
@@ -108,5 +115,5 @@ export async function pinMissionPromptVersion(pool: Queryable, env: AppEnv, inpu
   )).rows[0]
   if (!pinned || (pinned.prompt_version !== null && !pinned.instructions)) throw new Error('mission_prompt_version_unavailable')
   return pinned.prompt_version === null || !pinned.instructions ? undefined
-    : missionPromptConfiguration({ version: pinned.prompt_version, instructions: pinned.instructions })
+    : missionPromptConfiguration({ version: pinned.prompt_version, instructions: pinned.instructions, source_rules: pinned.source_rules })
 }

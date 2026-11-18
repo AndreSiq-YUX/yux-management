@@ -99,7 +99,7 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     await admin?.end()
   })
 
-  it('inspects the supervisor only as global admin and leaves the mission unchanged', async () => {
+  async function createSupervisorScenario() {
     const missionId = randomUUID()
     const { parameters: _schema, ...definition } = REVENUE_RECOVERY_PACK_V0
     const pack = await publishActionPackVersion(admin, {
@@ -113,6 +113,11 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
        VALUES ($1,$2,$3,'Recuperação sintética','Propor recuperação em rascunho','draft','assisted',$4,$5)`,
       [missionId, organizationId, pack.id, missionId, fixtureUsers.yux_admin.id],
     )
+    return missionId
+  }
+
+  it('inspects the supervisor only as global admin and leaves the mission unchanged', async () => {
+    const missionId = await createSupervisorScenario()
     const runtime = vi.fn(async (url: string, init: RequestInit) => {
       expect(url).toBe('http://127.0.0.1:4109/instructions/preview/mission-supervisor')
       const wire = JSON.parse(String(init.body))
@@ -384,5 +389,65 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     expect(restored.statusCode, restored.body).toBe(200)
     expect(await pin(run)).toEqual({ version: 1, instructions: { synthesizer: issue.instruction } })
     expect(await pin({ ...run, operationId: randomUUID() })).toBeUndefined()
+  })
+
+  it('publishes tested source rules independently for each pilot flow and restores the inherited policy', async () => {
+    const base = '/api/strategy-engine/agent-prompts'
+    const sourceRules = { methodology: 'forbidden', company_strategy: 'optional', company_documents: 'required', portfolio: 'optional' } as const
+    const report = { rules: sourceRules, counts: { methodology: 0, company_strategy: 0, company_documents: 0, portfolio: 0 },
+      missing: ['company_documents'] }
+    const transport = vi.fn(async (url: string, init: RequestInit) => {
+      const wire = JSON.parse(String(init.body))
+      if (url.endsWith('/instructions/preview/mission-supervisor')) {
+        expect(wire.mission_prompt?.source_rules).toBeUndefined()
+        return Response.json({ baseline: { requests: [{ stage: 'planner', providerFingerprint: 'c'.repeat(64) }] } })
+      }
+      expect(wire.candidate_source_rules).toEqual(sourceRules)
+      return Response.json({ baseline: { requests: [] }, candidate: { requests: [], sourcePolicy: report } })
+    })
+    vi.stubGlobal('fetch', transport)
+    const scope = async (promptScope?: string) => (await call('GET',
+      `${base}/scope?organizationId=${organizationId}${promptScope ? `&promptScope=${promptScope}` : ''}`)).json()
+    const body = { organizationId, flow: 'mission-intake', message: 'Confirme as condições.', audience: 'client_user' }
+    const publication = { operation: 'publish_sources', sourceRules, reason: 'Regra do caso sintético.' }
+    for (const cookie of deniedCookies) {
+      expect((await call('POST', base + '/versions', { ...body, ...publication, expectedVersion: 0 }, cookie)).statusCode).toBe(403)
+    }
+    expect(transport).not.toHaveBeenCalled()
+    const compared = await call('POST', base + '/preview', { ...body, candidateSourceRules: sourceRules })
+    expect(compared.json().candidate).toEqual({ requests: [], sourcePolicy: report })
+    const approved = await call('POST', base + '/versions', { ...body, ...publication, expectedVersion: 0 })
+    expect(approved.statusCode, approved.body).toBe(200)
+    expect(approved.json()).toMatchObject({ instructions: {}, source_rules: sourceRules, test_fingerprints: [expect.stringMatching(/^[a-f0-9]{64}$/)] })
+    expect((await scope('mission-intake-internal')).versions[0].source_rules).toBeNull()
+    const run = { organizationId, scope: 'mission-intake-client' as const, operationId: randomUUID(), operationVersion: 1 }
+    const pin = (request: typeof run) => runWithDatabaseRequestContext({
+      role: 'yux_operator', organizationIds: [organizationId], serviceRole: 'worker',
+    }, () => pinMissionPromptVersion(worker, app.config, request))
+    expect((await pin(run))?.source_rules).toEqual(sourceRules)
+    const restored = await call('POST', base + '/versions', {
+      operation: 'restore', organizationId, promptScope: run.scope, restoreVersion: 0, expectedVersion: 1, reason: 'Reverter ensaio.',
+    })
+    expect(restored.statusCode, restored.body).toBe(200)
+    expect(await pin({ ...run, operationId: randomUUID() })).toBeUndefined()
+    expect((await pin(run))?.source_rules).toEqual(sourceRules)
+
+    const strategist = await scope()
+    const strategic = await call('POST', base + '/versions', {
+      ...publication, organizationId, flow: 'strategist', message: 'Compare ofertas.', mode: 'proposal',
+      expectedVersion: strategist.versions[0]?.version ?? 0,
+    })
+    expect(strategic.statusCode, strategic.body).toBe(200)
+    expect(strategic.json()).toMatchObject({ source_rules: sourceRules, stage_instructions: strategist.versions[0]?.stage_instructions ?? [] })
+    const missionId = await createSupervisorScenario()
+    const planning = await scope('mission-planning')
+    try {
+      const planned = await call('POST', base + '/versions', { ...publication, organizationId, flow: 'mission-supervisor',
+        missionId, expectedVersion: planning.versions[0]?.version ?? 0 })
+      expect(planned.statusCode, planned.body).toBe(200)
+      expect(planned.json()).toMatchObject({ source_rules: sourceRules, instructions: planning.versions[0]?.instructions ?? {} })
+    } finally {
+      await admin.query('DELETE FROM public.action_missions WHERE id = $1', [missionId])
+    }
   })
 })

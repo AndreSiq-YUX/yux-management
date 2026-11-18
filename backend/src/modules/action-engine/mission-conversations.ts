@@ -358,12 +358,12 @@ export async function completeAgentConversationTurn(pool: Connectable, input: {
       harnessRunId: input.harnessRunId,
     })
     if (input.promptContext) {
-      const { audience, historyAfterSequence, inputSources } = input.promptContext
+      const { audience, historyAfterSequence, inputSources, excludedSources = [] } = input.promptContext
       await client.query(
         `INSERT INTO private.mission_conversation_turn_context
-           (organization_id, conversation_id, message_sequence, history_after_sequence, audience, input_sources)
-         VALUES ($1,$2,$3,$4,$5,$6::jsonb)`,
-        [input.organizationId, input.conversationId, sequence, historyAfterSequence, audience, JSON.stringify(inputSources)],
+           (organization_id, conversation_id, message_sequence, history_after_sequence, audience, input_sources, excluded_sources)
+         VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::text[])`,
+        [input.organizationId, input.conversationId, sequence, historyAfterSequence, audience, JSON.stringify(inputSources), excludedSources],
       )
     }
     if(input.strategyProposalAccess && input.structuredPayload.strategyProposal) {

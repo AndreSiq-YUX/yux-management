@@ -6,6 +6,20 @@ import type { StrategyOrganization } from '@/types/strategyEngine'
 type Consumer = { key: string; name: string; owner: string; audience: string; state: string; instructions: string }
 type Contract = { id: string; name: string }
 type Mission = { id: string; title: string }
+const sourceLabels = {
+  methodology: 'Metodologia publicada',
+  company_strategy: 'Estratégia publicada da subconta',
+  company_documents: 'Documentos da empresa',
+  portfolio: 'Portfólio de produtos',
+}
+type Source = keyof typeof sourceLabels
+type SourceUse = 'optional' | 'required' | 'forbidden'
+type SourceRules = Record<Source, SourceUse>
+const sources = Object.keys(sourceLabels) as Source[]
+const useLabels = { optional: 'Opcional', required: 'Obrigatória', forbidden: 'Vedada' }
+const inheritedSourceRules: SourceRules = {
+  methodology: 'optional', company_strategy: 'optional', company_documents: 'optional', portfolio: 'optional',
+}
 type StagePreview = {
   stage: string
   profile: string
@@ -37,14 +51,16 @@ type StagePreview = {
 type Simulation = {
   requests: StagePreview[]
   blockedReason?: string
+  sourcePolicy?: { rules: SourceRules; counts: Record<Source, number>; missing: Source[] }
   missingSpecialistInputs?: { workflow: string; fields: string[] }
 }
-type Preview = { baseline: Simulation; candidate?: Simulation; publishedVersion?: number }
+type Preview = { baseline: Simulation; candidate?: Simulation; publishedVersion?: number; sourcePolicyProtected?: boolean }
 type StageInstruction = { mode: string; stage: string; instruction: string }
 type Version = {
   version: number; instruction?: string | null; reason: string; author_id: string; operation: string; created_at: string
   stage_instructions?: StageInstruction[]
   instructions?: Record<string, string>
+  source_rules?: SourceRules | null
 }
 type AccountScope = {
   contracts: Contract[]
@@ -78,6 +94,7 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
   const [message, setMessage] = useState('')
   const [candidateInstruction, setCandidateInstruction] = useState('')
   const [candidateStage, setCandidateStage] = useState('')
+  const [sourceDraft, setSourceDraft] = useState<SourceRules | null>(null)
   const [editableStages, setEditableStages] = useState<Array<{ stage: string; profile: string }>>([])
   const [preview, setPreview] = useState<Preview | null>(null)
   const [running, setRunning] = useState(false)
@@ -135,8 +152,10 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
       const result = await apiRequest<Preview>(`${endpoint}/preview`, {
         method: 'POST',
         body: {
-          ...scenario, candidateInstruction: candidateInstruction.trim() || undefined,
-          candidateStage: candidateStage || undefined,
+          ...scenario,
+          ...(sourceRulesChanged ? { candidateSourceRules: sourceDraft } : {
+            candidateInstruction: candidateInstruction.trim() || undefined, candidateStage: candidateStage || undefined,
+          }),
         },
       })
       setPreview(result)
@@ -149,7 +168,7 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
     }
   }
 
-  async function updateVersion(operation: 'publish' | 'restore') {
+  async function updateVersion(operation: 'publish' | 'publish_sources' | 'restore') {
     setSaving(true)
     setFeedback('')
     try {
@@ -157,14 +176,15 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
         method: 'POST',
         body: {
           operation, reason: reason.trim(),
-          expectedVersion: operation === 'publish' ? preview?.publishedVersion : scope?.versions[0]?.version ?? 0,
-          ...(operation === 'publish'
-            ? { ...scenario, instruction: candidateInstruction.trim(), stage: candidateStage || undefined }
-            : { organizationId, promptScope, restoreVersion: Number(restoreVersion) }),
+          expectedVersion: operation === 'restore' ? scope?.versions[0]?.version ?? 0 : preview?.publishedVersion,
+          ...(operation === 'restore' ? { organizationId, promptScope, restoreVersion: Number(restoreVersion) }
+            : operation === 'publish_sources' ? { ...scenario, sourceRules: sourceDraft }
+              : { ...scenario, instruction: candidateInstruction.trim(), stage: candidateStage || undefined }),
         },
       })
       setScope(current => current && ({ ...current, versions: [version, ...current.versions] }))
       setReason('')
+      setSourceDraft(null)
       setPreview(null)
       setFeedback(`Versão ${version.version} registrada para esta subconta.`)
     } catch {
@@ -198,6 +218,7 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
     setCandidateStage('')
     setCandidateInstruction('')
     setEditableStages([])
+    setSourceDraft(null)
     setRestoreVersion('0')
     setFeedback('')
     setScopeError(false)
@@ -207,10 +228,15 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
   const scopeReady = scope?.key === scopeKey
   const scopedMissions = availableMissions?.scope === missionScope ? availableMissions.items : []
   const hasPreviewInput = inspectingSupervisor ? scopedMissions.some(mission => mission.id === missionId) : Boolean(message.trim())
-  const appliedCandidate = preview?.candidate && preview.publishedVersion !== undefined && ((!candidateStage && isStrategist) || preview.candidate.requests.some(
+  const appliedCandidate = preview?.candidate?.requests.length && preview.publishedVersion !== undefined && ((!candidateStage && isStrategist) || preview.candidate.requests.some(
     stage => stage.stage === candidateStage && stage.stageInstructionApplied,
   ))
   const currentVersion = scope?.versions[0]
+  const publishedRules = currentVersion?.source_rules ?? inheritedSourceRules
+  const sourceRulesChanged = sourceDraft != null && sources.some(source => sourceDraft[source] !== publishedRules[source])
+  const simulatedRules = preview?.candidate?.sourcePolicy?.rules
+  const canPublishSourceRules = sourceRulesChanged && preview?.publishedVersion !== undefined && simulatedRules
+    && sources.every(source => simulatedRules[source] === sourceDraft[source])
   const currentStageInstruction = isStrategist
     ? currentVersion?.stage_instructions?.find(entry => entry.mode === mode && entry.stage === candidateStage)?.instruction
     : currentVersion?.instructions?.[candidateStage]
@@ -351,11 +377,28 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
             </p>
           )}
         </fieldset>
+        {scopeReady && (
+          <fieldset disabled={running || saving || preview?.sourcePolicyProtected} className="space-y-2 border-t pt-4 text-sm">
+            <legend className="mb-1 px-1 font-medium">Regras de fontes deste fluxo</legend>
+            <p className="text-gray-600">Uma fonte obrigatória precisa estar disponível no cenário. Uma fonte vedada fica fora do contexto enviado ao agente.</p>
+            <div className="grid gap-3 md:grid-cols-2">
+              {sources.map(source => (
+                <label key={source}>{sourceLabels[source]}
+                  <select value={(sourceDraft ?? publishedRules)[source]} className={control}
+                    onChange={event => setSourceDraft({ ...(sourceDraft ?? publishedRules), [source]: event.target.value as SourceUse })}>
+                    {Object.entries(useLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                </label>
+              ))}
+            </div>
+            {preview?.sourcePolicyProtected && <p role="status">As regras de fontes do Radar são protegidas neste cenário.</p>}
+          </fieldset>
+        )}
         {scopeError && <p role="alert" className="text-sm text-red-700">Não foi possível consultar os contratos da subconta.</p>}
         {inspectingSupervisor && missionError && <p role="alert" className="text-sm text-red-700">Não foi possível consultar as missões deste escopo.</p>}
         {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
         <button type="submit" disabled={!scopeReady || !hasPreviewInput || running || saving} className="rounded-md bg-yux-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
-          {running ? 'Montando prévia…' : 'Simular sem custo'}
+          {running ? 'Montando prévia…' : sourceRulesChanged ? 'Simular regras de fontes' : 'Simular sem custo'}
         </button>
       </form>
 
@@ -374,7 +417,7 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
             <p className="text-gray-600">
               {scope.pilotEnabled ? 'Conta habilitada para o piloto.' : 'Execução do piloto desativada para esta subconta.'}
               {' '}{currentVersion && (currentVersion.instruction || currentVersion.stage_instructions?.length
-                || Object.keys(currentVersion.instructions ?? {}).length)
+                || Object.keys(currentVersion.instructions ?? {}).length || currentVersion.source_rules)
                 ? `Versão publicada ${currentVersion.version}.` : 'Configuração herdada selecionada.'}
             </p>
           </div>
@@ -382,9 +425,13 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
             <label className="block">Justificativa
               <input value={reason} onChange={event => setReason(event.target.value)} maxLength={1000} className={control} />
             </label>
-            <button type="button" disabled={!reason.trim() || !appliedCandidate || !candidateInstruction.trim()} onClick={() => updateVersion('publish')} className="rounded-md border px-3 py-2 font-medium disabled:opacity-50">
+            <button type="button" disabled={sourceRulesChanged || !reason.trim() || !appliedCandidate || !candidateInstruction.trim()} onClick={() => updateVersion('publish')} className="rounded-md border px-3 py-2 font-medium disabled:opacity-50">
               Publicar instrução para esta subconta
             </button>
+            {sourceRulesChanged && <button type="button" disabled={!reason.trim() || !canPublishSourceRules}
+              onClick={() => updateVersion('publish_sources')} className="rounded-md border px-3 py-2 font-medium disabled:opacity-50">
+              Publicar regras de fontes
+            </button>}
             {scope.versions.length > 0 && (
               <div className="flex flex-wrap items-end gap-2">
                 <label>{isStrategist ? 'Versão da subconta a restaurar' : 'Versão deste fluxo a restaurar'}
@@ -406,6 +453,9 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
                   <li key={version.version} className="rounded-md border p-2">
                     <p>Versão {version.version} · {new Date(version.created_at).toLocaleString('pt-BR')} · {version.author_id}</p>
                     <p>{version.reason}</p>
+                    {version.source_rules && <p className="mt-1 text-gray-600">
+                      {sources.map(source => `${sourceLabels[source]} · ${useLabels[version.source_rules![source]]}`).join(' | ')}
+                    </p>}
                     {version.instruction && <p className="mt-1 whitespace-pre-wrap text-gray-600">{version.instruction}</p>}
                     {version.stage_instructions?.map(entry => (
                       <p key={`${entry.mode}/${entry.stage}`} className="mt-1 whitespace-pre-wrap text-gray-600">
@@ -438,9 +488,23 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
 
 function SimulationResult({ title, simulation }: { title: string; simulation: Simulation }) {
   const missing = simulation.missingSpecialistInputs
+  const policy = simulation.sourcePolicy
   return (
     <section className="min-w-0 space-y-3 rounded-lg border bg-white p-5">
       <h3 className="font-semibold">{title}</h3>
+      {policy && (
+        <div className="space-y-2 text-sm">
+          {policy.missing.length > 0 && <p role="status" className="text-amber-800">
+            Fontes obrigatórias ausentes. A execução aguarda {policy.missing.map(source => sourceLabels[source].toLowerCase()).join(', ')}.
+          </p>}
+          <ul className="space-y-1 text-gray-600">
+            {sources.map(source => <li key={source}>
+              {sourceLabels[source]} · {useLabels[policy.rules[source]]}
+              {policy.rules[source] !== 'forbidden' && ` · ${policy.counts[source]} recuperadas`}
+            </li>)}
+          </ul>
+        </div>
+      )}
       {simulation.blockedReason && <p role="status" className="text-sm text-amber-800">O orçamento de planejamento impede a requisição neste cenário.</p>}
       {missing && (
         <p role="status" className="text-sm text-amber-800">

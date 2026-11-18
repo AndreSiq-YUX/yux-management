@@ -15,8 +15,9 @@ import { REVENUE_RECOVERY_PACK_V0 } from './packs/revenue-recovery-v0.js'
 import type { PlanningCycleBudget } from './planning-cycle.js'
 import { RADAR_MISSION_KNOWLEDGE_SCOPE, retrieveRadarMissionKnowledge } from './radar-knowledge-context.js'
 import { radarMissionAvailable } from './radar-pack-registration.js'
-import { getPlan, type Queryable } from './repository.js'
+import { getPlan, hashCanonical, type Queryable } from './repository.js'
 import type { ActionMission } from './types.js'
+import { agentSourceCategory, agentSourceReport, excludedAgentSources, type AgentSourceRules } from './agent-source-rules.js'
 
 export async function buildMissionPlanningCatalog(pool: Queryable, env: AppEnv, mission: ActionMission) {
   const { organizationId } = mission
@@ -39,10 +40,11 @@ export async function buildMissionPlanningCatalog(pool: Queryable, env: AppEnv, 
 type PlanningCatalog = Awaited<ReturnType<typeof buildMissionPlanningCatalog>>
 
 export async function buildMissionPlanningContext(
-  pool: Queryable, mission: ActionMission, catalog: PlanningCatalog, preview = false,
+  pool: Queryable, mission: ActionMission, catalog: PlanningCatalog, preview = false, publishedRules?: AgentSourceRules,
 ) {
   const { id: missionId, organizationId } = mission
   const { registry, packs, radar, capabilityCatalog } = catalog
+  const rules = radar ? undefined : publishedRules
   const manifest = createCapabilityManifest(
     registry,
     capabilityCatalog.map((item) => ({ key: item.key, version: item.version })),
@@ -101,7 +103,9 @@ export async function buildMissionPlanningContext(
     ])].sort()
     const composed = composeVerifiedMissionContext({
       organizationId,
-      companyContext: companyContextFromConversation(linkedConversation.contextReadiness),
+      companyContext: companyContextFromConversation(linkedConversation.contextReadiness,
+        excludedAgentSources(rules).length ? new Set(verified.sources.filter(source =>
+          rules?.[agentSourceCategory(source.kind)] !== 'forbidden').map(source => source.ref)) : undefined),
       operational: operationalContext,
       knowledge: { ...verified, sourceIds: allowedSourceIds },
       harnessRetrievalTraceId: linkedConversation.lastHarnessRunId,
@@ -123,10 +127,35 @@ export async function buildMissionPlanningContext(
     }
   }
   planningContext = await addCompanyStrategyToMissionPlanning(pool, { organizationId, contractId: mission.contractId, query: planningContext.query, context: planningContext })
-  return { planningContext, groundingMetadata, linkedConversation }
+  const sourcePolicy = rules ? scopePlanningSources(planningContext, rules) : undefined
+  return { planningContext, groundingMetadata, linkedConversation, sourcePolicy }
 }
 
 type PlanningContext = Awaited<ReturnType<typeof buildMissionPlanningContext>>['planningContext']
+
+function scopePlanningSources(context: {
+  companyContext: Record<string, unknown>
+  strategyItems: Array<Record<string, unknown>>
+  knowledgeItems: Array<Record<string, unknown>>
+  sourceIds: string[]
+  contextHash: string
+}, rules: AgentSourceRules) {
+  if (rules.methodology === 'forbidden') context.strategyItems = []
+  context.knowledgeItems = context.knowledgeItems.filter(item => item.kind === 'company_strategy'
+    ? rules.company_strategy !== 'forbidden' : rules.company_documents !== 'forbidden')
+  if (rules.company_strategy === 'forbidden') delete context.companyContext.company_strategy_context
+  if (rules.portfolio === 'forbidden') delete context.companyContext.portfolio_context
+  const items = [...context.strategyItems, ...context.knowledgeItems]
+  context.sourceIds = [...new Set(items.flatMap(item => [item.id, item.sourceId]).filter((id): id is string => typeof id === 'string'))].sort()
+  context.contextHash = hashCanonical({ previous: context.contextHash, rules, sourceIds: context.sourceIds })
+  const portfolio = context.companyContext.portfolio_context as { items?: unknown[] } | undefined
+  return agentSourceReport(rules, {
+    methodology: context.strategyItems.length,
+    company_strategy: context.knowledgeItems.filter(item => item.kind === 'company_strategy').length,
+    company_documents: context.knowledgeItems.filter(item => item.kind !== 'company_strategy').length,
+    portfolio: portfolio?.items?.length ?? 0,
+  })
+}
 
 export function getMissionPlanningLimits(mission: ActionMission) {
   const planningBudget: PlanningCycleBudget = {
@@ -203,14 +232,15 @@ export async function buildMissionPlanRequest(
   }
 }
 
-function companyContextFromConversation(readiness: Record<string, unknown>): Record<string, unknown> {
+function companyContextFromConversation(readiness: Record<string, unknown>, allowedRefs?: Set<string>): Record<string, unknown> {
   const facts = Array.isArray(readiness.knownFacts) ? readiness.knownFacts : []
   const companyContext = Object.fromEntries(facts.flatMap((value) => {
     if (!value || typeof value !== 'object') return []
     const item = value as Record<string, unknown>
-    return typeof item.key === 'string' ? [[item.key, item.value]] : []
+    return typeof item.key === 'string' && (!allowedRefs || typeof item.sourceRef === 'string' && allowedRefs.has(item.sourceRef))
+      ? [[item.key, item.value]] : []
   }))
-  const assumptions = Array.isArray(readiness.assumptions) ? readiness.assumptions : []
+  const assumptions = !allowedRefs && Array.isArray(readiness.assumptions) ? readiness.assumptions : []
   return assumptions.length ? { ...companyContext, assumptions } : companyContext
 }
 

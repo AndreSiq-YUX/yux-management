@@ -52,6 +52,7 @@ export async function invokeMissionConversationTurn(
     const message = error instanceof Error ? error.message : ''
     const status = /^agent_runtime_(\d{3})/.exec(message)?.[1]
     if (message === 'agent_runtime_422:mission_conversation_output_truncated') throw new Error('mission_conversation_output_truncated')
+    if (message === 'agent_runtime_409:agent_required_sources_missing') throw new Error('agent_required_sources_missing')
     if (message === 'agent_runtime_409:mission_credit_turn_in_progress' || message === 'agent_runtime_409:workflow_credit_ownership_lost') {
       throw new Error('mission_conversation_turn_in_progress')
     }

@@ -26,14 +26,15 @@ it('creates and reviews real drafts through conversation without a sender, with 
     ACTION_ENGINE_MUTATION_LEASE_SECRET:'integration-mutation-lease-secret-32-chars'} as AppEnv
   const intakeInstruction = 'Confirme a retirada antes de propor o briefing.'
   const planningInstruction = 'Use a condição de retirada ao definir a qualificação.'
+  const sourceRules = { methodology: 'optional', company_strategy: 'required', company_documents: 'forbidden', portfolio: 'optional' }
   try {
     await rig.sql(`INSERT INTO private.mission_prompt_versions
-      (organization_id,scope,version,instructions,operation,reason,test_fingerprints,author_id)
-      VALUES ($1,'mission-intake-internal',1,$3::jsonb,'publish','Teste sintético',ARRAY[]::text[],$2),
-             ($1,'mission-planning',1,$4::jsonb,'publish','Teste sintético',ARRAY[]::text[],$2)
+      (organization_id,scope,version,instructions,operation,reason,test_fingerprints,author_id,source_rules)
+      VALUES ($1,'mission-intake-internal',1,$3::jsonb,'publish','Teste sintético',ARRAY[]::text[],$2,$5::jsonb),
+             ($1,'mission-planning',1,$4::jsonb,'publish','Teste sintético',ARRAY[]::text[],$2,$5::jsonb)
       ON CONFLICT (organization_id,scope,version) DO NOTHING`,
     [org, fixtureUsers.yux_admin.id, JSON.stringify({synthesizer:intakeInstruction}),
-      JSON.stringify({'funnel_nurture.crm_architect':planningInstruction})])
+      JSON.stringify({'funnel_nurture.crm_architect':planningInstruction}), JSON.stringify(sourceRules)])
     await rig.sql('UPDATE public.action_resource_claims SET active=FALSE,released_at=NOW() WHERE organization_id=$1',[org])
     await rig.sql('DELETE FROM public.memberships WHERE user_id=$1 AND organization_id=$2',[fixtureUsers.yux_operator.id,org])
     for (const module of ['action_engine','crm','automations']) await rig.sql(`INSERT INTO public.contract_modules(contract_id,module_key,enabled)
@@ -64,7 +65,7 @@ it('creates and reviews real drafts through conversation without a sender, with 
     expect(accepted.statusCode).toBe(202)
     const conversationId = accepted.body.conversation.id
     await within(() => handleActionEngineProcessMissionConversation(pool as never,env,jobs.shift()!.data,{invokeTurn:async(_env,request)=>{
-      expect(request.mission_prompt).toEqual({version:1,instructions:{synthesizer:intakeInstruction}})
+      expect(request.mission_prompt).toEqual({version:1,instructions:{synthesizer:intakeInstruction},source_rules:sourceRules})
       expect(request.allowedActionPacks?.map(item=>item.key)).toContain('crm_preparation')
       expect(request.allowedActionPacks?.map(item=>item.key)).not.toContain('funnel_nurture')
       return {schemaVersion:1,kind:'brief_confirmation',reply:'Confira o plano de preparação, sem envio.',understood:{},questions:[],
@@ -84,7 +85,7 @@ it('creates and reviews real drafts through conversation without a sender, with 
     expect(revised.statusCode).toBe(202)
     await within(() => handleActionEngineProcessMissionConversation(pool as never,env,jobs.shift()!.data,{
       invokeTurn: async (_env, request, operationId) => {
-        expect(request.mission_prompt).toEqual({version:1,instructions:{synthesizer:intakeInstruction}})
+        expect(request.mission_prompt).toEqual({version:1,instructions:{synthesizer:intakeInstruction},source_rules:sourceRules})
         expect(operationId).toBe(revised.body.conversation.messages.at(-1).id)
         expect(request.user_message).toBe(revisionMessage)
         expect(request.transcript).toEqual([
@@ -125,7 +126,7 @@ it('creates and reviews real drafts through conversation without a sender, with 
       }
     })
     const planResult = await within(() => handleActionEnginePlanMission(pool as never,env,planJob.data,queue,{invokePlan:async(_env,input)=>{
-      expect(input.mission_prompt).toEqual({version:1,instructions:{'funnel_nurture.crm_architect':planningInstruction}})
+      expect(input.mission_prompt).toEqual({version:1,instructions:{'funnel_nurture.crm_architect':planningInstruction},source_rules:sourceRules})
       expect(input.allowed_source_ids).toContain(sourceId)
       expect(input).toMatchObject({mission:{parameters:{icp:revisedIcp,offer:'Massas congeladas'}}})
       const proposal = crmPreparationProposal(missionId,sourceId)

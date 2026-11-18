@@ -4,7 +4,8 @@ import { requireAdminRole } from '../../http/guards.js'
 import { ApiError } from '../../http/errors.js'
 import { invokeAgentRuntime } from '../../lib/agent-runtime-client.js'
 import { buildMissionTurnRequest } from '../action-engine/mission-turn-request.js'
-import { getMission, type Queryable } from '../action-engine/repository.js'
+import { getMission, hashCanonical, type Queryable } from '../action-engine/repository.js'
+import { agentSourceReport, agentSourceRulesSchema, excludedAgentSources, sourceRulesReportSchema, type AgentSourceRules } from '../action-engine/agent-source-rules.js'
 import { buildMissionPlanningCatalog, buildMissionPlanningContext, buildMissionPlanRequest, getMissionPlanningLimits } from '../action-engine/mission-plan-request.js'
 import { toMissionPlanWire } from '../action-engine/planner.js'
 import { changeMissionPromptVersion, intakePromptScope, listMissionPromptVersions, missionPromptConfiguration,
@@ -42,8 +43,8 @@ const missionScenario = z.discriminatedUnion('flow', [
     candidateStage: missionPromptStageSchema.optional(), candidateInstruction: promptInstructionSchema.optional(),
   }),
 ])
-type MissionScenario = z.infer<typeof missionScenario> & z.infer<typeof tenantSchema>
-const previewRequest = tenantSchema.and(z.discriminatedUnion('flow', [
+type MissionScenario = z.infer<typeof missionScenario> & z.infer<typeof tenantSchema> & { candidateSourceRules?: AgentSourceRules }
+const previewScenario = tenantSchema.and(z.discriminatedUnion('flow', [
   z.object({
     flow: z.literal('strategist'),
     message: scenarioMessage,
@@ -53,6 +54,8 @@ const previewRequest = tenantSchema.and(z.discriminatedUnion('flow', [
   }),
   ...missionScenario.options,
 ]))
+const previewRequest = previewScenario.and(z.object({ candidateSourceRules: agentSourceRulesSchema.optional() }))
+  .refine(input => !input.candidateSourceRules || !input.candidateInstruction && !input.candidateStage)
 const versionMetadata = z.object({
   organizationId: z.uuid(),
   expectedVersion: z.number().int().nonnegative(),
@@ -79,11 +82,17 @@ const missionRestore = versionMetadata.extend({
   operation: z.literal('restore'), promptScope: missionPromptScopeSchema, restoreVersion: z.number().int().nonnegative(),
 })
 const missionVersionChange = z.union([missionPublication, missionRestore])
+const sourcePublication = previewScenario.and(versionMetadata).and(z.object({
+  operation: z.literal('publish_sources'),
+  sourceRules: agentSourceRulesSchema,
+}))
 
-type StrategistPreview = {
-  candidate: { requests: Array<{ stage?: string; stageInstructionApplied?: boolean; fingerprint: string; providerFingerprint?: string }> }
+type SimulatedStages = {
+  requests: Array<{ stage?: string; stageInstructionApplied?: boolean; fingerprint: string; providerFingerprint?: string }>
+  sourcePolicy?: z.infer<typeof sourceRulesReportSchema>
 }
-type MissionPreview = { baseline: unknown; candidate?: StrategistPreview['candidate'] }
+type StrategistPreview = { baseline: SimulatedStages; candidate: SimulatedStages }
+type MissionPreview = { baseline: SimulatedStages; candidate?: SimulatedStages; sourcePolicyProtected?: boolean }
 
 function missionScenarioScope(input: MissionScenario) {
   return input.flow === 'mission-supervisor' ? 'mission-planning' : intakePromptScope(input.audience)
@@ -109,12 +118,26 @@ async function previewMission(
       throw new ApiError(404, 'mission_preview_not_found')
     }
     const catalog = await buildMissionPlanningCatalog(app.pg, app.config, mission)
-    const { planningContext } = await buildMissionPlanningContext(app.pg, mission, catalog, true)
-    const payload = await buildMissionPlanRequest(
-      app.pg, mission, catalog, planningContext, mission.status === 'pending_replan_approval', getMissionPlanningLimits(mission),
-    )
-    result = await invokeAgentRuntime<MissionPreview>(app.config, '/instructions/preview/mission-supervisor',
-      { ...toMissionPlanWire(payload), ...adjustments })
+    const simulate = async (rules?: AgentSourceRules, isCandidate = false): Promise<MissionPreview> => {
+      const { planningContext, sourcePolicy } = await buildMissionPlanningContext(app.pg, mission, catalog, true, rules)
+      if (sourcePolicy?.missing.length) return { baseline: { requests: [], sourcePolicy } }
+      const payload = await buildMissionPlanRequest(
+        app.pg, mission, catalog, planningContext, mission.status === 'pending_replan_approval', getMissionPlanningLimits(mission),
+      )
+      const configuration = isCandidate
+        ? { mission_prompt: missionPromptConfiguration({ version: publishedVersion + 1, instructions: version?.instructions ?? {}, source_rules: rules }) }
+        : adjustments
+      const simulated = await invokeAgentRuntime<MissionPreview>(app.config, '/instructions/preview/mission-supervisor',
+        { ...toMissionPlanWire(payload), ...configuration })
+      if (sourcePolicy) {
+        simulated.baseline.sourcePolicy = sourcePolicy
+        if (simulated.candidate) simulated.candidate.sourcePolicy = sourcePolicy
+      }
+      return simulated
+    }
+    result = await simulate(version?.source_rules ?? undefined)
+    if (catalog.radar) result.sourcePolicyProtected = true
+    else if (input.candidateSourceRules) result.candidate = (await simulate(input.candidateSourceRules, true)).baseline
   } else {
     const { request } = await buildMissionTurnRequest(app.pg, app.config, {
       actorId, preview: true, conversationId: 'preview', organizationId: input.organizationId,
@@ -122,7 +145,8 @@ async function previewMission(
       messages: [{ actorType: 'user', content: input.message }],
     })
     result = await invokeAgentRuntime<MissionPreview>(app.config, '/instructions/preview/mission-intake',
-      { ...request, ...adjustments })
+      { ...request, ...adjustments, candidate_source_rules: input.candidateSourceRules,
+        candidate_source_version: input.candidateSourceRules ? publishedVersion + 1 : undefined })
   }
   return { ...result, publishedVersion }
 }
@@ -135,6 +159,7 @@ async function strategistPreview(app: FastifyInstance, input: {
   mode: z.infer<typeof strategistModeSchema>
   candidateInstruction?: string
   candidateStage?: string
+  candidateSourceRules?: AgentSourceRules
   version?: Awaited<ReturnType<typeof listPromptVersions>>[number]
 }) {
   const published = promptSettings(input.version, input.mode)
@@ -149,6 +174,8 @@ async function strategistPreview(app: FastifyInstance, input: {
     published_instruction: published.instruction,
     published_stage_instructions: published.stageInstructions,
     published_prompt_version: published.active ? input.version?.version : undefined,
+    published_source_rules: published.sourceRules,
+    candidate_source_rules: input.candidateSourceRules,
     commercial_catalog: await loadCommercialCatalog(app.pg, input.organizationId),
   })
   return { ...preview, publishedVersion: input.version?.version ?? 0 }
@@ -255,6 +282,29 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
 
   app.post('/agent-prompts/versions', async (request, reply) => {
     const actor = requireAdminRole(request)
+    const sourceChange = sourcePublication.safeParse(request.body)
+    if (sourceChange.success) {
+      const input = sourceChange.data
+      const scope = await loadAgentPromptScope(app.pg, input.organizationId)
+      if (input.contractId && !scope.contracts.some(contract => contract.id === input.contractId)) {
+        throw new ApiError(409, 'agent_prompt_contract_out_of_scope')
+      }
+      reply.header('Cache-Control', 'no-store')
+      const shared = { ...input, authorId: actor.userId }
+      const scenario = { ...input, candidateInstruction: undefined, candidateStage: undefined, candidateSourceRules: input.sourceRules }
+      if (scenario.flow === 'strategist') {
+        const [version] = await listPromptVersions(app.pg, input.organizationId, 1)
+        if ((version?.version ?? 0) !== input.expectedVersion) throw new ApiError(409, 'agent_prompt_version_conflict')
+        const tested = await strategistPreview(app, { ...scenario, clientId: scope.client_id, version })
+        return changePromptVersion(app.pg, { ...shared, fingerprints: testedSourceRules(tested.candidate, input.sourceRules) })
+      }
+      const promptScope = missionScenarioScope(scenario)
+      const [version] = await listMissionPromptVersions(app.pg, input.organizationId, promptScope, 1)
+      if ((version?.version ?? 0) !== input.expectedVersion) throw new ApiError(409, 'agent_prompt_version_conflict')
+      const tested = await previewMission(app, scenario, actor.userId, version)
+      return changeMissionPromptVersion(app.pg, { ...shared, scope: promptScope,
+        fingerprints: testedSourceRules(tested.candidate, input.sourceRules) })
+    }
     const missionChange = missionVersionChange.safeParse(request.body)
     if (missionChange.success) {
       const input = missionChange.data
@@ -349,4 +399,21 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
     const [version] = await listMissionPromptVersions(app.pg, input.organizationId, missionScenarioScope(input), 1)
     return previewMission(app, input, actor.userId, version)
   })
+}
+
+function testedSourceRules(simulation: SimulatedStages | undefined, rules: AgentSourceRules) {
+  const report = sourceRulesReportSchema.safeParse(simulation?.sourcePolicy)
+  if (!simulation || !report.success || hashCanonical(report.data.rules) !== hashCanonical(rules)) {
+    throw new ApiError(409, 'agent_source_rules_not_simulated')
+  }
+  const checked = agentSourceReport(rules, report.data.counts)
+  if (hashCanonical([...report.data.missing].sort()) !== hashCanonical([...checked.missing].sort())
+    || excludedAgentSources(rules).some(source => report.data.counts[source] !== 0)) {
+    throw new ApiError(409, 'agent_source_rules_not_simulated')
+  }
+  const fingerprints = simulation.requests.map(stage => stage.providerFingerprint ?? stage.fingerprint)
+  if (report.data.missing.length ? fingerprints.length > 0 : !fingerprints.length || fingerprints.some(hash => !/^[a-f0-9]{64}$/.test(hash))) {
+    throw new ApiError(409, 'agent_source_rules_not_simulated')
+  }
+  return [hashCanonical(report.data), ...fingerprints]
 }

@@ -33,6 +33,7 @@ from .mission import MissionPlanRequest, plan_mission
 from .mission_supervisor import MissionSupervisor, MissionSupervisorError
 from .mission_contracts import MissionConversationTurnRequestWire, validate_mission_conversation_response
 from .mission_prompt import MissionPromptConfigurationWire, MissionPromptInstruction, MissionPromptStage
+from .source_rules import AgentSourceRulesWire, RequiredSourcesMissing
 from .mission_conversation import MissionConversationWorkflow
 from .mission_diagnostics import mission_failure_diagnostic
 from .workflow import CREDITS_BASE_PER_RUN, StrategyWorkflowEngine, estimate_workflow_credits, resolve_retrieval_audience
@@ -223,6 +224,7 @@ class ExecuteWorkflowRequest(BaseModel):
     presales_instruction: str | None = Field(default=None, min_length=1, max_length=4_000)
     presales_stage_instructions: dict[PromptStageKey, PromptInstruction] | None = Field(default=None, max_length=24)
     presales_prompt_version: int | None = Field(default=None, ge=1)
+    presales_source_rules: AgentSourceRulesWire | None = None
     strategy_operation_id: UUID | None = None
     # Accepted for backward compatibility but ignored: credits are always
     # estimated server-side (see workflow.estimate_workflow_credits).
@@ -240,6 +242,8 @@ class PreviewStrategistRequest(BaseModel):
     published_instruction: PromptInstruction | None = None
     published_stage_instructions: dict[PromptStageKey, PromptInstruction] = Field(default_factory=dict, max_length=24)
     published_prompt_version: int | None = Field(default=None, ge=1)
+    published_source_rules: AgentSourceRulesWire | None = None
+    candidate_source_rules: AgentSourceRulesWire | None = None
     commercial_catalog: dict[str, Any] | None = None
 
 
@@ -252,11 +256,14 @@ class CandidateMissionPrompt(BaseModel):
         return {
             "version": self.version,
             "instructions": {**(published.instructions if published else {}), self.stage: self.instruction},
+            "source_rules": published.source_rules if published else None,
         }
 
 
 class PreviewMissionIntakeRequest(MissionConversationTurnRequestWire):
     candidate_adjustment: CandidateMissionPrompt | None = None
+    candidate_source_rules: AgentSourceRulesWire | None = None
+    candidate_source_version: int | None = Field(default=None, ge=1)
 
 
 class PreviewMissionPlanRequest(MissionPlanRequest):
@@ -554,7 +561,7 @@ def create_app(
             audience=workflow_audience,
         )
         execution = request.model_dump(exclude={"estimated_credits", "strategy_operation_id"})
-        for field in ("presales_stage_instructions", "presales_prompt_version"):
+        for field in ("presales_stage_instructions", "presales_prompt_version", "presales_source_rules"):
             if execution[field] is None:
                 execution.pop(field)
         selected_engine = workflow_engine(execution)
@@ -563,7 +570,10 @@ def create_app(
         )
         credits_required = estimate_workflow_credits(execution["workflow_spec"], request.mode, request.source)
         if request.presales_candidate and request.source == "strategy_admin" and request.profile_key == "growth_strategist":
-            return execute_presales_workflow(request, selected_engine, execution, credits_required)
+            try:
+                return execute_presales_workflow(request, selected_engine, execution, credits_required)
+            except RequiredSourcesMissing as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
         try:
             credits = reserve_billable_credits(
                 organization_id=request.organization_id,
@@ -652,10 +662,12 @@ def create_app(
         }
         selected = build_strategy_workflow_engine(runtime_store, context=execution, offline_preview=True)
         published = {
-            "presales_candidate": bool(request.published_instruction or request.published_stage_instructions or request.candidate_stage),
+            "presales_candidate": bool(request.published_instruction or request.published_stage_instructions
+                                       or request.candidate_stage or request.published_source_rules),
             "presales_instruction": request.published_instruction,
             "presales_stage_instructions": request.published_stage_instructions,
             "presales_prompt_version": request.published_prompt_version,
+            "presales_source_rules": request.published_source_rules.model_dump() if request.published_source_rules else None,
             "retrieval_context": {"commercial_catalog": request.commercial_catalog},
         }
         baseline = preview_workflow(selected, {**execution, **published} if published["presales_candidate"] else execution)
@@ -664,6 +676,7 @@ def create_app(
             **execution, **published, "presales_candidate": True,
             "presales_instruction": request.published_instruction if request.candidate_stage else (request.candidate_instruction or request.published_instruction),
             "presales_stage_instructions": {**request.published_stage_instructions, **scoped_edit},
+            **({"presales_source_rules": request.candidate_source_rules.model_dump()} if request.candidate_source_rules else {}),
         })
         return {"baseline": baseline, "candidate": candidate}
 
@@ -673,7 +686,7 @@ def create_app(
             request.organization_id, request.client_id, request.contract_id,
             profile_key="growth_strategist", audience=request.audience,
         )
-        context = request.model_dump(exclude={"candidate_adjustment"})
+        context = request.model_dump(exclude={"candidate_adjustment", "candidate_source_rules", "candidate_source_version"})
         original = MissionConversationTurnRequestWire.model_validate(context)
         selected = build_strategy_workflow_engine(runtime_store, context=context, offline_preview=True)
         result = {"baseline": preview_workflow(selected, MissionConversationWorkflow.workflow_input(original))}
@@ -684,6 +697,16 @@ def create_app(
                 })
             except ValidationError as error:
                 raise HTTPException(status_code=422, detail="mission_prompt_candidate_invalid") from error
+            result["candidate"] = preview_workflow(selected, MissionConversationWorkflow.workflow_input(candidate))
+        if request.candidate_source_rules:
+            prior_version = original.mission_prompt.version if original.mission_prompt else 0
+            candidate = MissionConversationTurnRequestWire.model_validate({
+                **context, "mission_prompt": {
+                    "version": request.candidate_source_version or prior_version + 1,
+                    "instructions": original.mission_prompt.instructions if original.mission_prompt else {},
+                    "source_rules": request.candidate_source_rules,
+                },
+            })
             result["candidate"] = preview_workflow(selected, MissionConversationWorkflow.workflow_input(candidate))
         return result
 
@@ -765,6 +788,8 @@ def create_app(
             return response.model_dump()
         except HTTPException:
             raise
+        except RequiredSourcesMissing as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
         except (ValidationError, ValueError, json.JSONDecodeError) as error:
             logger.error("%s", json.dumps(mission_failure_diagnostic(
                 error, stage="processing", status=422, context=request.model_dump(),
