@@ -69,6 +69,8 @@ const baseSummary = () => ({
 let root: Root
 let container: HTMLDivElement
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date(2026, 10, 17, 12))
   summary.current = baseSummary()
   summary.reload.mockClear()
   container = document.body.appendChild(document.createElement('div'))
@@ -77,6 +79,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount())
   container.remove()
+  vi.useRealTimers()
 })
 const mount = async () => {
   await act(async () => {
