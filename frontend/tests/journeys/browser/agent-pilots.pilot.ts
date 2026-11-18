@@ -46,7 +46,18 @@ test('compares pilot prompts, imports a CRM draft and executes a scoped preparat
     await page.getByRole('button', { name: 'Nova analise estrategica', exact: true }).click()
     await page.getByLabel('Cliente/prospect').selectOption(data.presalesOrg)
     await page.getByRole('button', { name: 'Proposta', exact: true }).click()
-    await page.getByRole('combobox', { name: 'Contrato', exact: true }).selectOption(data.presalesContract)
+    const contractSelect = page.getByRole('combobox', { name: 'Contrato', exact: true })
+    await expect(page.getByText('Selecione um contrato aprovado para consultar as oportunidades.')).toBeVisible()
+    const otherContractScope = page.waitForResponse(response => {
+      const url = new URL(response.url())
+      return url.pathname === '/api/strategy-engine/agent-prompts/opportunities' && url.searchParams.get('contractId') === data.otherPresalesContract
+    })
+    await contractSelect.selectOption(data.otherPresalesContract)
+    const denied = await otherContractScope
+    expect(denied.ok(), await denied.text()).toBe(true)
+    expect(await denied.json()).toMatchObject({ enabled: false, leads: [] })
+    await expect(page.getByRole('combobox', { name: 'Oportunidade do CRM', exact: true })).toHaveCount(0)
+    await contractSelect.selectOption(data.presalesContract)
     await page.getByRole('combobox', { name: 'Oportunidade do CRM', exact: true }).selectOption(data.leadId)
     const send = async (message: string) => {
       await page.getByPlaceholder('Pergunte ao estrategista YUX...').fill(message)

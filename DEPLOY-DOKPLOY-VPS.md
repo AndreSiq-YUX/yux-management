@@ -137,6 +137,7 @@ MISSION_DECISION_FEEDBACK_ENABLED=true
 MISSION_CONVERSATIONS_ENABLED=true
 MISSION_CONVERSATIONS_TENANT_ALLOWLIST=<uuid-da-organizacao-yux-piloto>
 STRATEGY_PRESALES_PILOT_ORGANIZATION_IDS=
+STRATEGY_PRESALES_PILOT_SCOPES=
 ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS=
 ACTION_ENGINE_PROMPT_PILOT_SCOPES=
 STRATEGY_PRESALES_BILLABLE_CONTRACT_IDS=
@@ -171,7 +172,7 @@ O bloco acima habilita o fluxo conversacional completo de missões. Substitua
 deixe a allowlist vazia durante o piloto, pois uma lista vazia libera todos os
 tenants quando `MISSION_CONVERSATIONS_ENABLED=true`.
 
-As listas do piloto de agentes começam vazias. A lista da pré-venda é lida
+As listas do piloto de agentes começam vazias. As listas da pré-venda são lidas
 pela API. As do Action Engine são lidas pela API e pelos trabalhadores. A lista de
 contratos faturáveis da pré-venda é lida pelos trabalhadores. Antes de reaplicar
 o Compose, confira os valores salvos no projeto do Dokploy. O Compose encaminha

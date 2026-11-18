@@ -425,9 +425,7 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
             <h2 className="text-lg font-semibold">{isStrategist ? 'Publicação do estrategista'
               : inspectingSupervisor ? 'Publicação do planejamento' : 'Publicação da conversa de missão'}</h2>
             <p className="text-gray-600">
-              {isStrategist
-                ? (pilotEnabled ? 'Conta habilitada para o piloto.' : 'Execução do piloto desativada para esta subconta.')
-                : (pilotEnabled ? 'Piloto habilitado para a seleção atual.' : 'Piloto desativado para a seleção atual.')}
+              {pilotEnabled ? 'Piloto habilitado para a seleção atual.' : 'Piloto desativado para a seleção atual.'}
               {' '}{currentVersion && (currentVersion.instruction || currentVersion.stage_instructions?.length
                 || Object.keys(currentVersion.instructions ?? {}).length || currentVersion.source_rules)
                 ? `Versão publicada ${currentVersion.version}.` : 'Configuração herdada selecionada.'}

@@ -13,7 +13,7 @@ import { changeMissionPromptVersion, intakePromptScope, listMissionPromptVersion
   missionPromptPilotEnabled, missionPromptScopeSchema, missionPromptStageSchema,
   type MissionPromptVersion } from '../action-engine/mission-prompt-versions.js'
 import { strategyAdminChatRequestSchema } from './admin-chat.js'
-import { changePromptVersion, listPromptVersions, presalesPilotEnabled, promptInstructionSchema, promptSettings,
+import { changePromptVersion, listPromptVersions, presalesPilotEnabled, presalesPilotScope, promptInstructionSchema, promptSettings,
   stageKeySchema, strategistModeSchema } from './prompt-versions.js'
 import { listPresalesLeads, loadCommercialCatalog } from './presales-context.js'
 import { loadPlanningHistory } from './planning-history.js'
@@ -228,7 +228,7 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
       })).map(({ id }) => id)
       return { contracts: scope.contracts, versions, pilotEnabled, pilotContractIds, catalog: [] }
     }
-    const pilotEnabled = presalesPilotEnabled(app.config, organizationId)
+    const activation = presalesPilotScope(app.config, organizationId)
     const [scope, versions, catalog] = await Promise.all([
       loadAgentPromptScope(app.pg, organizationId),
       listPromptVersions(app.pg, organizationId),
@@ -240,11 +240,12 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
             AND EXISTS (SELECT 1 FROM public.proposal_price_rules r
               WHERE r.organization_id = t.organization_id AND r.package_id = t.package_id AND r.item_key = 'base')
           ORDER BY label, t.id`,
-        [organizationId, pilotEnabled],
+        [organizationId, activation.organizationEnabled || activation.contractIds.length > 0],
       ),
     ])
     reply.header('Cache-Control', 'no-store')
-    return { contracts: scope.contracts, versions, pilotEnabled, catalog: catalog.rows }
+    const pilotContractIds = scope.contracts.filter(({ id }) => activation.organizationEnabled || activation.contractIds.includes(id)).map(({ id }) => id)
+    return { contracts: scope.contracts, versions, pilotEnabled: activation.organizationEnabled, pilotContractIds, catalog: catalog.rows }
   })
 
   app.get('/agent-prompts/opportunities', async (request, reply) => {
@@ -252,16 +253,19 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
     const parsed = tenantSchema.extend({ mode: strategistModeSchema.optional() }).safeParse(request.query)
     if (!parsed.success) throw new ApiError(400, 'invalid_presales_opportunity_scope')
     const { organizationId, contractId } = parsed.data
+    const activation = presalesPilotScope(app.config, organizationId)
     const [scope, versions] = await Promise.all([
       loadAgentPromptScope(app.pg, organizationId),
-      presalesPilotEnabled(app.config, organizationId) ? listPromptVersions(app.pg, organizationId, 1) : [],
+      activation.organizationEnabled || activation.contractIds.length > 0 ? listPromptVersions(app.pg, organizationId, 1) : [],
     ])
     if (contractId && !scope.contracts.some(contract => contract.id === contractId)) {
       throw new ApiError(409, 'agent_prompt_contract_out_of_scope')
     }
-    const enabled = promptSettings(versions[0], parsed.data.mode).active
+    const published = promptSettings(versions[0], parsed.data.mode).active
+    const enabled = published && presalesPilotEnabled(app.config, organizationId, contractId)
+    const pilotContractIds = published ? scope.contracts.filter(({ id }) => activation.contractIds.includes(id)).map(({ id }) => id) : []
     reply.header('Cache-Control', 'no-store')
-    return { contracts: scope.contracts, enabled, leads: enabled ? await listPresalesLeads(app.pg, organizationId, contractId) : [] }
+    return { contracts: scope.contracts, pilotContractIds, enabled, leads: enabled ? await listPresalesLeads(app.pg, organizationId, contractId) : [] }
   })
 
   app.put('/agent-prompts/catalog', async request => {
@@ -269,6 +273,7 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
     const parsed = z.object({ organizationId: z.uuid(), templateId: z.uuid(), approved: z.boolean() }).safeParse(request.body)
     if (!parsed.success) throw new ApiError(400, 'invalid_presales_catalog')
     const { organizationId, templateId, approved } = parsed.data
+    const activation = presalesPilotScope(app.config, organizationId)
     try {
       const result = await app.pg.query(
         `UPDATE public.proposal_templates t SET presales_sellable = $3
@@ -277,7 +282,7 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
            AND p.id = t.package_id AND p.key <> 'yux_internal_growth' AND t.is_active
            AND EXISTS (SELECT 1 FROM public.proposal_price_rules r
              WHERE r.organization_id = t.organization_id AND r.package_id = t.package_id AND r.item_key = 'base')`,
-        [organizationId, templateId, approved, presalesPilotEnabled(app.config, organizationId)],
+        [organizationId, templateId, approved, activation.organizationEnabled || activation.contractIds.length > 0],
       )
       if (result.rowCount !== 1) throw new ApiError(409, 'presales_template_ineligible')
       return { approved }

@@ -49,7 +49,8 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     const env = loadEnv({
       NODE_ENV: 'test', SESSION_SECRET: 'strategy-qa-local-test-session-secret',
       DATABASE_URL: database.toString(), YUX_AGENT_RUNTIME_URL: 'http://127.0.0.1:4109',
-      YUX_AGENT_RUNTIME_TOKEN: 'local-simulated-runtime', STRATEGY_PRESALES_PILOT_ORGANIZATION_IDS: organizationId,
+      YUX_AGENT_RUNTIME_TOKEN: 'local-simulated-runtime', STRATEGY_PRESALES_PILOT_ORGANIZATION_IDS: `${organizationId},${fixtureIds.organizationB}`,
+      STRATEGY_PRESALES_PILOT_SCOPES: `${organizationId}:${fixtureIds.contractA}`,
       STRATEGY_PRESALES_BILLABLE_CONTRACT_IDS: fixtureIds.contractA,
       ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS: organizationId,
       ACTION_ENGINE_PROMPT_PILOT_SCOPES: `${fixtureIds.organizationA}:${fixtureIds.contractA}:mission-intake-internal`,
@@ -218,6 +219,8 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     expect((await call('GET', base, undefined, clientCookie)).statusCode).toBe(403)
     const scope = await call('GET', base + '/scope?organizationId=' + organizationId)
     expect(scope.statusCode).toBe(200)
+    expect(scope.json()).toMatchObject({ pilotEnabled: false, pilotContractIds: [fixtureIds.contractA] })
+    expect((await call('GET', base + '/scope?organizationId=' + fixtureIds.organizationB)).json()).toMatchObject({ pilotEnabled: true })
     expect(scope.json().contracts).toContainEqual({ id: fixtureIds.contractA, name: expect.stringMatching(/\S/) })
     expect((await call('PUT', base + '/catalog', { organizationId, templateId, approved: true })).statusCode).toBe(200)
     expect((await call('PUT', base + '/catalog', { organizationId, templateId: excludedTemplateId, approved: true })).statusCode).toBe(409)
@@ -244,6 +247,39 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
       return sent.json<{ session: { id: string }; assistantMessage: { id: string } }>()
     }
     const first = await run('Orçamento confirmado de R$ 2.000.')
+    const alternateContract = randomUUID()
+    await admin.query(`INSERT INTO public.contracts (id,client_id,package_id,status,starts_at)
+      SELECT $2,client_id,package_id,'active',starts_at FROM public.contracts WHERE id=$1`, [fixtureIds.contractA, alternateContract])
+    try {
+      const opportunities = `${base}/opportunities?organizationId=${organizationId}&mode=proposal`
+      const approved = await call('GET', `${opportunities}&contractId=${fixtureIds.contractA}`)
+      expect(approved.statusCode, approved.body).toBe(200)
+      expect(approved.json()).toMatchObject({ enabled: true, leads: [expect.objectContaining({ id: leadId })] })
+      const denied = await call('GET', `${opportunities}&contractId=${alternateContract}`)
+      expect(denied.statusCode, denied.body).toBe(200)
+      expect(denied.json()).toMatchObject({ enabled: false, pilotContractIds: [fixtureIds.contractA], leads: [],
+        contracts: expect.arrayContaining([expect.objectContaining({ id: alternateContract })]) })
+      expect((await call('GET', opportunities)).json()).toMatchObject({ enabled: false, leads: [] })
+      for (const cookie of deniedCookies) {
+        const forbidden = await call('GET', `${opportunities}&contractId=${fixtureIds.contractA}`, undefined, cookie)
+        expect(forbidden.statusCode).toBe(403)
+        expect(forbidden.json()).not.toHaveProperty('pilotContractIds')
+      }
+      const queued = job.mock.calls.length
+      const command = { message: 'Tente trocar o contrato da oportunidade.', organizationId, leadId, mode: 'proposal' }
+      const wrongContract = await call('POST', '/api/functions/run-strategy-admin-chat', { body: { ...command, contractId: alternateContract } })
+      expect(wrongContract.statusCode, wrongContract.body).toBe(409)
+      expect(wrongContract.json().error).toBe('strategy_presales_pilot_inactive')
+      const wrongSessionContract = await call('POST', '/api/functions/run-strategy-admin-chat', {
+        body: { ...command, contractId: alternateContract, sessionId: first.session.id },
+      })
+      expect(wrongSessionContract.statusCode, wrongSessionContract.body).toBe(409)
+      expect(wrongSessionContract.json().error).toBe('strategy_chat_session_scope_mismatch')
+      expect(job.mock.calls).toHaveLength(queued)
+      expect(received).toHaveLength(1)
+    } finally {
+      await admin.query('DELETE FROM public.contracts WHERE id=$1', [alternateContract])
+    }
     const second = await run('Recomende agora.', { sessionId: first.session.id, billableContract: true })
     expect(received[0].client_id).toBeNull()
     expect(received[1].client_id).toBe(fixtureIds.clientA)
@@ -303,7 +339,7 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     const restored = await call('POST', base + '/versions', { organizationId, expectedVersion: 1, reason: 'Ensaio de reversão', operation: 'restore', restoreVersion: 0 })
     expect(restored.statusCode, restored.body).toBe(200)
     expect(restored.json()).toMatchObject({ version: 2, instruction: null })
-    expect((await call('GET', base + '/opportunities?organizationId=' + organizationId)).json().enabled).toBe(false)
+    expect((await call('GET', base + '/opportunities?organizationId=' + organizationId + '&contractId=' + fixtureIds.contractA)).json().enabled).toBe(false)
     await run('Analise pelo fluxo herdado.', { includeLead: false })
     expect(received.at(-1)).not.toHaveProperty('presales_prompt_version')
     expect(received.at(-1)).not.toHaveProperty('retrieval_context.commercial_catalog')
@@ -354,13 +390,14 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     const comparison = await call('POST', base + '/preview', previewRequest)
     expect(comparison.statusCode).toBe(200)
     expect(comparison.json().publishedVersion).toBe(firstVersion)
-    expect((await call('GET', `${base}/opportunities?organizationId=${organizationId}&mode=proposal`)).json().enabled).toBe(true)
-    expect((await call('GET', `${base}/opportunities?organizationId=${organizationId}&mode=diagnostic_48h`)).json().enabled).toBe(false)
+    const opportunityScope = `${base}/opportunities?organizationId=${organizationId}&contractId=${fixtureIds.contractA}`
+    expect((await call('GET', `${opportunityScope}&mode=proposal`)).json().enabled).toBe(true)
+    expect((await call('GET', `${opportunityScope}&mode=diagnostic_48h`)).json().enabled).toBe(false)
     const foreignScope = await call('GET', `${base}/scope?organizationId=${fixtureIds.organizationA}`)
     expect(JSON.stringify(foreignScope.json().versions)).not.toContain(instruction)
 
     const enqueue = (mode: string) => call('POST', '/api/functions/run-strategy-admin-chat', {
-      body: { organizationId, message: 'Prepare a estratégia.', mode },
+      body: { organizationId, contractId: fixtureIds.contractA, message: 'Prepare a estratégia.', mode },
     })
     const queued = await enqueue('proposal')
     expect(queued.statusCode, queued.body).toBe(202)

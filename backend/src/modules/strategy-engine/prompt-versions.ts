@@ -42,9 +42,20 @@ export function promptSettings(version: PromptVersion | undefined, mode?: Strate
   }
 }
 
-export function presalesPilotEnabled(env: AppEnv, organizationId: string) {
-  return (env.STRATEGY_PRESALES_PILOT_ORGANIZATION_IDS ?? '').split(',')
-    .some(id => id.trim().toLowerCase() === organizationId.toLowerCase())
+export function presalesPilotScope(env: AppEnv, organizationId: string) {
+  const normalizedId = organizationId.toLowerCase()
+  const prefix = `${normalizedId}:`
+  const entries = (env.STRATEGY_PRESALES_PILOT_SCOPES ?? '').split(',')
+    .map(entry => entry.trim().toLowerCase()).filter(entry => entry.startsWith(prefix))
+  const organizationEnabled = entries.length === 0 && (env.STRATEGY_PRESALES_PILOT_ORGANIZATION_IDS ?? '').split(',')
+    .some(id => id.trim().toLowerCase() === normalizedId)
+  const contractIds = entries.map(entry => entry.slice(prefix.length)).filter(id => z.uuid().safeParse(id).success)
+  return { organizationEnabled, contractIds }
+}
+
+export function presalesPilotEnabled(env: AppEnv, organizationId: string, contractId?: string) {
+  const { organizationEnabled, contractIds } = presalesPilotScope(env, organizationId)
+  return organizationEnabled || Boolean(contractId && contractIds.includes(contractId.toLowerCase()))
 }
 
 export async function listPromptVersions(pool: Queryable, organizationId: string, limit = 20) {

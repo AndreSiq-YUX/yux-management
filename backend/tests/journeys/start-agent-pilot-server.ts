@@ -47,7 +47,7 @@ const queue: AppJobQueue = {
 const rig = await createIntegrationRig({
   queueMode: 'stub', stubJobQueue: queue, missionConversations: true, corsOrigin: 'http://127.0.0.1:4187',
   agentPilots: {
-    presalesOrganizationId: presalesOrg,
+    presalesScopes: [`${presalesOrg}:${presalesContract}`],
     missionScopes: [
       `${missionOrg}:${missionContract}:mission-intake-internal`, `${missionOrg}:${missionContract}:mission-planning`,
       `${presalesOrg}:${presalesContract}:mission-intake-internal`, `${presalesOrg}:${presalesContract}:mission-planning`,
@@ -74,6 +74,10 @@ const rig = await createIntegrationRig({
 })
 
 const leadId = randomUUID()
+const otherPresalesContract = randomUUID()
+await rig.sql(`INSERT INTO public.contracts(id,client_id,package_id,name,status,starts_at)
+  SELECT $2,client_id,package_id,'Contrato fora do piloto','active',starts_at FROM public.contracts WHERE id=$1`,
+  [presalesContract, otherPresalesContract])
 const names = { presales: 'YUX Captação · teste local', mission: 'Villeman e Massas · teste local', lead: `Prospect de acompanhamento ${leadId.slice(0, 8)}` }
 const budget = 'Orçamento confirmado de R$ 2.000 para recuperar oportunidades já geradas.'
 const objective = 'Prepare a captação de cozinhas industriais em São Paulo para a oferta de massas congeladas.'
@@ -176,7 +180,7 @@ const listener = createServer(async (req, res) => {
   try {
     if (req.method === 'GET' && req.url === '/fixture') {
       return respond(200, { names, budget, objective, agencyObjective, revisedAudience, sourceTitle, agencySourceTitle,
-        leadId, missionOrg, missionContract, presalesOrg, presalesContract })
+        leadId, missionOrg, missionContract, presalesOrg, presalesContract, otherPresalesContract })
     }
     if (req.method === 'POST' && req.url === '/worker-tick') {
       await rig.workerTick()

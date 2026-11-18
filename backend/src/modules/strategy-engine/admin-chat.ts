@@ -61,7 +61,8 @@ export async function prepareStrategyAdminChat(
   request: StrategyAdminChatRequest,
   pilotEnv?: AppEnv,
 ): Promise<PreparedStrategyAdminChat> {
-  const isPilot = (id: unknown) => typeof id === 'string' && pilotEnv && presalesPilotEnabled(pilotEnv, id)
+  const isPilot = (id: unknown, contractId: unknown) => typeof id === 'string' && pilotEnv
+    && presalesPilotEnabled(pilotEnv, id, optionalString(contractId))
   const profile = await pool.query<{ id: string }>(
     `SELECT id
       FROM public.yux_strategy_agent_profiles
@@ -91,14 +92,14 @@ export async function prepareStrategyAdminChat(
     if (suppliedScope.some(([requested, stored]) => requested !== undefined && requested !== stored)) {
       throw new ApiError(409, 'strategy_chat_session_scope_mismatch')
     }
-    if (isPilot(session.organization_id)) {
+    if (isPilot(session.organization_id, session.contract_id)) {
       version = (await listPromptVersions(pool, String(session.organization_id), 1))[0]
       if (promptSettings(version, request.mode).active && session.presales_lead_id) {
         await loadPresalesLead(pool, String(session.organization_id), String(session.presales_lead_id), optionalString(session.contract_id))
       }
     }
   } else {
-    if (isPilot(request.organizationId)) {
+    if (isPilot(request.organizationId, request.contractId)) {
       version = (await listPromptVersions(pool, request.organizationId!, 1))[0]
     }
     const active = promptSettings(version, request.mode).active

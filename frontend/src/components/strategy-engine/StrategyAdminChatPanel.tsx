@@ -46,6 +46,7 @@ const promptPresets: Array<{ mode: StrategyAdminChatMode; label: string; icon: t
 type CommercialScope = {
   enabled: boolean
   contracts: Array<{ id: string; name: string }>
+  pilotContractIds?: string[]
   leads: Array<{ id: string; name: string; company: string | null; stage: string }>
 }
 
@@ -71,6 +72,8 @@ export function StrategyAdminChatPanel({
   const [loadedCommercialScope, setCommercialScope] = useState<(CommercialScope & { key: string }) | null>(null)
   const scopeKey = `${organizationId}/${contractId}/${mode}`
   const commercialScope = loadedCommercialScope?.key === scopeKey ? loadedCommercialScope : null
+  const showOpportunity = Boolean(commercialScope?.enabled || selectedSession?.leadId)
+  const hasApprovedContracts = Boolean(commercialScope?.pilotContractIds?.length)
   const [messages, setMessages] = useState<StrategyChatMessage[]>([])
   const [input, setInput] = useState(promptPresets[0].prompt)
   const [loadingMessages, setLoadingMessages] = useState(false)
@@ -210,7 +213,7 @@ export function StrategyAdminChatPanel({
               {organizations.map(org => <option key={org.id} value={org.id}>{org.name}</option>)}
             </select>
           </label>
-          {(commercialScope?.enabled || selectedSession?.leadId) && (
+          {(showOpportunity || hasApprovedContracts) && (
             <div className="space-y-3">
               <label className="block space-y-1 text-sm">
                 <span className="font-medium text-gray-700">Contrato</span>
@@ -223,14 +226,14 @@ export function StrategyAdminChatPanel({
                   {contractId && !commercialScope?.contracts.some(contract => contract.id === contractId) && <option value={contractId}>Contrato da sessão</option>}
                 </select>
               </label>
-              <label className="block space-y-1 text-sm">
+              {showOpportunity ? <label className="block space-y-1 text-sm">
                 <span className="font-medium text-gray-700">Oportunidade do CRM</span>
                 <select value={leadId} disabled={sending || Boolean(selectedSessionId)} onChange={event => setLeadId(event.target.value)} className="w-full rounded-md border border-gray-300 bg-white px-3 py-2">
                   <option value="">Sem oportunidade selecionada</option>
                   {commercialScope?.leads.map(lead => <option key={lead.id} value={lead.id}>{lead.company || lead.name} · {lead.stage}</option>)}
                   {leadId && !commercialScope?.leads.some(lead => lead.id === leadId) && <option value={leadId}>Oportunidade da sessão</option>}
                 </select>
-              </label>
+              </label> : <p className="text-sm text-gray-600">Selecione um contrato aprovado para consultar as oportunidades.</p>}
             </div>
           )}
           <div className="rounded-md border border-yux-100 bg-yux-50 p-3 text-xs text-yux-900">
