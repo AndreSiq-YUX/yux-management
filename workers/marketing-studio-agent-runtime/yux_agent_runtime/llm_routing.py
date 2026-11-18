@@ -132,8 +132,11 @@ class RoutedLlmClient:
     kind: str = "chat"
     radar_fallback_limit_loader: Callable[[], int] | None = None
     definition_loader: Callable[[], dict[str, str]] | None = None
+    fixed_configuration: tuple[dict[str, Any], dict[str, Any]] | None = field(default=None, repr=False)
 
     def configuration(self) -> tuple[dict[str, Any], dict[str, Any]]:
+        if self.fixed_configuration is not None:
+            return self.fixed_configuration
         routes = self.route_loader()
         route = resolve_route(routes, self.use_case, tier=self.tier, context=self.context, kind=self.kind,
                               registered_definitions=self.definition_loader() if self.definition_loader else None)

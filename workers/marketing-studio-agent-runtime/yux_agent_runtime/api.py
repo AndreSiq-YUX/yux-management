@@ -27,7 +27,7 @@ from .radar_receipts import execute_radar_receipt, revalidate_radar_receipt
 from .radar_decisions import decide_radar_action, validate_saved_decision, TASKS as DECISION_TASKS
 from .perplexity_research import run_radar_deep_research,normalize_research_response,REMOTE_FINANCIAL_CEILING_SUPPORTED
 from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore, CreditReservationError, WorkflowCreditConflict
-from .strategy_usage import StrategyUsage
+from .strategy_usage import PlanningAttemptLimitExceeded, StrategyUsage
 from .trace import stable_hash
 from .mission import MissionPlanRequest, plan_mission
 from .mission_supervisor import MissionSupervisor, MissionSupervisorError
@@ -730,11 +730,38 @@ def create_app(
         except MissionSupervisorError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
+    def governed_plan_supported(request: MissionPlanRequest) -> bool:
+        return request.proposed_plan is None and not any(
+            pack.key == "radar_prospecting" for pack in [request.action_pack, *request.pack_catalog]
+        )
+
+    @app.post("/missions/planning-spec", dependencies=[Depends(require_runtime_token)])
+    def get_mission_planning_spec(request: MissionPlanRequest) -> dict[str, Any]:
+        validate_tenant(request.organization_id, request.client_id, request.contract_id, profile_key="mission_supervisor")
+        if not governed_plan_supported(request) or not request.planning_budget:
+            raise HTTPException(status_code=400, detail="mission_plan_spec_not_supported")
+        value = request.model_dump()
+        try:
+            _, spec = mission_planner(value).govern_execution(value)
+            return spec
+        except (MissionSupervisorError, ProviderRequestError) as error:
+            raise HTTPException(status_code=422, detail="mission_plan_spec_unavailable") from error
+
     @app.post("/missions/plan", dependencies=[Depends(require_runtime_token)])
     def create_mission_plan(
         request: MissionPlanRequest,
         pilot_usage: str | None = Header(default=None, alias="X-YUX-Mission-Pilot-Usage"),
     ) -> dict[str, Any]:
+        return execute_mission_plan(request, pilot_usage)
+
+    @app.post("/missions/plan-governed", dependencies=[Depends(require_runtime_token)])
+    def create_governed_mission_plan(
+        request: MissionPlanRequest,
+        spec_fingerprint: str = Header(alias="X-YUX-Mission-Planning-Spec", pattern="^[a-f0-9]{64}$"),
+    ) -> dict[str, Any]:
+        return execute_mission_plan(request, "1", spec_fingerprint)
+
+    def execute_mission_plan(request: MissionPlanRequest, pilot_usage: str | None, spec_fingerprint: str | None = None):
         validate_tenant(request.organization_id, request.client_id, request.contract_id, profile_key="mission_supervisor")
         packs = [request.action_pack, *request.pack_catalog]
         meter = StrategyUsage() if pilot_usage == "1" and not any(pack.key == "radar_prospecting" for pack in packs) else None
@@ -742,13 +769,27 @@ def create_app(
         # The harness returns a proposal only. It never persists Action Engine
         # rows or produces an external effect.
         try:
+            if spec_fingerprint is not None:
+                if not meter or not governed_plan_supported(request) or not request.planning_budget:
+                    raise HTTPException(status_code=400, detail="mission_plan_spec_not_supported")
+                try:
+                    supervisor, spec = mission_planner(value).govern_execution(value)
+                except (MissionSupervisorError, ProviderRequestError) as error:
+                    raise HTTPException(status_code=409, detail="mission_plan_spec_changed") from error
+                estimate = value["planning_budget"].get("estimate")
+                if not isinstance(estimate, dict) or spec["fingerprint"] != spec_fingerprint or spec["calls"] != estimate.get("calls"):
+                    raise HTTPException(status_code=409, detail="mission_plan_spec_changed")
+                meter.max_planning_attempts = spec["calls"]
+            else:
+                supervisor = None if request.proposed_plan is not None else mission_planner(value)
             with meter.activate() if meter else nullcontext():
-                result = plan_mission(value, None if request.proposed_plan is not None else mission_planner(value))
+                result = plan_mission(value, supervisor)
         except Exception as error:
-            if not isinstance(error, MissionSupervisorError) and not (meter and meter.attempts):
+            recognized = isinstance(error, (MissionSupervisorError, PlanningAttemptLimitExceeded))
+            if not recognized and not (meter and meter.attempts):
                 raise
-            code = str(error) if isinstance(error, MissionSupervisorError) else "mission_supervisor_processing_failed"
-            status_code = (503 if code == "mission_supervisor_model_unavailable" else 422) if isinstance(error, MissionSupervisorError) else 500
+            code = str(error) if recognized else "mission_supervisor_processing_failed"
+            status_code = (503 if code == "mission_supervisor_model_unavailable" else 422) if recognized else 500
             logger.error("%s", json.dumps(mission_failure_diagnostic(
                 error, stage="planning", status=status_code, context=value,
             )))

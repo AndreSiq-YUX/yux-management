@@ -16,7 +16,7 @@ import { createSequenceDraft, publishSequenceDraft } from '../../src/modules/aut
 import { buildMissionPlanningCatalog, buildMissionPlanningContext } from '../../src/modules/action-engine/mission-plan-request.js'
 import { getMission, hashCanonical } from '../../src/modules/action-engine/repository.js'
 
-it.each([false, true])('preserves the CRM preparation journey and private accounting with specialist failure %s', async specialistFails => {
+it.each(['success', 'specialist_failure', 'spec_changed', 'calls_exhausted'])('preserves the CRM preparation journey and private accounting in %s', async outcome => {
   const jobs: Array<{name: string; data: Record<string, unknown>; options?: EnqueueJobOptions}> = []
   const queue = { async add(name: string, data: Record<string, unknown>, options?: EnqueueJobOptions) { jobs.push({name,data,options}); return {id: randomUUID()} }, async close() {} }
   const rig = await createIntegrationRig({queueMode: 'stub', missionConversations: true, stubJobQueue: queue})
@@ -127,7 +127,41 @@ it.each([false, true])('preserves the CRM preparation journey and private accoun
         await rig.sql('UPDATE public.company_strategies SET archived_at=NULL WHERE id=$1', [strategy.body.id])
       }
     })
-    if (specialistFails) {
+    const specificationFingerprint = 'd'.repeat(64)
+    const resolvePlanningSpec = async () => ({
+      calls: outcome === 'calls_exhausted' ? 9 : 5, fingerprint: specificationFingerprint, profileVersion: 3,
+    })
+    if (outcome === 'spec_changed' || outcome === 'calls_exhausted') {
+      const changed = outcome === 'spec_changed'
+      const invoke = async (_url: URL | RequestInfo, init?: RequestInit) => {
+        expect(changed).toBe(true)
+        expect(new URL(String(_url)).pathname).toBe('/missions/plan-governed')
+        expect(new Headers(init?.headers).get('X-YUX-Mission-Planning-Spec')).toBe(specificationFingerprint)
+        return Response.json({ detail: 'mission_plan_spec_changed' }, { status: 409 })
+      }
+      await expect(within(() => handleActionEnginePlanMission(pool as never, env, planJob.data, queue, {
+        resolvePlanningSpec,
+        invokePlan: (config, input, _fetch, meter, fingerprint) => requestMissionPlan(config, input, invoke, meter, fingerprint),
+      }))).rejects.toThrow(changed ? 'mission_plan_spec_changed' : 'planning_budget_exhausted')
+      const receipt = await rig.sql(`SELECT cycle.status,cycle.usage,entry.nature,entry.calls
+        FROM public.action_planning_cycles cycle JOIN public.action_planning_usage_entries entry ON entry.cycle_id=cycle.id
+        WHERE cycle.mission_id=$1 ORDER BY entry.nature`, [missionId])
+      expect(receipt.rows).toEqual(changed ? [
+        { status: 'cancelled', usage: { calls: 0, inputTokens: 0, outputTokens: 0, costBrl: '0', latencyMs: 0 }, nature: 'release', calls: 0 },
+        { status: 'cancelled', usage: { calls: 0, inputTokens: 0, outputTokens: 0, costBrl: '0', latencyMs: 0 }, nature: 'reservation', calls: 5 },
+      ] : [])
+      const cycle = await rig.sql('SELECT status,terminal_reason FROM public.action_planning_cycles WHERE mission_id=$1', [missionId])
+      expect(cycle.rows).toEqual([changed ? { status: 'cancelled', terminal_reason: 'mission_plan_spec_changed' }
+        : { status: 'exhausted', terminal_reason: 'planning_budget_calls_exhausted' }])
+      const scope = new URLSearchParams({ organizationId: org, contractId: rig.ids.contractA, missionId })
+      const history = await rig.request('yux_admin', 'GET', `/api/strategy-engine/agent-prompts/planning-history?${scope}`)
+      expect(history.body.executions).toEqual(changed ? [expect.objectContaining({ totalUsd: 0, reconciledBrl: '0', stages: [] })] : [])
+      expect((await rig.sql('SELECT id FROM public.action_plans WHERE mission_id=$1', [missionId])).rows).toHaveLength(0)
+      expect((await getChat()).body.status).toBe('blocked')
+      expect(await rig.providerCalls()).toHaveLength(0)
+      return
+    }
+    if (outcome === 'specialist_failure') {
       const sendFailure: typeof fetch = async (_url, init) => {
         expect(new Headers(init?.headers).get('X-YUX-Mission-Pilot-Usage')).toBe('1')
         return Response.json({ detail: { code: 'funnel_nurture_model_unavailable', planningMeasurements: [
@@ -137,7 +171,8 @@ it.each([false, true])('preserves the CRM preparation journey and private accoun
         ] } }, { status: 422 })
       }
       const run = () => within(() => handleActionEnginePlanMission(pool as never, env, planJob.data, queue, {
-        invokePlan: (config, input) => requestMissionPlan(config, input, sendFailure, true),
+        resolvePlanningSpec,
+        invokePlan: (config, input, _fetch, meter, fingerprint) => requestMissionPlan(config, input, sendFailure, meter, fingerprint),
       }))
       await expect(run()).rejects.toThrow('agent_harness_plan_failed:422:funnel_nurture_model_unavailable')
       await expect(run()).resolves.toEqual({ skipped: 'mission_state_changed' })
@@ -176,11 +211,12 @@ it.each([false, true])('preserves the CRM preparation journey and private accoun
       expect(await rig.providerCalls()).toHaveLength(0)
       return
     }
-    const planResult = await within(() => handleActionEnginePlanMission(pool as never,env,planJob.data,queue,{invokePlan:async(_env,input)=>{
+    const planResult = await within(() => handleActionEnginePlanMission(pool as never,env,planJob.data,queue,{ resolvePlanningSpec, invokePlan:async(_env,input)=>{
       expect(input.mission_prompt).toEqual({version:1,instructions:{'funnel_nurture.crm_architect':planningInstruction},source_rules:sourceRules})
       expect(input.allowed_source_ids).toContain(sourceId)
       expect(input).toMatchObject({mission:{parameters:{icp:revisedIcp,offer:'Massas congeladas'}}})
       const duplicate = await handleActionEnginePlanMission(pool as never, env, planJob.data, queue, {
+        resolvePlanningSpec: async () => { throw new Error('preflight temporarily unavailable') },
         invokePlan: async () => { throw new Error('duplicate reached the planner') },
       })
       expect(duplicate).toEqual({ skipped: 'planning_call_in_progress' })
@@ -195,12 +231,13 @@ it.each([false, true])('preserves the CRM preparation journey and private accoun
       ] } }
     }}))
     expect(planResult.planId).toBeTruthy()
-    const receipts = await rig.sql(`SELECT usage.nature,usage.calls,usage.input_tokens,usage.output_tokens,usage.cost_brl::text
+    const receipts = await rig.sql(`SELECT usage.nature,usage.calls,usage.input_tokens,usage.output_tokens,usage.cost_brl::text,
+        usage.specialist_profile,usage.specialist_version
         FROM public.action_planning_usage_entries usage JOIN public.action_planning_cycles cycle ON cycle.id=usage.cycle_id
         WHERE cycle.mission_id=$1 ORDER BY usage.nature`, [missionId])
     expect(receipts.rows).toEqual([
-      { nature: 'actual', calls: 3, input_tokens: 250, output_tokens: 125, cost_brl: '5.000000' },
-      { nature: 'reservation', calls: 1, input_tokens: 12_000, output_tokens: 2_500, cost_brl: '5.000000' },
+      { nature: 'actual', calls: 3, input_tokens: 250, output_tokens: 125, cost_brl: '5.000000', specialist_profile: 'mission_supervisor', specialist_version: 3 },
+      { nature: 'reservation', calls: 5, input_tokens: 12_000, output_tokens: 2_500, cost_brl: '5.000000', specialist_profile: 'mission_supervisor', specialist_version: 3 },
     ])
     const awaiting = (await getChat()).body
     expect(JSON.stringify(awaiting)).not.toContain(planningInstruction)

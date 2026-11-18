@@ -32,10 +32,12 @@ export async function loadPlanningHistory(pool: Queryable, scope: {
        ON reservation.cycle_id = cycle.id AND reservation.organization_id = cycle.organization_id
        AND reservation.nature = 'reservation'
      LEFT JOIN LATERAL (
-       SELECT entry.metadata->'measurements' AS measurement
+       SELECT CASE WHEN entry.nature = 'release' AND entry.metadata->>'reason' = 'mission_plan_spec_changed' THEN
+         jsonb_build_object('reportedCostUsd', 0, 'recognizedCostBrl', '0', 'pendingReconciliation', FALSE)
+         ELSE entry.metadata->'measurements' END AS measurement
        FROM public.action_planning_usage_entries entry
        WHERE entry.cycle_id = cycle.id AND entry.organization_id = cycle.organization_id
-         AND entry.reservation_id = reservation.id AND entry.nature = 'actual'
+         AND entry.reservation_id = reservation.id AND entry.nature IN ('actual', 'release')
        ORDER BY entry.created_at DESC, entry.id DESC LIMIT 1
      ) actual ON TRUE
      WHERE mission.organization_id = $1 AND mission.id = $2 AND mission.contract_id IS NOT DISTINCT FROM $3::uuid

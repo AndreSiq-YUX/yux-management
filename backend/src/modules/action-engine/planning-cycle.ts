@@ -139,6 +139,7 @@ export async function reservePlanningCall(client: Queryable, input: {
   specialistProfile: string
   specialistVersion: number
   reservation: PlanningReservation
+  metadata?: Record<string, unknown>
 }): Promise<{ reservationId: string; projected: PlanningUsage }> {
   const cycle = await client.query<{ budget: PlanningCycleBudget; usage: PlanningUsage; status: string }>(
     `SELECT budget, usage, status FROM public.action_planning_cycles
@@ -159,11 +160,11 @@ export async function reservePlanningCall(client: Queryable, input: {
   const reservation = await client.query<{ id: string }>(
     `INSERT INTO public.action_planning_usage_entries (
        organization_id, cycle_id, specialist_profile, specialist_version, nature,
-       calls, input_tokens, output_tokens, cost_brl, latency_ms
-     ) VALUES ($1,$2,$3,$4,'reservation',$5,$6,$7,$8,$9) RETURNING id`,
+       calls, input_tokens, output_tokens, cost_brl, latency_ms, metadata
+     ) VALUES ($1,$2,$3,$4,'reservation',$5,$6,$7,$8,$9,$10) RETURNING id`,
     [input.organizationId, input.cycleId, input.specialistProfile, input.specialistVersion,
       input.reservation.calls, input.reservation.inputTokens, input.reservation.outputTokens,
-      input.reservation.costBrl, input.reservation.latencyMs],
+      input.reservation.costBrl, input.reservation.latencyMs, input.metadata ?? {}],
   )
   await client.query(
     `UPDATE public.action_planning_cycles SET usage = $3::jsonb, updated_at = NOW()
@@ -178,11 +179,10 @@ export async function settlePlanningCall(client: Queryable, input: {
   cycleId: string
   organizationId: string
   reservationId: string
-  actual: PlanningUsage
   providerModelId?: string
   metadata?: Record<string, unknown>
   recordBudgetOverage?: boolean
-}): Promise<{ usage: PlanningUsage; budgetExceeded: boolean }> {
+} & ({ actual: PlanningUsage; confirmedNotStarted?: false } | { confirmedNotStarted: true })): Promise<{ usage: PlanningUsage; budgetExceeded: boolean }> {
   const result = await client.query<{
     budget: PlanningCycleBudget; usage: PlanningUsage; status: string;
     calls: number; input_tokens: number; output_tokens: number; cost_brl: string; latency_ms: number;
@@ -204,24 +204,26 @@ export async function settlePlanningCall(client: Queryable, input: {
        AND nature IN ('actual', 'release') LIMIT 1`,
     [input.cycleId, input.organizationId, input.reservationId],
   )
-  if (prior.rows[0]?.nature === 'actual') return { usage: row.usage, budgetExceeded: row.status === 'exhausted' }
+  const nature = input.confirmedNotStarted ? 'release' : 'actual'
+  if (prior.rows[0]?.nature === nature) return { usage: row.usage, budgetExceeded: row.status === 'exhausted' }
   if (prior.rows.length || row.status !== 'active') throw new Error('planning_reservation_unavailable')
   const reserved: PlanningUsage = {
     calls: Number(row.calls), inputTokens: Number(row.input_tokens), outputTokens: Number(row.output_tokens),
     costBrl: String(row.cost_brl), latencyMs: Number(row.latency_ms),
   }
   const base = subtractUsage(row.usage, reserved)
-  const decision = evaluatePlanningReservation(row.budget, base, input.actual)
+  const actual = input.confirmedNotStarted ? { calls: 0, inputTokens: 0, outputTokens: 0, costBrl: '0', latencyMs: 0 } : input.actual
+  const decision = evaluatePlanningReservation(row.budget, base, actual)
   if (!decision.allowed && !input.recordBudgetOverage) throw new Error('planning_actual_budget_exhausted')
   await client.query(
     `INSERT INTO public.action_planning_usage_entries (
        organization_id, cycle_id, specialist_profile, specialist_version, nature,
        calls, input_tokens, output_tokens, cost_brl, latency_ms, reservation_id, provider_model_id, metadata
-     ) SELECT organization_id, cycle_id, specialist_profile, specialist_version, 'actual',
+     ) SELECT organization_id, cycle_id, specialist_profile, specialist_version, $11,
               $4,$5,$6,$7,$8,id,$9,$10
        FROM public.action_planning_usage_entries WHERE id = $3 AND organization_id = $2 AND cycle_id = $1`,
-    [input.cycleId, input.organizationId, input.reservationId, input.actual.calls, input.actual.inputTokens,
-      input.actual.outputTokens, input.actual.costBrl, input.actual.latencyMs, input.providerModelId ?? null, input.metadata ?? {}],
+    [input.cycleId, input.organizationId, input.reservationId, actual.calls, actual.inputTokens,
+      actual.outputTokens, actual.costBrl, actual.latencyMs, input.providerModelId ?? null, input.metadata ?? {}, nature],
   )
   await client.query(
     `UPDATE public.action_planning_cycles SET usage = $3::jsonb,

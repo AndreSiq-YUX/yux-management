@@ -421,3 +421,102 @@ def test_pilot_planning_preserves_receipts_when_a_specialist_times_out(monkeypat
     assert specialist_row["node"] == "funnel_nurture.crm_architect" and specialist_row["attemptCount"] == 1
     assert specialist_row["attemptsWithoutCost"] == 1 and specialist_row["reportedCostUsd"] is None
     assert "synthetic_private_provider_error" not in measured.text and "gpt-4.1-mini" not in measured.text
+
+
+def _planning_budget(max_calls=8):
+    return {
+        "budget": {"maxCalls": max_calls, "maxInputTokens": 50000, "maxOutputTokens": 10000,
+                   "maxCostBrl": "5", "maxLatencyMs": 120000},
+        "usage": {"calls": 0}, "estimate": {"calls": 1},
+    }
+
+
+def test_planning_spec_resolves_specialists_and_rejects_changes_before_transport(monkeypatch):
+    request, response, _ = _crm_preparation_case()
+    request["planning_budget"] = _planning_budget()
+    supervisor = _supervisor(response)
+    original = supervisor.client.transport
+    sent = []
+
+    def capture(*args):
+        sent.append(args[2])
+        return original(*args)
+
+    def routes():
+        return [{"agent_type": "mission_supervisor", "routing_tier": "default", "provider": "openrouter",
+                 "model_name": active_model[0], "fallback_model_name": "fallback"}]
+
+    active_model = ["initial"]
+    supervisor.client.transport = capture
+    clients = {"openrouter": supervisor.client}
+    supervisor.client = RoutedLlmClient("mission_supervisor", routes, lambda _: clients)
+    api = _planning_client(supervisor, monkeypatch)
+    headers = {"Authorization": "Bearer synthetic-token"}
+    estimated = api.post("/missions/planning-spec", json=request, headers=headers)
+    assert estimated.status_code == 200, estimated.text
+    spec = estimated.json()
+    # The five primary stages and the configured supervisor fallback are reserved.
+    assert spec["calls"] == 6 and spec["profileVersion"] == supervisor.profile.version and not sent
+    request["planning_budget"]["estimate"]["calls"] = spec["calls"]
+    execute_headers = {**headers, "X-YUX-Mission-Planning-Spec": spec["fingerprint"]}
+    active_model[0] = "new-model"
+    changed = api.post("/missions/plan-governed", json=request, headers=execute_headers)
+    assert changed.status_code == 409 and changed.json() == {"detail": "mission_plan_spec_changed"}
+    assert not sent
+    active_model[0] = "initial"
+    request["mission_prompt"] = {"version": 1, "instructions": {"planner": "Revise a logística."}}
+    assert api.post("/missions/plan-governed", json=request, headers=execute_headers).json() == {"detail": "mission_plan_spec_changed"}
+    assert not sent
+
+
+def test_governed_planning_stops_fallback_before_exceeding_reservation(monkeypatch):
+    request = {**_request(), "planning_budget": _planning_budget(max_calls=1)}
+    supervisor = _supervisor(_plan_response())
+    sent = []
+
+    def unavailable(_url, _headers, payload, _method):
+        sent.append(payload["model"])
+        raise ProviderRequestError("simulated timeout")
+
+    supervisor.client.transport = unavailable
+    routes = [{"agent_type": "mission_supervisor", "routing_tier": "default", "provider": "openrouter",
+               "model_name": "primary", "fallback_model_name": "fallback"}]
+    clients = {"openrouter": supervisor.client}
+    supervisor.client = RoutedLlmClient("mission_supervisor", lambda: routes, lambda _: clients)
+    api = _planning_client(supervisor, monkeypatch)
+    headers = {"Authorization": "Bearer synthetic-token"}
+    spec = api.post("/missions/planning-spec", json=request, headers=headers).json()
+    assert spec["calls"] == 1 and not sent
+    result = api.post("/missions/plan-governed", json=request,
+                      headers={**headers, "X-YUX-Mission-Planning-Spec": spec["fingerprint"]})
+    assert result.status_code == 422 and sent == ["primary"]
+    detail = result.json()["detail"]
+    assert detail["code"] == "mission_plan_attempt_limit_exhausted"
+    assert [receipt["attemptCount"] for receipt in detail["planningMeasurements"]] == [1]
+
+
+def test_governed_execution_uses_the_validated_route_without_reading_it_again(monkeypatch):
+    request = {**_request(), "planning_budget": _planning_budget()}
+    supervisor = _supervisor(_plan_response())
+    reads = iter(["validated", "validated"])
+    original = supervisor.client.transport
+    sent = []
+
+    def routes():
+        return [{"agent_type": "mission_supervisor", "routing_tier": "default", "provider": "openrouter",
+                 "model_name": next(reads)}]
+
+    def capture(*args):
+        sent.append(args[2]["model"])
+        return original(*args)
+
+    supervisor.client.transport = capture
+    clients = {"openrouter": supervisor.client}
+    supervisor.client = RoutedLlmClient("mission_supervisor", routes, lambda _: clients)
+    api = _planning_client(supervisor, monkeypatch)
+    headers = {"Authorization": "Bearer synthetic-token"}
+    spec = api.post("/missions/planning-spec", json=request, headers=headers).json()
+    result = api.post("/missions/plan-governed", json=request,
+                      headers={**headers, "X-YUX-Mission-Planning-Spec": spec["fingerprint"]})
+    assert result.status_code == 200, result.text
+    assert sent == ["validated"]

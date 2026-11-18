@@ -115,23 +115,55 @@ export class MissionPlanningFailure extends Error {
   }
 }
 
+export class MissionPlanningSpecChanged extends Error {
+  constructor() { super('mission_plan_spec_changed') }
+}
+
+const planningSpecSchema = z.object({
+  fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  calls: z.number().int().positive().max(2_147_483_647),
+  profileVersion: z.number().int().positive().max(2_147_483_647),
+}).strict()
+
+export async function requestMissionPlanningSpec(
+  env: Pick<AppEnv, 'YUX_AGENT_RUNTIME_URL' | 'YUX_AGENT_RUNTIME_TOKEN'>,
+  payload: Record<string, unknown>,
+  fetchImpl: typeof fetch = fetch,
+) {
+  if (!env.YUX_AGENT_RUNTIME_URL || !env.YUX_AGENT_RUNTIME_TOKEN) throw new Error('agent_harness_unavailable')
+  const response = await fetchImpl(new URL('/missions/planning-spec', env.YUX_AGENT_RUNTIME_URL), {
+    method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${env.YUX_AGENT_RUNTIME_TOKEN}` },
+    body: JSON.stringify(toMissionPlanWire(payload)), signal: AbortSignal.timeout(10_000),
+  })
+  if (!response.ok) throw new Error(`mission_plan_spec_unavailable:${response.status}`)
+  const spec = planningSpecSchema.safeParse(await response.json())
+  if (!spec.success) throw new Error('mission_plan_spec_invalid')
+  return spec.data
+}
+
 export async function requestMissionPlan(
   env: Pick<AppEnv, 'YUX_AGENT_RUNTIME_URL' | 'YUX_AGENT_RUNTIME_TOKEN'>,
   payload: Record<string, unknown>,
   fetchImpl: typeof fetch = fetch,
   measurePilotUsage = false,
+  specFingerprint?: string,
 ): Promise<unknown> {
   if (!env.YUX_AGENT_RUNTIME_URL || !env.YUX_AGENT_RUNTIME_TOKEN) throw new Error('agent_harness_unavailable')
   const wire = toMissionPlanWire(payload)
   const usePilotMeasurements = measurePilotUsage && [wire.action_pack, ...(wire.pack_catalog ?? [])].every(pack => pack.key !== 'radar_prospecting')
-  const response = await fetchImpl(new URL('/missions/plan', env.YUX_AGENT_RUNTIME_URL), {
+  const governed = usePilotMeasurements && specFingerprint
+  const response = await fetchImpl(new URL(governed ? '/missions/plan-governed' : '/missions/plan', env.YUX_AGENT_RUNTIME_URL), {
     method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${env.YUX_AGENT_RUNTIME_TOKEN}`,
-      ...(usePilotMeasurements ? { 'X-YUX-Mission-Pilot-Usage': '1' } : {}) },
+      ...(usePilotMeasurements ? { 'X-YUX-Mission-Pilot-Usage': '1' } : {}),
+      ...(governed ? { 'X-YUX-Mission-Planning-Spec': governed } : {}) },
     body: JSON.stringify(wire), signal: AbortSignal.timeout(60_000),
   })
   if (!response.ok) {
     // Retain only a bounded machine code; runtime bodies can contain private data.
     const body=await response.json().catch(()=>null) as {detail?:unknown}|null
+    if (usePilotMeasurements && specFingerprint && response.status === 409 && body?.detail === 'mission_plan_spec_changed') {
+      throw new MissionPlanningSpecChanged()
+    }
     if (usePilotMeasurements && body?.detail && typeof body.detail === 'object') {
       const { code, planningMeasurements } = body.detail as Record<string, unknown>
       if (typeof code === 'string' && /^(mission_supervisor|mission_plan|funnel_nurture|campaign_launch)_[a-z0-9_]{1,80}$/.test(code)) {

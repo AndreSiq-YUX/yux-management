@@ -197,13 +197,7 @@ def preview_mission_supervisor(supervisor: MissionSupervisor, value: dict[str, A
     }
     _capture_transport(stage, request, supervisor.profile.provider, supervisor.client, {})
     preview["requests"].append(stage)
-    selected = set(route.selected_pack_keys)
-    for workflow, pack_keys, specialist in (
-        ("funnel_nurture", {"funnel_nurture", "crm_preparation"}, supervisor.funnel_nurture),
-        ("campaign_launch", {"campaign_launch"}, supervisor.campaign_launch),
-    ):
-        if not selected.intersection(pack_keys):
-            continue
+    for workflow, specialist in supervisor.selected_specialists(route.selected_pack_keys).items():
         try:
             specialist.check_requirements(value)
         except (FunnelNurtureClarificationRequired, CampaignLaunchClarificationRequired) as error:

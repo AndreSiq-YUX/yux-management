@@ -5,7 +5,7 @@ import type { AppJobQueue } from '../../server.js'
 import { createBullMqJobId } from '../queue.js'
 import { createActionEngineCapabilityRegistry } from '../../modules/action-engine/capabilities/index.js'
 import { ensureCrmPreparationPackVersion } from '../../modules/action-engine/packs/crm-preparation-v1.js'
-import { compileSupervisorPlan, diffMissionPlans, MissionPlanningFailure, requestMissionPlan, type CompiledMissionPlan } from '../../modules/action-engine/planner.js'
+import { compileSupervisorPlan, diffMissionPlans, MissionPlanningFailure, MissionPlanningSpecChanged, requestMissionPlan, requestMissionPlanningSpec, type CompiledMissionPlan } from '../../modules/action-engine/planner.js'
 import {
   getMission, insertMissionContextSnapshot, insertPlanRevision, recordApproval, recordEvaluation, transitionMission, type Queryable,
 } from '../../modules/action-engine/repository.js'
@@ -534,7 +534,7 @@ export async function handleActionEnginePlanMission(
   env: AppEnv,
   data: Record<string, unknown>,
   queue?: AppJobQueue,
-  dependencies: { invokePlan?: typeof requestMissionPlan } = {},
+  dependencies: { invokePlan?: typeof requestMissionPlan; resolvePlanningSpec?: typeof requestMissionPlanningSpec } = {},
 ): Promise<{ planId?: string; skipped?: string }> {
   if (env.MISSION_SUPERVISOR_ENABLED === false) throw new Error('mission_supervisor_disabled')
   const missionId = stringField(data, 'missionId')
@@ -570,7 +570,15 @@ export async function handleActionEnginePlanMission(
       ...(planningContext.harnessKnowledgeContextHash ? { harnessKnowledgeContextHash: planningContext.harnessKnowledgeContextHash } : {}),
     }))
     const limits = getMissionPlanningLimits(mission)
-    const { planningBudget, planningEstimate } = limits
+    const { planningBudget } = limits
+    const prepared = governedPlanning ? await (async () => {
+      const payload = await buildMissionPlanRequest(pool, mission, catalog, planningContext, isReplan, limits, { snapshotId: contextSnapshot.id })
+      if (missionPrompt) payload.mission_prompt = missionPrompt
+      const spec = await (dependencies.resolvePlanningSpec ?? requestMissionPlanningSpec)(env, payload)
+      return { payload, spec }
+    })().then(result => ({ ok: true as const, ...result }), (error: unknown) => ({ ok: false as const, error })) : undefined
+    const spec = prepared?.ok ? prepared.spec : undefined
+    const planningEstimate = spec ? { ...limits.planningEstimate, calls: spec.calls } : limits.planningEstimate
     const planningCycle = await transaction(pool, async (client) => {
       const contextHash = planningContext.contextHash
       const created = await client.query<{ id: string }>(
@@ -589,12 +597,22 @@ export async function handleActionEnginePlanMission(
         const age = await getPlanningReservationAge(client, cycleId, organizationId)
         if (age !== null) return { id: cycleId, recheckAfterMs: PLANNING_RECHECK_WINDOW_MS - age }
       }
-      const reservation = await reservePlanningCall(client, {
-        cycleId, organizationId, specialistProfile: 'growth_strategist', specialistVersion: 1,
-        reservation: planningEstimate,
-      })
-      return { id: cycleId, reservationId: reservation.reservationId }
+      if (prepared?.ok === false) throw prepared.error
+      try {
+        const reservation = await reservePlanningCall(client, {
+          cycleId, organizationId, specialistProfile: spec ? 'mission_supervisor' : 'growth_strategist', specialistVersion: spec?.profileVersion ?? 1,
+          reservation: planningEstimate,
+          ...(spec ? { metadata: { specificationFingerprint: spec.fingerprint } } : {}),
+        })
+        return { id: cycleId, reservationId: reservation.reservationId }
+      } catch (error) {
+        if (governedPlanning && error instanceof Error && error.message === 'planning_budget_exhausted') {
+          return { id: cycleId, budgetExceeded: true }
+        }
+        throw error
+      }
     })
+    if (planningCycle.budgetExceeded) throw new Error('planning_budget_exhausted')
     if (planningCycle.recheckAfterMs !== undefined && planningCycle.recheckAfterMs > 0) {
       try {
         await queue?.add('action-engine.planMission', { missionId, organizationId, requestedVersion, replan: isReplan }, {
@@ -608,19 +626,26 @@ export async function handleActionEnginePlanMission(
     if (governedPlanning) cycleForReconciliation = planningCycle.id
     const { reservationId } = planningCycle
     if (!reservationId) throw new Error('planning_attempt_reconciliation_required')
-    const payload = await buildMissionPlanRequest(pool, mission, catalog, planningContext, isReplan, limits, {
+    const payload = prepared?.ok ? prepared.payload : await buildMissionPlanRequest(pool, mission, catalog, planningContext, isReplan, limits, {
       snapshotId: contextSnapshot.id, cycleId: planningCycle.id,
     })
     if (missionPrompt) payload.mission_prompt = missionPrompt
+    if (prepared?.ok) payload.planning_budget = {
+      ...payload.planning_budget as Record<string, unknown>, cycleId: planningCycle.id, estimate: planningEstimate,
+    }
     const previousCompiled = payload.previous_revision as Record<string, unknown> | undefined
     const planningStartedAt = Date.now()
     let rawPlan: unknown = null
     let planningFailure: MissionPlanningFailure | undefined
     try {
-      rawPlan = dependencies.invokePlan
-        ? await dependencies.invokePlan(env, payload)
-        : await requestMissionPlan(env, payload, undefined, governedPlanning)
+      rawPlan = await (dependencies.invokePlan ?? requestMissionPlan)(env, payload, undefined, governedPlanning, spec?.fingerprint)
     } catch (error) {
+      if (spec && error instanceof MissionPlanningSpecChanged) {
+        await transaction(pool, client => settlePlanningCall(client, {
+          cycleId: planningCycle.id, organizationId, reservationId, confirmedNotStarted: true,
+          metadata: { reason: 'mission_plan_spec_changed' },
+        }))
+      }
       if (!governedPlanning || !(error instanceof MissionPlanningFailure) || !error.measurements.length) throw error
       planningFailure = error
     }

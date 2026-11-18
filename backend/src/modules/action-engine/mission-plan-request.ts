@@ -172,7 +172,7 @@ export function getMissionPlanningLimits(mission: ActionMission) {
 export async function buildMissionPlanRequest(
   pool: Queryable, mission: ActionMission, catalog: PlanningCatalog, planningContext: PlanningContext,
   isReplan: boolean, limits: ReturnType<typeof getMissionPlanningLimits>,
-  leases?: { snapshotId: string; cycleId: string },
+  leases?: { snapshotId: string; cycleId?: string },
 ): Promise<Record<string, unknown>> {
   const { id: missionId, organizationId } = mission
   const { packs, serializablePack, serializablePacks, capabilityCatalog } = catalog

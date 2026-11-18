@@ -12,10 +12,15 @@ _meter: ContextVar[StrategyUsage | None] = ContextVar("strategy_usage", default=
 _stage: ContextVar[str] = ContextVar("strategy_usage_stage", default="retrieval")
 
 
+class PlanningAttemptLimitExceeded(RuntimeError):
+    pass
+
+
 @dataclass
 class StrategyUsage:
     record: Callable[[list[dict[str, Any]]], None] | None = None
     attempts: list[dict[str, Any]] = field(default_factory=list)
+    max_planning_attempts: int | None = None
 
     @contextmanager
     def activate(self):
@@ -82,6 +87,8 @@ def strategy_metered_transport(transport, url, headers, payload, method, *, prov
     meter = _meter.get()
     if meter is None:
         return transport(url, headers, payload, method)
+    if meter.max_planning_attempts is not None and len(meter.attempts) >= meter.max_planning_attempts:
+        raise PlanningAttemptLimitExceeded("mission_plan_attempt_limit_exhausted")
     attempt = {
         "stage": _stage.get(), "kind": kind, "provider": provider, "model": payload["model"],
         "requestedModels": payload.get("models") or [payload["model"]],

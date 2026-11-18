@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import json
 import hashlib
+from copy import copy
+from dataclasses import replace
 from typing import Any
 
 from pydantic import ValidationError
 
 from .contracts import AgentContractError, parse_json_object, validate_composite_mission_plan, validate_mission_plan
 from .mission_contracts import MissionSupervisorProposal, PlanWire
+from .llm_routing import RoutedLlmClient
 from .mission_prompt import apply_stage_adjustment, planning_prompt_configuration
 from .model_profiles import ModelProfile, build_model_trace, measure_generation
 from .strategy_usage import strategy_usage_stage
@@ -16,6 +19,7 @@ from .funnel_nurture import FunnelNurtureError, FunnelNurtureSpecialistWorkflow
 from .campaign_launch import CampaignLaunchError, CampaignLaunchSpecialistWorkflow
 from .mission_router import MissionRoute, MissionRouter, MissionRoutingError
 from .mission_verifier import CompositeMissionVerifier, MissionVerificationError
+from .trace import stable_hash
 
 
 class MissionSupervisorError(ValueError):
@@ -112,6 +116,55 @@ class MissionSupervisor:
             "session_id": str((value.get("mission") or {}).get("id") or "") or None,
         }
 
+    def selected_specialists(self, pack_keys):
+        selected = set(pack_keys)
+        return {
+            key: specialist for key, supported_packs, specialist in (
+                ("funnel_nurture", {"funnel_nurture", "crm_preparation"}, self.funnel_nurture),
+                ("campaign_launch", {"campaign_launch"}, self.campaign_launch),
+            ) if selected.intersection(supported_packs)
+        }
+
+    def govern_execution(self, value: dict[str, Any]):
+        """Resolve the exact requests and ordered routes without calling the models."""
+        budget = value["planning_budget"]
+        ceiling, usage = budget.get("budget"), budget.get("usage")
+        if not isinstance(ceiling, dict) or not isinstance(usage, dict):
+            raise MissionSupervisorError("mission_plan_budget_invalid")
+        maximum, used = ceiling.get("maxCalls"), usage.get("calls")
+        if type(maximum) is not int or type(used) is not int or maximum < 0 or used < 0:
+            raise MissionSupervisorError("mission_plan_budget_invalid")
+        route, request = self.prepare_request(value)
+        prepared = copy(self)
+        descriptor = []
+
+        def prepare_client(client, profile, requests):
+            execution_route = None
+            if isinstance(client, RoutedLlmClient):
+                configuration = client.configuration()
+                execution_route = configuration[0]
+                client = replace(client, fixed_configuration=configuration)
+            attempts = len(execution_route["attempts"]) if execution_route else 1
+            descriptor.append({"profile": profile.model_dump(mode="json"), "route": execution_route,
+                               "requests": requests, "attempts": attempts})
+            return client
+
+        prepared.client = prepare_client(self.client, self.profile, {"planner": request})
+        configured = {**value, "mission_prompt": planning_prompt_configuration(value, route.selected_pack_keys)}
+        for workflow, specialist in self.selected_specialists(route.selected_pack_keys).items():
+            target = copy(specialist)
+            target.client = prepare_client(specialist.client, specialist.profile, {
+                f"{workflow}.{node}": specialist.prepare_request(node, configured) for node, _ in specialist.NODES
+            })
+            setattr(prepared, workflow, target)
+
+        primary_calls = sum(len(group["requests"]) for group in descriptor)
+        possible_attempts = sum(len(group["requests"]) * group["attempts"] for group in descriptor)
+        # Keep the full primary requirement so the worker can reject an undersized budget.
+        calls = max(primary_calls, min(possible_attempts, maximum - used))
+        return prepared, {"calls": calls, "profileVersion": self.profile.version,
+                          "fingerprint": stable_hash({"routes": descriptor, "calls": calls})}
+
     def propose(self, value: dict[str, Any]) -> dict[str, Any]:
         route, request = self.prepare_request(value)
         value = {**value, "mission_prompt": planning_prompt_configuration(value, route.selected_pack_keys)}
@@ -141,7 +194,8 @@ class MissionSupervisor:
         if proposal.plan is not None:
             if [pack.key for pack in proposal.selected_packs] != route.selected_pack_keys:
                 raise MissionSupervisorError("mission_supervisor_route_selection_mismatch")
-            if any(pack.key in {"funnel_nurture", "crm_preparation"} for pack in proposal.selected_packs):
+            specialists = self.selected_specialists(route.selected_pack_keys)
+            if "funnel_nurture" in specialists:
                 try:
                     artifacts = self.funnel_nurture.generate(value)
                     funnel_traces = list(getattr(self.funnel_nurture, "traces", []))
@@ -155,7 +209,7 @@ class MissionSupervisor:
                     for step in proposal.plan.get('steps') or []:
                         if step.get('stepKey') == 'pack.readiness':
                             step['input'] = dict(templates['pack.readiness']['defaultParameters'])
-            if any(pack.key == "campaign_launch" for pack in proposal.selected_packs):
+            if "campaign_launch" in specialists:
                 try:
                     artifacts = self.campaign_launch.generate(value)
                     campaign_traces = list(getattr(self.campaign_launch, "traces", []))

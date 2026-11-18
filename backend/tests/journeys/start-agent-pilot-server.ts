@@ -139,19 +139,28 @@ const listener = createServer(async (req, res) => {
       assert.equal(input.organization_id, missionOrg)
       assert.equal(input.contract_id, missionContract)
       missionTurns.push(input.user_message)
-    } else if (req.url === '/missions/plan') {
+    } else if (req.url === '/missions/planning-spec' || req.url === '/missions/plan-governed') {
       const planInput: MissionPlanRequestWire = input
       assert.equal(planInput.organization_id, missionOrg)
       assert.equal(planInput.contract_id, missionContract)
       assert(planInput.allowed_source_ids?.includes(sourceId))
       const { id } = planInput.mission
       assert(typeof id === 'string')
-      plannedMissions.push(id)
+      if (req.url === '/missions/plan-governed') {
+        const { rows: [reservation] } = await rig.sql(`SELECT entry.calls, entry.metadata->>'specificationFingerprint' AS fingerprint
+          FROM public.action_planning_cycles cycle JOIN public.action_planning_usage_entries entry ON entry.cycle_id=cycle.id
+          WHERE cycle.mission_id=$1 AND cycle.organization_id=$2 AND entry.nature='reservation'`, [id, missionOrg])
+        assert(reservation.calls >= 5 && reservation.calls <= 8)
+        assert.equal(reservation.calls, input.planning_budget.estimate.calls)
+        assert.equal(reservation.fingerprint, req.headers['x-yux-mission-planning-spec'])
+        assert.match(reservation.fingerprint, /^[a-f0-9]{64}$/)
+        plannedMissions.push(id)
+      }
     } else if (!req.url.startsWith('/instructions/preview/')) {
       return respond(404, { error: 'fixture_route_not_found' })
     }
     const headers = new Headers({ authorization: `Bearer ${token}`, 'content-type': 'application/json' })
-    for (const name of ['x-yux-mission-pilot-usage', 'x-yux-mission-turn-operation']) {
+    for (const name of ['x-yux-mission-pilot-usage', 'x-yux-mission-turn-operation', 'x-yux-mission-planning-spec']) {
       const value = req.headers[name]
       if (typeof value === 'string') headers.set(name, value)
     }
