@@ -88,7 +88,7 @@ def capture_template(cases, corpus_hash):
         "executions": [
             {"responseId": str(uuid4()), "caseId": case_id, "condition": condition, "repetition": repetition,
              "input": {"turns": case["turns"], "contextSnapshotHash": None, "reviewContext": []}, "modelSnapshot": None,
-             "provider": None, "traceId": None, "configurationHash": None, "authorizedSources": None,
+             "provider": None, "traceId": None, "turnTraceIds": None, "configurationHash": None, "authorizedSources": None,
              "retrievedReferences": None, "citations": None, "answer": None, "attempts": None,
              "latencyMs": None, "outcome": {"accepted": None, "acceptedOnFirstReview": None, "priceOrScopeCorrected": None}}
             for case_id, case in cases.items() for condition in CONDITIONS for repetition in REPEATS
@@ -127,6 +127,18 @@ def provider_model(record):
     return values
 
 
+def turn_trace_ids(execution, turns):
+    final_trace = execution.get("traceId")
+    traces = execution.get("turnTraceIds")
+    if traces is None:
+        traces = [final_trace]
+    require(isinstance(traces, list) and traces and len(traces) == len(turns) and all(recorded_text(trace) for trace in traces),
+            "live_trace_required_for_every_turn")
+    require(len(traces) == len(set(traces)), "unique_live_trace_required")
+    require(final_trace is None or final_trace == traces[-1], "final_trace_mismatch")
+    return traces
+
+
 def validate_capture(batch, cases, corpus_hash):
     require(batch.get("schemaVersion") == 1 and batch.get("corpusHash") == corpus_hash, "frozen_corpus_mismatch")
     require(batch.get("provenance") in ("live", "simulated"), "capture_provenance_required")
@@ -152,13 +164,18 @@ def validate_capture(batch, cases, corpus_hash):
         identifier = execution.get("responseId")
         require(opaque_response_id(identifier) and identifier not in ids, "opaque_unique_response_id_required")
         ids.add(identifier)
+        case = cases[case_id]
         if batch["provenance"] == "live":
-            trace_id = execution.get("traceId")
-            require(isinstance(trace_id, str) and trace_id.strip() and trace_id not in traces, "unique_live_trace_required")
-            traces.add(trace_id)
+            execution_traces = turn_trace_ids(execution, case["turns"])
+            require(traces.isdisjoint(execution_traces), "unique_live_trace_required")
+            traces.update(execution_traces)
+            attempts = execution.get("attempts")
+            if len(execution_traces) > 1 and attempts is not None:
+                require(execution.get("meteredTraceIds") == execution_traces and isinstance(attempts, list)
+                        and all(isinstance(attempt, dict) and attempt.get("traceId") in execution_traces for attempt in attempts),
+                        "metered_turns_incomplete")
         route = provider_model(execution)
         require(approved_routes is None or route in approved_routes, "provider_or_model_outside_authorization")
-        case = cases[case_id]
         require(execution.get("configurationHash") == versions[snapshot_key(case)][condition], "configuration_drift")
         source_snapshot = execution.get("authorizedSources")
         require(isinstance(source_snapshot, list) and all(
@@ -207,28 +224,40 @@ def validate_economics(execution, approved_routes):
 
 
 def attach_metered_attempts(batch, receipts):
-    executions = [row for row in batch["executions"] if row.get("traceId")]
-    by_trace = {row["traceId"]: row for row in executions}
-    require(len(by_trace) == len(executions), "unique_live_trace_required")
-    require(isinstance(receipts, dict) and receipts.keys() <= by_trace.keys(), "metered_trace_outside_capture")
-    for trace_id, entries in receipts.items():
-        require(isinstance(entries, list), "invalid_attempt_records")
-        row = by_trace[trace_id]
-        imported = []
-        for attempt in entries:
-            require(isinstance(attempt, dict) and attempt.get("status") in ("started", "received"), "invalid_metered_attempt")
-            tokens = attempt.get("tokens") or {}
-            require(isinstance(tokens, dict), "invalid_attempt_tokens")
-            kind = attempt.get("kind") or ("retrieval" if attempt.get("stage") == "retrieval" else "generation")
-            imported.append({
-                "kind": kind, "provider": attempt.get("provider"), "modelSnapshot": attempt.get("model"),
-                "requestedModels": attempt.get("requestedModels"), "costBrl": attempt.get("costBrl"),
-                "inputTokens": tokens.get("input"), "outputTokens": tokens.get("output"), "reasoningTokens": tokens.get("reasoning"),
-            })
+    executions = [(row, turn_trace_ids(row, row["input"]["turns"])) for row in batch["executions"]
+                  if row.get("traceId") or row.get("turnTraceIds") is not None]
+    traces = [trace_id for _, trace_ids in executions for trace_id in trace_ids]
+    require(len(set(traces)) == len(traces), "unique_live_trace_required")
+    require(isinstance(receipts, dict) and receipts.keys() <= set(traces), "metered_trace_outside_capture")
+    updates = []
+    for row, trace_ids in executions:
+        if receipts.keys().isdisjoint(trace_ids):
+            continue
+        require(set(trace_ids) <= receipts.keys(), "metered_turns_incomplete")
+        imported = [
+            {**attempt, **({"traceId": trace_id} if len(trace_ids) > 1 else {})}
+            for trace_id in trace_ids for attempt in import_receipt(receipts[trace_id])
+        ]
         require(row.get("attempts") in (None, imported), "metered_attempts_would_replace_existing_capture")
-        row["attempts"] = imported
-        validate_economics(row, None)
+        validate_economics({**row, "attempts": imported}, None)
+        updates.append((row, {"attempts": imported, "meteredTraceIds": trace_ids}))
+    for row, changes in updates:
+        row.update(changes)
     return batch
+
+
+def import_receipt(entries):
+    require(isinstance(entries, list), "invalid_attempt_records")
+    for attempt in entries:
+        require(isinstance(attempt, dict) and attempt.get("status") in ("started", "received"), "invalid_metered_attempt")
+        tokens = attempt.get("tokens") or {}
+        require(isinstance(tokens, dict), "invalid_attempt_tokens")
+        kind = attempt.get("kind") or ("retrieval" if attempt.get("stage") == "retrieval" else "generation")
+        yield {
+            "kind": kind, "provider": attempt.get("provider"), "modelSnapshot": attempt.get("model"),
+            "requestedModels": attempt.get("requestedModels"), "costBrl": attempt.get("costBrl"),
+            "inputTokens": tokens.get("input"), "outputTokens": tokens.get("output"), "reasoningTokens": tokens.get("reasoning"),
+        }
 
 
 def blind_packet(executions, cases):

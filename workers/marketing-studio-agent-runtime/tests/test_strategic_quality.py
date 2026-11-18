@@ -212,6 +212,10 @@ def pilot_capture(provenance="simulated"):
                        "costBrl": "0.01", "inputTokens": 11, "outputTokens": 9}],
             outcome={"accepted": False, "acceptedOnFirstReview": False, "priceOrScopeCorrected": None},
         )
+        if len(case["turns"]) > 1:
+            traces = [f"fixture-{row['responseId']}-turn-{turn}" for turn in range(len(case["turns"]) - 1)] + [row["traceId"]]
+            row.update(turnTraceIds=traces, meteredTraceIds=traces)
+            row["attempts"][0]["traceId"] = row["traceId"]
     return cases, batch
 
 
@@ -324,6 +328,44 @@ def test_receipt_import_keeps_unreconciled_costs_and_validates_every_paid_route(
         tool.validate_capture(batch, cases, batch["corpusHash"])
     batch["authorization"]["routes"].append({"provider": provider, "modelSnapshot": "fallback-not-approved"})
     tool.validate_capture(batch, cases, batch["corpusHash"])
+
+
+def test_pilot_requires_receipts_for_each_turn_and_keeps_initial_costs():
+    tool = pilot_comparison
+    cases, batch = pilot_capture("live")
+    row = next(row for row in batch["executions"] if row["caseId"] == "vm-continuacao")
+    row["attempts"] = None
+    row["meteredTraceIds"] = None
+    first_trace = f"first-{row['responseId']}"
+    final_trace = row["traceId"]
+    cost_record = {"kind": "generation", "provider": row["provider"], "model": row["modelSnapshot"],
+                   "requestedModels": [row["modelSnapshot"]], "status": "received",
+                   "tokens": {"input": 22, "output": 9, "reasoning": 2}, "costBrl": "0.03"}
+
+    row["turnTraceIds"] = [first_trace, final_trace]
+    with pytest.raises(ValueError, match="metered_turns_incomplete"):
+        tool.attach_metered_attempts(batch, {final_trace: [cost_record]})
+    assert row["attempts"] is None
+    tool.attach_metered_attempts(batch, {final_trace: [cost_record], first_trace: [cost_record]})
+    assert [attempt["traceId"] for attempt in row["attempts"]] == [first_trace, final_trace]
+    assert tool.economics([row])["totalCostBrl"] == "0.06"
+    assert tool.economics([row])["reasoningTokens"] == 4
+    tool.validate_capture(batch, cases, batch["corpusHash"])
+    tool.attach_metered_attempts(batch, {first_trace: [cost_record], final_trace: [cost_record]})
+    assert tool.economics([row])["totalCostBrl"] == "0.06"
+
+    batch["authorization"]["ceilingBrl"] = "1.64"
+    result = tool.compare(batch, cases, pilot_reviews(cases, batch, "A"), pilot_reviews(cases, batch, "B"))
+    assert result["batchBudget"] == "exceeded"
+    row["meteredTraceIds"] = [final_trace]
+    with pytest.raises(ValueError, match="metered_turns_incomplete"):
+        tool.validate_capture(batch, cases, batch["corpusHash"])
+    row["turnTraceIds"] = None
+    with pytest.raises(ValueError, match="live_trace_required_for_every_turn"):
+        tool.validate_capture(batch, cases, batch["corpusHash"])
+    row["turnTraceIds"] = [batch["executions"][0]["traceId"], final_trace]
+    with pytest.raises(ValueError, match="unique_live_trace_required"):
+        tool.validate_capture(batch, cases, batch["corpusHash"])
 
 
 def test_pilot_economics_include_all_attempts_and_keep_unknown_cost_and_zero_denominators_pending():
