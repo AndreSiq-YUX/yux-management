@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test'
 const control = 'http://127.0.0.1:4191'
 const controlHeaders = { authorization: 'Bearer agent-pilot-browser-fixture' }
 
-test('compares pilot prompts, imports a CRM draft and prepares a scoped mission', async ({ page, request }) => {
+test('compares pilot prompts, imports a CRM draft and executes a scoped preparation after approval', async ({ page, request }) => {
   await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
   const response = await request.get(`${control}/fixture`, { headers: controlHeaders })
   expect(response.ok()).toBe(true)
@@ -54,8 +54,27 @@ test('compares pilot prompts, imports a CRM draft and prepares a scoped mission'
     await page.goto(`/client-workspaces/${data.presalesOrg}/comercial/leads`)
     await page.getByText(data.names.lead, { exact: true }).click()
     await page.getByRole('tab', { name: 'Comercial', exact: true }).click()
-    await page.getByRole('button', { name: 'Aprovar recomendação e criar rascunho' }).click()
-    await expect(page.getByRole('link', { name: 'Revisar rascunho criado' })).toBeVisible()
+    const imported = await postThroughUi(page, /^\/api\/proposals\/strategy-recommendations\/[a-f0-9-]+\/import$/,
+      'Aprovar recomendação e criar rascunho', 200)
+    const { id: draftId } = await imported.json()
+    await page.getByRole('link', { name: 'Revisar rascunho criado' }).click()
+    await expect(page).toHaveURL(`/client-workspaces/${data.presalesOrg}/comercial/propostas?proposal=${draftId}`)
+    await expect(page.getByRole('button', { name: /Outra proposta no mesmo workspace/ }).first()).toBeVisible()
+    await expect(page.getByPlaceholder('Escopo')).toHaveValue('Recuperar oportunidades existentes')
+    await expect(page.getByRole('spinbutton')).toHaveValue('1500')
+    await expect(page.getByText('Status: draft', { exact: true })).toBeVisible()
+
+    const otherQueue = page.waitForResponse(response => {
+      const url = new URL(response.url())
+      return response.request().method() === 'GET' && url.pathname === '/api/proposals'
+        && url.searchParams.get('organizationId') === data.missionOrg
+    })
+    await page.goto(`/client-workspaces/${data.missionOrg}/comercial/propostas?proposal=${draftId}`)
+    const otherProposals = await otherQueue
+    expect(otherProposals.ok(), await otherProposals.text()).toBe(true)
+    expect(await otherProposals.json()).not.toContainEqual(expect.objectContaining({ id: draftId }))
+    await expect(page.getByText('Selecione ou crie uma proposta.', { exact: true })).toBeVisible()
+    await expect(page.getByPlaceholder('Escopo')).toHaveCount(0)
   })
 
   await test.step('inspect the mission strategy and compare an intake adjustment', async () => {
@@ -140,9 +159,50 @@ test('compares pilot prompts, imports a CRM draft and prepares a scoped mission'
   expect(verified).toEqual({
     drafts: [{ status: 'draft', final_value: '1500.00', traced: true }],
     presalesTurns: [data.budget, recommendation], missionTurns: [data.objective, revision],
-    plans: [{ mission_id: plannedMissionId, status: 'pending_approval', steps: expect.any(Number), runs: 0 }], providerCalls: 0,
+    plans: [{ mission_id: plannedMissionId, status: 'pending_approval', steps: 8, runs: 0 }], providerCalls: 0,
   })
-  expect(verified.plans[0].steps).toBeGreaterThan(0)
+
+  await test.step('approve the scoped plan and inspect the saved drafts', async () => {
+    const readExecution = async () => {
+      const execution = await request.get(`${control}/execution`, { headers: controlHeaders })
+      expect(execution.ok(), await execution.text()).toBe(true)
+      return execution.json()
+    }
+    const noEffects = { enrollments: 0, automations: 0, sends: 0, crm_status: 'draft' }
+    expect(await readExecution()).toEqual({ missions: [{
+      id: plannedMissionId, status: 'pending_plan_approval', completed_steps: 0,
+      funnels: [], emails: [], active_sequences: [], sequence_versions: [], ...noEffects,
+    }], providerCalls: 0 })
+
+    await page.goto(`/client-workspaces/${data.missionOrg}/missoes/conversas/${conversationId}`)
+    await expect(page.getByText('Nenhum contato existente nesta etapa', { exact: true })).toBeVisible()
+    const approval = await postThroughUi(page, /^\/api\/action-engine\/plans\/[a-f0-9-]+\/submit$/,
+      'Li os impactos e aprovo este plano', 200)
+    expect(await approval.json()).toMatchObject({ id: plannedMissionId, status: 'active' })
+    await expect(page.getByText(/Plano aprovado\. Vou salvar o funil/)).toBeVisible()
+
+    await tick()
+    await expect(page.getByText(/Os rascunhos foram criados: um funil de CRM, três e-mails e uma sequência desativada/)).toBeVisible()
+    await page.getByRole('link', { name: 'Revisar rascunhos' }).click()
+    await expect(page.getByRole('heading', { name: 'Entregáveis da missão' })).toBeVisible()
+    await expect(page.getByText('Funil · Rascunho', { exact: true })).toHaveCount(1)
+    await expect(page.getByText('E-mail · Rascunho', { exact: true })).toHaveCount(3)
+    await expect(page.getByText('Sequência · Rascunho', { exact: true })).toHaveCount(1)
+
+    const replay = await page.request.post(approval.url(), { data: approval.request().postDataJSON() })
+    expect(replay.ok(), await replay.text()).toBe(true)
+    await tick()
+    const conversation = await page.request.get(`http://127.0.0.1:4188/api/action-engine/mission-conversations/${conversationId}?organizationId=${data.missionOrg}`)
+    expect(conversation.ok(), await conversation.text()).toBe(true)
+    const completed = await conversation.json()
+    expect(completed.status).toBe('converted')
+    expect(completed.messages.filter((message: { structuredPayload?: { crmPreparation?: string } }) =>
+      message.structuredPayload?.crmPreparation === 'completed')).toHaveLength(1)
+    expect(await readExecution()).toEqual({ missions: [{
+      id: plannedMissionId, status: 'succeeded', completed_steps: 8, funnels: ['draft'],
+      emails: ['draft', 'draft', 'draft'], active_sequences: [false], sequence_versions: ['draft'], ...noEffects,
+    }], providerCalls: 0 })
+  })
 })
 
 type PromptRequest = { stage: string; fingerprint: string; request: { messages: Array<{ role: string; content: string }> } }
@@ -166,11 +226,14 @@ async function simulate(page: Page): Promise<PromptPreview> {
   return result.json()
 }
 
-async function postThroughUi(page: Page, path: string, button: string) {
-  const response = page.waitForResponse(result => result.request().method() === 'POST' && new URL(result.url()).pathname === path)
+async function postThroughUi(page: Page, path: string | RegExp, button: string, status = 202) {
+  const response = page.waitForResponse(result => {
+    const pathname = new URL(result.url()).pathname
+    return result.request().method() === 'POST' && (typeof path === 'string' ? pathname === path : path.test(pathname))
+  })
   await page.getByRole('button', { name: button, exact: true }).click()
   const result = await response
-  expect(result.status(), await result.text()).toBe(202)
+  expect(result.status(), await result.text()).toBe(status)
   return result
 }
 

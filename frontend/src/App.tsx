@@ -187,6 +187,7 @@ function App() {
               <Route path="empresa/integracoes" element={<PortalCompanyIntegrationsPage />} />
 
               <Route path="comercial/leads" element={<PortalCommercialLeadsPage />} />
+              <Route path="comercial/propostas" element={<RequireRole roles={['admin']}><ProposalsPage /></RequireRole>} />
               <Route path="comercial/contas" element={<PortalCommercialAccountsPage />} />
               <Route path="comercial/funis" element={<PortalCommercialFunnelsPage />} />
               <Route path="comercial/tarefas" element={<PortalCommercialTasksPage />} />

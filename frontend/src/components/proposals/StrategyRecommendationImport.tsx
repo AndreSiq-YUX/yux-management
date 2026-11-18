@@ -2,11 +2,14 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiRequest, ApiClientError } from '@/lib/apiClient'
 import { usePlatformStore } from '@/stores/platformStore'
+import { usePortalWorkspacePath } from '@/hooks/usePortalWorkspacePath'
 
 type Recommendation = { id: string; rationale: string; packageId: string; catalogVersion: string; createdAt: string }
 
 export function StrategyRecommendationImport({ organizationId, leadId }: { organizationId: string; leadId: string }) {
   const packages = usePlatformStore(state => state.packages)
+  const inClientWorkspace = usePlatformStore(state => state.mode === 'client_workspace')
+  const workspacePath = usePortalWorkspacePath()
   const [recommendations, setRecommendations] = useState<Recommendation[]>([])
   const [pendingId, setPendingId] = useState('')
   const [draftId, setDraftId] = useState('')
@@ -43,7 +46,8 @@ export function StrategyRecommendationImport({ organizationId, leadId }: { organ
     <section className="space-y-3 rounded-md border p-3 text-sm">
       <h3 className="font-semibold">Recomendações do estrategista</h3>
       {error && <p role="alert" className="text-red-700">{error}</p>}
-      {draftId && <Link to={`/proposals?proposal=${draftId}`} className="font-medium text-yux-700 underline">Revisar rascunho criado</Link>}
+      {draftId && <Link to={{ pathname: inClientWorkspace ? workspacePath('/portal/comercial/propostas') : '/proposals',
+        search: new URLSearchParams({ proposal: draftId }).toString() }} className="font-medium text-yux-700 underline">Revisar rascunho criado</Link>}
       {recommendations.map(item => (
         <article className="space-y-2 border-t pt-3" key={item.id}>
           <h4 className="font-medium">{packages.find(pack => pack.id === item.packageId)?.name || 'Pacote recomendado'}</h4>

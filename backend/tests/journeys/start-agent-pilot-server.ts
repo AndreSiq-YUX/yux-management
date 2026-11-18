@@ -24,7 +24,15 @@ globalThis.fetch = (input, init) => {
   return localFetch(input, { ...init, redirect: 'error' })
 }
 
-const allowedJobs = new Set(['strategy.adminChat', 'action-engine.processMissionConversation', 'action-engine.planMission'])
+const draftJobs = new Set([
+  'action-engine.scheduleReadyActions', 'action-engine.executeAction', 'action-engine.collectMetrics', 'action-engine.evaluateMission',
+])
+const allowedJobs = new Set(['strategy.adminChat', 'action-engine.processMissionConversation', 'action-engine.planMission', ...draftJobs])
+const draftCapabilities = new Set([
+  'system.readiness.check', 'crm.pipeline.inspect', 'crm.pipeline.simulate', 'crm.pipeline.create_draft',
+  'email.template.create_draft', 'crm.sequence.create_draft',
+])
+const plannedMissions: string[] = []
 type PilotJob = Parameters<ReturnType<typeof createJobProcessor>>[0]
 const jobs: PilotJob[] = []
 const queue: AppJobQueue = {
@@ -40,7 +48,22 @@ const rig = await createIntegrationRig({
   queueMode: 'stub', stubJobQueue: queue, missionConversations: true, corsOrigin: 'http://127.0.0.1:4187',
   agentPilots: { presalesOrganizationId: presalesOrg, missionOrganizationId: missionOrg },
   drainStubQueue: async processJob => {
-    for (const job of jobs.splice(0)) await processJob(job)
+    for (let drained = 0; jobs.length > 0; drained++) {
+      assert(drained < 50, 'Pilot job queue did not drain')
+      const job = jobs.shift()!
+      if (draftJobs.has(job.name)) {
+        const { missionId, organizationId, actionRunId } = job.data
+        assert(typeof missionId === 'string' && plannedMissions.includes(missionId), 'Unexpected mission in the draft queue')
+        if (organizationId !== undefined) assert.equal(organizationId, missionOrg)
+        if (job.name === 'action-engine.executeAction') {
+          const { rows: [action] } = await rig.sql(`SELECT step.capability_key FROM public.action_runs run
+            JOIN public.action_plan_steps step ON step.id=run.plan_step_id AND step.plan_id=run.plan_id
+            WHERE run.id=$1 AND run.mission_id=$2 AND run.organization_id=$3`, [actionRunId, missionId, missionOrg])
+          assert(action && draftCapabilities.has(action.capability_key), 'Only preparation capabilities are permitted in this fixture')
+        }
+      }
+      await processJob(job)
+    }
   },
 })
 
@@ -66,6 +89,14 @@ const { rows: [stage] } = await rig.sql(`INSERT INTO public.crm_pipeline_stages(
   VALUES($1,'new','Novo lead',0,TRUE) ON CONFLICT(pipeline_id,key) DO UPDATE SET is_active=TRUE RETURNING id`, [pipeline.id])
 await rig.sql(`INSERT INTO public.leads (id,organization_id,client_id,crm_instance_id,name,email,stage,status,pipeline_id,stage_id)
   VALUES ($1,$2,$3,$4,$5,$6,'NEW','open',$7,$8)`, [leadId, presalesOrg, fixtureIds.clientB, crm.id, names.lead, `${leadId}@integration.test`, pipeline.id, stage.id])
+const independentLeadId = randomUUID()
+await rig.sql(`WITH independent_lead AS (
+  INSERT INTO public.leads(id,organization_id,client_id,crm_instance_id,name,email,stage,status)
+  VALUES($1,$2,$3,$4,'Outra oportunidade do piloto',$5,'NEW','open') RETURNING id
+) INSERT INTO public.proposals (organization_id,lead_id,crm_instance_id,package_id,title,updated_at)
+  SELECT $2, independent_lead.id, $4, package.id, 'Outra proposta no mesmo workspace', NOW() + interval '1 day'
+  FROM independent_lead CROSS JOIN public.packages package WHERE package.key='maquina_comercial'`,
+  [independentLeadId, presalesOrg, fixtureIds.clientB, crm.id, `${independentLeadId}@integration.test`])
 await rig.sql(`INSERT INTO public.proposal_templates (organization_id,package_id,name,scope,presales_sellable)
   SELECT $1,id,'Acompanhamento comercial','Recuperar oportunidades existentes',TRUE
   FROM public.packages WHERE key='maquina_comercial' ON CONFLICT DO NOTHING`, [presalesOrg])
@@ -99,7 +130,6 @@ const primary = await rig.request('client_admin_A', 'POST', `${strategyPath}/${c
 assert.equal(primary.statusCode, 200, JSON.stringify(primary.body))
 const presalesTurns: string[] = []
 const missionTurns: string[] = []
-const plannedMissions: string[] = []
 const listener = createServer(async (req, res) => {
   const respond = (status: number, body: unknown) => {
     res.writeHead(status, { 'content-type': 'application/json' })
@@ -122,6 +152,21 @@ const listener = createServer(async (req, res) => {
         (SELECT COUNT(*)::int FROM public.action_runs WHERE plan_id=p.id AND status IN ('queued','running','succeeded')) AS runs
         FROM public.action_plans p WHERE p.organization_id=$1 AND p.mission_id=ANY($2::uuid[])`, [missionOrg, plannedMissions])
       return respond(200, { drafts: drafts.rows, presalesTurns, missionTurns, plans: plans.rows, providerCalls: (await rig.providerCalls()).length })
+    }
+    if (req.method === 'GET' && req.url === '/execution') {
+      const { rows } = await rig.sql(`SELECT mission.id, mission.status,
+        (SELECT COUNT(*)::int FROM public.action_runs WHERE mission_id=mission.id AND status='succeeded') AS completed_steps,
+        ARRAY(SELECT status::text FROM public.crm_pipeline_versions WHERE mission_id=mission.id) AS funnels,
+        ARRAY(SELECT status::text FROM public.email_templates WHERE mission_id=mission.id ORDER BY id) AS emails,
+        ARRAY(SELECT is_active FROM public.crm_sequences WHERE mission_id=mission.id) AS active_sequences,
+        ARRAY(SELECT status::text FROM public.crm_sequence_versions WHERE mission_id=mission.id) AS sequence_versions,
+        (SELECT COUNT(*)::int FROM public.crm_sequence_enrollments enrollment
+          JOIN public.crm_sequences sequence ON sequence.id=enrollment.sequence_id AND sequence.mission_id=mission.id) AS enrollments,
+        (SELECT COUNT(*)::int FROM public.automation_flows WHERE mission_id=mission.id) AS automations,
+        (SELECT COUNT(*)::int FROM public.email_send_requests WHERE organization_id=mission.organization_id) AS sends,
+        (SELECT status FROM public.crm_instances WHERE contract_id=mission.contract_id) AS crm_status
+        FROM public.action_missions mission WHERE mission.organization_id=$1 AND mission.id=ANY($2::uuid[])`, [missionOrg, plannedMissions])
+      return respond(200, { missions: rows, providerCalls: (await rig.providerCalls()).length })
     }
     let body = ''
     for await (const chunk of req) body += chunk.toString()
