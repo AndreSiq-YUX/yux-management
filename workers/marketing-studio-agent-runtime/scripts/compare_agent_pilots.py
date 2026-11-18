@@ -23,6 +23,15 @@ GROUPS = ("mission_reference", *PILOTS)
 CONDITIONS = ("current", "candidate")
 REPEATS = (1, 2)
 PILOT_GATES = (*GATES, "commercialIntegrity", "externalAudience", "executionTruth")
+RELEASE_AUDIENCES = {
+    "presales": {"internal_operator"},
+    "mission_intake": {"internal_operator", "client_user"},
+    "mission_supervisor": {"client_user"},
+}
+RELEASE_FLOWS = {
+    "villeman_massas": {"mission_intake", "mission_supervisor"},
+    "yux_captacao": set(RELEASE_AUDIENCES),
+}
 
 
 def digest(value):
@@ -266,7 +275,10 @@ def compare(batch, cases, first, second, resolutions=()):
             budget = "within_ceiling"
     return {
         "schemaVersion": 1, "corpusHash": batch["corpusHash"], "provenance": batch["provenance"],
-        "evaluators": [evaluator_a, evaluator_b], "groups": groups, "batchEconomics": economic, "batchBudget": budget,
+        "versions": {key: {condition: batch["versions"][key][condition] for condition in CONDITIONS}
+                     for key in sorted({snapshot_key(case) for case in cases.values()})},
+        "evaluators": [evaluator_a, evaluator_b], "groups": groups,
+        "batchEconomics": economic, "batchBudget": budget,
     }
 
 
@@ -371,19 +383,133 @@ def total_tokens(attempts, unmetered, field):
     return sum(values) if not unmetered and all(value is not None for value in values) else None
 
 
+def recorded_text(value):
+    return isinstance(value, str) and bool(value.strip())
+
+
+def scope_id(value):
+    if not isinstance(value, str):
+        return False
+    try:
+        identifier = UUID(value)
+        return str(identifier) == value and identifier.int != 0
+    except ValueError:
+        return False
+
+
+def scoped_record(record, fingerprint):
+    return (isinstance(record, dict) and record.get("scopeFingerprint") == fingerprint
+            and recorded_text(record.get("reference")))
+
+
+def check_release(manifest, corpus_hash, quality=None):
+    require(isinstance(manifest, dict) and manifest.get("schemaVersion") == 1 and recorded_text(manifest.get("environment"))
+            and isinstance(manifest.get("revision"), str) and re.fullmatch(r"[0-9a-f]{40}", manifest["revision"]),
+            "release_environment_and_git_revision_required")
+    scopes = manifest.get("scopes")
+    require(isinstance(scopes, list) and scopes and all(isinstance(row, dict) for row in scopes), "release_scopes_required")
+    report, scopes_seen, organizations, contracts, decisions = [], set(), {}, {}, set()
+    covered_paths = defaultdict(set)
+    sample = Counter()
+    insufficient, critical = set(), set()
+    quality_ready = (isinstance(quality, dict) and quality.get("schemaVersion") == 1 and quality.get("corpusHash") == corpus_hash
+                     and quality.get("provenance") == "live" and quality.get("batchBudget") == "within_ceiling"
+                     and all((quality.get("groups") or {}).get(group, {}).get("acceptance") == "passed" for group in GROUPS))
+    for row in scopes:
+        pilot, flow, audience = (row.get(key) for key in ("pilot", "flow", "audience"))
+        organization, contract = row.get("organizationId"), row.get("contractId")
+        require(all(recorded_text(item) for item in (pilot, flow, audience)) and pilot in PILOTS
+                and flow in RELEASE_FLOWS[pilot] and audience in RELEASE_AUDIENCES[flow] and scope_id(organization) and scope_id(contract)
+                and hash_value(row.get("candidateHash")), "invalid_pilot_release_scope")
+        require(organizations.setdefault(pilot, organization) == organization
+                and contracts.setdefault(contract, organization) == organization, "release_scope_identity_conflict")
+        scope = {key: row[key] for key in ("pilot", "organizationId", "contractId", "flow", "audience", "candidateHash")}
+        fingerprint = digest({**scope, "environment": manifest["environment"], "revision": manifest["revision"]})
+        path = (pilot, contract, flow, audience)
+        require(path not in scopes_seen, "duplicate_pilot_release_scope")
+        scopes_seen.add(path)
+        covered_paths[pilot].add((flow, audience))
+        blockers = []
+        for key in ("journey", "rollback"):
+            evidence = row.get(key)
+            if not scoped_record(evidence, fingerprint) or evidence.get("result") != "passed":
+                blockers.append(f"{key}_evidence_required")
+        for key in ("commercialApproval", "technicalApproval"):
+            approval = row.get(key)
+            if (not scoped_record(approval, fingerprint) or approval.get("decision") != "approved"
+                    or not recorded_text(approval.get("reviewer"))):
+                blockers.append(f"{key}_required")
+        if not blockers and row["commercialApproval"]["reference"].strip() == row["technicalApproval"]["reference"].strip():
+            blockers.append("separate_approval_records_required")
+        observed = row.get("decisions", [])
+        require(isinstance(observed, list), "invalid_observed_pilot_decision")
+        for decision in observed:
+            require(scoped_record(decision, fingerprint) and recorded_text(decision.get("id"))
+                    and decision["id"] not in decisions and decision.get("decision") in ("accepted", "rejected")
+                    and decision.get("mode") == "draft"
+                    and type(decision.get("criticalViolation")) is bool
+                    and decision.get("case") in ("standard", "insufficient_information"), "invalid_observed_pilot_decision")
+            decisions.add(decision["id"])
+            sample[pilot] += 1
+            if decision["case"] == "insufficient_information":
+                insufficient.add(pilot)
+            if decision["criticalViolation"]:
+                critical.add(pilot)
+        comparison_key = f"{pilot}:{'presales' if flow == 'presales' else 'mission'}"
+        matched = quality_ready and (quality.get("versions") or {}).get(comparison_key, {}).get("candidate") == row["candidateHash"]
+        report.append({**scope, "scopeFingerprint": fingerprint, "supervisedBlockers": blockers, "qualityMatched": matched})
+    require(len(set(organizations.values())) == len(organizations), "release_pilots_must_use_separate_organizations")
+    for row in report:
+        if row["pilot"] in critical:
+            row["supervisedBlockers"].append("critical_pilot_violation")
+    observation = {pilot: {"reviewedDecisions": sample[pilot], "includesInsufficientInformation": pilot in insufficient,
+                           "criticalViolation": pilot in critical} for pilot in PILOTS}
+    expansion_blockers = []
+    for pilot, flows in RELEASE_FLOWS.items():
+        required = {(flow, audience) for flow in flows for audience in RELEASE_AUDIENCES[flow]}
+        if required - covered_paths[pilot]:
+            expansion_blockers.append(f"{pilot}_flows_incomplete")
+    if not all(not row["supervisedBlockers"] for row in report):
+        expansion_blockers.append("supervised_approval_required")
+    if not all(row["qualityMatched"] for row in report):
+        expansion_blockers.append("approved_quality_and_budget_for_candidate_required")
+    for pilot in PILOTS:
+        if sample[pilot] < 10 or pilot not in insufficient:
+            expansion_blockers.append(f"{pilot}_observation_incomplete")
+    return {"schemaVersion": 1, "environment": manifest["environment"], "revision": manifest["revision"], "scopes": report,
+            "observation": observation, "expansionBlockers": expansion_blockers}
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Freeze, blind and score pilot captures without provider access.")
-    parser.add_argument("action", choices=("template", "attach-attempts", "blind", "score"))
+    parser = argparse.ArgumentParser(description="Evaluate pilot captures and release records from local files.")
+    parser.add_argument("action", choices=("template", "attach-attempts", "blind", "score", "check-release"))
     parser.add_argument("--capture", type=Path)
     parser.add_argument("--review-a", type=Path)
     parser.add_argument("--review-b", type=Path)
     parser.add_argument("--adjudications", type=Path)
     parser.add_argument("--runtime-receipts", type=Path)
+    parser.add_argument("--release-manifest", type=Path)
+    parser.add_argument("--phase", choices=("supervised", "expansion"), default="supervised")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     cases, corpus_hash = load_cohort()
+    scoring = args.action == "score" or (args.action == "check-release" and args.phase == "expansion")
+    if scoring and (not args.capture or not args.review_a or not args.review_b):
+        parser.error("--capture and two independent review files are required")
+    if scoring:
+        batch = json.loads(args.capture.read_text(encoding="utf-8"))
+        validate_capture(batch, cases, corpus_hash)
+        quality = compare(batch, cases, read_jsonl(args.review_a), read_jsonl(args.review_b),
+                          read_jsonl(args.adjudications) if args.adjudications else ())
     if args.action == "template":
         result = capture_template(cases, corpus_hash)
+    elif args.action == "score":
+        result = quality
+    elif args.action == "check-release":
+        if not args.release_manifest:
+            parser.error("--release-manifest is required")
+        result = check_release(json.loads(args.release_manifest.read_text(encoding="utf-8")), corpus_hash,
+                               quality if scoring else None)
     else:
         if not args.capture:
             parser.error("--capture is required")
@@ -393,20 +519,19 @@ def main():
                 parser.error("--runtime-receipts is required")
             require(batch.get("schemaVersion") == 1 and batch.get("corpusHash") == corpus_hash, "frozen_corpus_mismatch")
             result = attach_metered_attempts(batch, json.loads(args.runtime_receipts.read_text(encoding="utf-8")))
-        elif args.action == "blind":
+        else:
             validate_capture(batch, cases, corpus_hash)
             result = blind_packet(batch["executions"], cases)
-        else:
-            if not args.review_a or not args.review_b:
-                parser.error("two independent review files are required")
-            validate_capture(batch, cases, corpus_hash)
-            result = compare(batch, cases, read_jsonl(args.review_a), read_jsonl(args.review_b),
-                             read_jsonl(args.adjudications) if args.adjudications else ())
     with args.output.open("x", encoding="utf-8") as output:
         json.dump(result, output, ensure_ascii=False, indent=2, sort_keys=True)
         output.write("\n")
     if args.action == "score":
         if result["batchBudget"] != "within_ceiling" or any(group["acceptance"] != "passed" for group in result["groups"].values()):
+            return 2
+    if args.action == "check-release":
+        blockers = result["expansionBlockers"] if args.phase == "expansion" else any(
+            scope["supervisedBlockers"] for scope in result["scopes"])
+        if blockers:
             return 2
     return 0
 

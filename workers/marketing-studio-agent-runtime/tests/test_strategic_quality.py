@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 from decimal import Decimal
 import importlib.util
 import json
@@ -349,3 +350,104 @@ def test_pilot_economics_include_all_attempts_and_keep_unknown_cost_and_zero_den
     batch["authorization"]["ceilingBrl"] = "1"
     comparison = tool.compare(batch, cases, pilot_reviews(cases, batch, "A"), pilot_reviews(cases, batch, "B"))
     assert comparison["batchBudget"] == "exceeded"
+
+
+def release_manifest(batch):
+    tool = pilot_comparison
+    manifest = {"schemaVersion": 1, "environment": "homologacao-sintetica", "revision": "a" * 40, "scopes": []}
+    for index, pilot in enumerate(tool.PILOTS, start=1):
+        for flow in sorted(tool.RELEASE_FLOWS[pilot]):
+            comparison_flow = "presales" if flow == "presales" else "mission"
+            for audience in sorted(tool.RELEASE_AUDIENCES[flow]):
+                manifest["scopes"].append({
+                    "pilot": pilot, "organizationId": f"10000000-0000-4000-8000-{index:012d}",
+                    "contractId": f"20000000-0000-4000-8000-{index:012d}", "flow": flow, "audience": audience,
+                    "candidateHash": batch["versions"][f"{pilot}:{comparison_flow}"]["candidate"],
+                })
+    draft = tool.check_release(manifest, batch["corpusHash"])
+    for index, (scope, status) in enumerate(zip(manifest["scopes"], draft["scopes"], strict=True)):
+        fingerprint = status["scopeFingerprint"]
+        for evidence in ("journey", "rollback"):
+            scope[evidence] = {"result": "passed", "reference": f"fixture:{index}:{evidence}", "scopeFingerprint": fingerprint}
+        for approval in ("commercialApproval", "technicalApproval"):
+            scope[approval] = {"decision": "approved", "reviewer": approval, "reference": f"fixture:{index}:{approval}",
+                               "scopeFingerprint": fingerprint}
+    return manifest
+
+
+@pytest.mark.parametrize("changed", ["contractId", "audience", "candidateHash"])
+def test_release_requires_two_separate_approvals_for_the_exact_scope(changed):
+    _, batch = pilot_capture()
+    manifest = release_manifest(batch)
+    if changed == "audience":
+        manifest["scopes"].pop(1)
+    scope = manifest["scopes"][0]
+    scope[changed] = {"contractId": "30000000-0000-4000-8000-000000000001", "audience": "internal_operator",
+                      "candidateHash": "b" * 64}[changed]
+    result = pilot_comparison.check_release(manifest, batch["corpusHash"])
+    assert set(result["scopes"][0]["supervisedBlockers"]) == {
+        "journey_evidence_required", "rollback_evidence_required", "commercialApproval_required", "technicalApproval_required",
+    }
+    assert all(row["supervisedBlockers"] == [] for row in result["scopes"][1:])
+
+
+def test_release_command_records_blockers_and_requires_distinct_decisions(tmp_path, monkeypatch):
+    _, batch = pilot_capture()
+    manifest = release_manifest(batch)
+    scope = manifest["scopes"][0]
+    scope["technicalApproval"]["reference"] = scope["commercialApproval"]["reference"]
+    input_path, report_path = tmp_path / "manifest.json", tmp_path / "release-report.json"
+    input_path.write_text(json.dumps(manifest), encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["compare_agent_pilots", "check-release", "--release-manifest", str(input_path),
+                                    "--output", str(report_path)])
+    assert pilot_comparison.main() == 2
+    release = json.loads(report_path.read_text(encoding="utf-8"))
+    assert release["scopes"][0]["supervisedBlockers"] == ["separate_approval_records_required"]
+    assert all(row["supervisedBlockers"] == [] for row in release["scopes"][1:])
+
+
+def test_expansion_uses_both_pilot_observations_and_quality_for_the_approved_candidate(tmp_path, monkeypatch):
+    tool = pilot_comparison
+    cases, batch = pilot_capture("live")
+    quality = tool.compare(batch, cases, pilot_reviews(cases, batch, "A"), pilot_reviews(cases, batch, "B"))
+    manifest = release_manifest(batch)
+    def check():
+        return tool.check_release(manifest, batch["corpusHash"], quality)
+    assert check()["expansionBlockers"] == ["villeman_massas_observation_incomplete", "yux_captacao_observation_incomplete"]
+    for pilot in tool.PILOTS:
+        scope = next(row for row in manifest["scopes"] if row["pilot"] == pilot)
+        scope["decisions"] = [
+            {"id": f"{pilot}-{index}", "reference": f"fixture-review:{index}", "mode": "draft", "decision": "accepted",
+             "case": "insufficient_information" if index == 0 else "standard", "criticalViolation": False,
+             "scopeFingerprint": scope["journey"]["scopeFingerprint"]}
+            for index in range(10)
+        ]
+    assert check()["expansionBlockers"] == []
+    capture, approvals, report = (tmp_path / name for name in ("capture.json", "approvals.json", "report.json"))
+    capture.write_text(json.dumps(batch), encoding="utf-8")
+    approvals.write_text(json.dumps(manifest), encoding="utf-8")
+    review_a, review_b = (tmp_path / f"{reviewer}.jsonl" for reviewer in ("A", "B"))
+    for path in (review_a, review_b):
+        path.write_text("\n".join(map(json.dumps, pilot_reviews(cases, batch, path.stem))), encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["compare_agent_pilots", "check-release", "--phase", "expansion", "--release-manifest",
+                                    str(approvals), "--capture", str(capture), "--review-a", str(review_a), "--review-b",
+                                    str(review_b), "--output", str(report)])
+    assert tool.main() == 0
+    assert json.loads(report.read_text(encoding="utf-8"))["expansionBlockers"] == []
+
+    other = deepcopy(quality)
+    other["versions"]["yux_captacao:mission"]["candidate"] = "b" * 64
+    assert tool.check_release(manifest, batch["corpusHash"], other)["expansionBlockers"] == [
+        "approved_quality_and_budget_for_candidate_required",
+    ]
+    simulated = {**quality, "provenance": "simulated"}
+    assert "approved_quality_and_budget_for_candidate_required" in tool.check_release(manifest, batch["corpusHash"], simulated)["expansionBlockers"]
+
+    missing_path = ("yux_captacao", "mission_intake", "internal_operator")
+    manifest["scopes"] = [row for row in manifest["scopes"] if (row["pilot"], row["flow"], row["audience"]) != missing_path]
+    assert check()["expansionBlockers"] == ["yux_captacao_flows_incomplete"]
+    manifest["scopes"][0]["decisions"][0]["criticalViolation"] = True
+    blocked = check()
+    assert "supervised_approval_required" in blocked["expansionBlockers"]
+    assert all("critical_pilot_violation" in row["supervisedBlockers"] for row in blocked["scopes"] if row["pilot"] == "villeman_massas")
+    assert all(row["supervisedBlockers"] == [] for row in blocked["scopes"] if row["pilot"] == "yux_captacao")
