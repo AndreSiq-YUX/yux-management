@@ -15,7 +15,7 @@ from .contracts import (
     SequenceArtifact,
     parse_json_object,
 )
-from .model_profiles import ModelProfile
+from .model_profiles import ModelProfile, measure_generation
 from .providers import OpenRouterClient, ProviderRequestError
 
 
@@ -152,7 +152,8 @@ class FunnelNurtureSpecialistWorkflow:
             )
             self.traces.append({"node": node, "provider": response.get("provider") or self.profile.provider,
                                 "model": response.get("model") or self.profile.model,
-                                "inputTokens": int(response.get("input_tokens") or 0), "outputTokens": int(response.get("output_tokens") or 0)})
+                                "inputTokens": int(response.get("input_tokens") or 0), "outputTokens": int(response.get("output_tokens") or 0),
+                                "_measurement": measure_generation(node, response)})
             return parse_json_object(str(response.get("content") or ""))
         except ProviderRequestError as error:
             raise FunnelNurtureError("funnel_nurture_model_unavailable") from error

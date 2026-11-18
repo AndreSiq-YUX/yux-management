@@ -5,13 +5,13 @@ import type { MissionSourceRefWire } from './generated/mission-wire.js'
 
 export const RADAR_MISSION_KNOWLEDGE_SCOPE={agentProfileKey:'growth_strategist',moduleKey:'radar',workflowKey:'radar_commercial_mission',audience:'internal_operator' as const,channel:null}
 /** Uses only publications authorized for this tenant and this consumer. No file-to-prompt shortcut. */
-export async function retrieveRadarMissionKnowledge(pool:Queryable,input:{organizationId:string;contractId?:string}){
+export async function retrieveRadarMissionKnowledge(pool:Queryable,input:{organizationId:string;contractId?:string;record?:boolean}){
  const query={schemaVersion:1 as const,organizationId:input.organizationId,contractId:input.contractId??null,
   profileKey:RADAR_MISSION_KNOWLEDGE_SCOPE.agentProfileKey,audience:RADAR_MISSION_KNOWLEDGE_SCOPE.audience,
   moduleKey:RADAR_MISSION_KNOWLEDGE_SCOPE.moduleKey,workflowKey:RADAR_MISSION_KNOWLEDGE_SCOPE.workflowKey,
   channel:null,queryText:'Radar Comercial',matchLimit:20}
  const retrieval=await retrieveAuthorizedKnowledge(pool,query)
- await recordAuthorizedKnowledgeRetrieval(pool,query,retrieval)
+ if(input.record!==false)await recordAuthorizedKnowledgeRetrieval(pool,query,retrieval)
  const sourceRefs:MissionSourceRefWire[]=retrieval.candidates.map(source=>({
    ref:`${source.namespace==='strategy'?'yux':'customer'}:${source.id}`,kind:source.namespace==='strategy'?'strategy_card':'knowledge_chunk',
    id:source.id,version:source.publicationId,contentHash:source.contentHash,visibility:'client_safe',title:'Guia do Radar Comercial',displayMode:'named',

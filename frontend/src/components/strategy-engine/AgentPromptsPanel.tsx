@@ -4,6 +4,7 @@ import type { StrategyOrganization } from '@/types/strategyEngine'
 
 type Consumer = { key: string; name: string; owner: string; audience: string; state: string; instructions: string }
 type Contract = { id: string; name: string }
+type Mission = { id: string; title: string }
 type StagePreview = {
   stage: string
   profile: string
@@ -23,10 +24,11 @@ type StagePreview = {
     portfolio?: { selected: number; contractRequired?: boolean; hasMore?: boolean } | null
     includesOperationalContext?: boolean
   }
+  selectedPacks?: string[]
   policyTools: string[]
   sources: Array<{ kind: string; id: string; version?: string | number | null }>
 }
-type Simulation = { requests: StagePreview[] }
+type Simulation = { requests: StagePreview[]; blockedReason?: string }
 type Preview = { baseline: Simulation; candidate?: Simulation }
 type Version = { version: number; instruction: string | null; reason: string; author_id: string; operation: string; created_at: string }
 type AccountScope = {
@@ -46,6 +48,11 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
   const [scopeError, setScopeError] = useState(false)
   const [contractId, setContractId] = useState('')
   const [flow, setFlow] = useState('strategist')
+  const [availableMissions, setAvailableMissions] = useState<{ scope: string; items: Mission[] } | null>(null)
+  const [missionId, setMissionId] = useState('')
+  const [missionError, setMissionError] = useState(false)
+  const missionScope = `${organizationId}/${contractId}`
+  const inspectingSupervisor = flow === 'mission-supervisor'
   const [mode, setMode] = useState('diagnostic_48h')
   const [audience, setAudience] = useState('client_user')
   const [message, setMessage] = useState('')
@@ -76,6 +83,19 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
     return () => controller.abort()
   }, [organizationId, scopeRevision])
 
+  useEffect(() => {
+    if (!inspectingSupervisor || !organizationId) return
+    const controller = new AbortController()
+    const params = new URLSearchParams({ organizationId })
+    if (contractId) params.set('contractId', contractId)
+    apiRequest<{ missions: Mission[] }>(`${endpoint}/missions?${params}`, { signal: controller.signal })
+      .then(data => {
+        if (!controller.signal.aborted) setAvailableMissions({ scope: missionScope, items: data.missions })
+      })
+      .catch(() => { if (!controller.signal.aborted) setMissionError(true) })
+    return () => controller.abort()
+  }, [inspectingSupervisor, organizationId, contractId, missionScope])
+
   async function simulate(event: FormEvent) {
     event.preventDefault()
     setRunning(true)
@@ -85,8 +105,10 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
       setPreview(await apiRequest<Preview>(`${endpoint}/preview`, {
         method: 'POST',
         body: {
-          flow, organizationId, contractId: contractId || undefined, message: message.trim(),
-          ...(flow === 'strategist' ? { mode, candidateInstruction: candidateInstruction.trim() || undefined } : { audience }),
+          flow, organizationId, contractId: contractId || undefined,
+          ...(inspectingSupervisor ? { missionId } : { message: message.trim() }),
+          ...(flow === 'strategist' ? { mode, candidateInstruction: candidateInstruction.trim() || undefined } : {}),
+          ...(flow === 'mission-intake' ? { audience } : {}),
         },
       }))
     } catch {
@@ -141,6 +163,8 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
 
   const control = 'mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2'
   const scopeReady = scope?.organizationId === organizationId
+  const scopedMissions = availableMissions?.scope === missionScope ? availableMissions.items : []
+  const hasPreviewInput = inspectingSupervisor ? scopedMissions.some(mission => mission.id === missionId) : Boolean(message.trim())
   return (
     <div className="space-y-5">
       <section className="rounded-lg border bg-white p-5">
@@ -167,19 +191,28 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
       <form onSubmit={simulate} onChange={() => setPreview(null)} className="space-y-4 rounded-lg border bg-white p-5">
         <div>
           <h2 className="text-lg font-semibold">Prévia efetiva</h2>
-          <p className="text-sm text-gray-600">A simulação usa busca textual e respostas fictícias dos especialistas. Use uma mensagem de teste sem dados pessoais.</p>
+          <p className="text-sm text-gray-600">{inspectingSupervisor
+            ? 'Selecione uma missão para inspecionar a primeira requisição do planejador com as fontes autorizadas no momento da consulta.'
+            : 'A simulação usa busca textual e respostas fictícias dos especialistas. Use uma mensagem de teste sem dados pessoais.'}</p>
         </div>
         <fieldset disabled={running || saving} className="grid gap-4 text-sm md:grid-cols-2">
           <label>Fluxo
-            <select aria-label="Fluxo" value={flow} onChange={event => setFlow(event.target.value)} className={control}>
+            <select aria-label="Fluxo" value={flow} onChange={event => {
+              setFlow(event.target.value)
+              setMissionId('')
+              setMissionError(false)
+            }} className={control}>
               <option value="strategist">Estrategista YUX</option>
               <option value="mission-intake">Action Engine · conversa da missão</option>
+              <option value="mission-supervisor">Action Engine · planejamento da missão</option>
             </select>
           </label>
           <label>Subconta
             <select aria-label="Subconta" required value={organizationId} onChange={event => {
               setOrganizationId(event.target.value)
               setContractId('')
+              setMissionId('')
+              setMissionError(false)
               setScope(null)
               setScopeError(false)
               setFeedback('')
@@ -190,7 +223,11 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
             </select>
           </label>
           <label>Contrato
-            <select aria-label="Contrato" disabled={!scopeReady} value={contractId} onChange={event => setContractId(event.target.value)} className={control}>
+            <select aria-label="Contrato" disabled={!scopeReady} value={contractId} onChange={event => {
+              setContractId(event.target.value)
+              setMissionId('')
+              setMissionError(false)
+            }} className={control}>
               <option value="">Escopo da organização</option>
               {scopeReady && scope.contracts.map(contract => <option key={contract.id} value={contract.id}>{contract.name}</option>)}
             </select>
@@ -203,6 +240,14 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
                 <option value="service_plan">Plano de serviços</option>
               </select>
             </label>
+          ) : inspectingSupervisor ? (
+            <label>Missão
+              <select aria-label="Missão" value={missionId} onChange={event => setMissionId(event.target.value)} className={control} required>
+                <option value="">{scopeReady && availableMissions?.scope === missionScope && !scopedMissions.length
+                  ? 'Nenhuma missão neste escopo' : 'Selecione uma missão'}</option>
+                {scopedMissions.map(mission => <option key={mission.id} value={mission.id}>{mission.title}</option>)}
+              </select>
+            </label>
           ) : (
             <label>Público
               <select aria-label="Público" value={audience} onChange={event => setAudience(event.target.value)} className={control}>
@@ -211,9 +256,9 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
               </select>
             </label>
           )}
-          <label className="md:col-span-2">Mensagem de teste
+          {!inspectingSupervisor && <label className="md:col-span-2">Mensagem de teste
             <textarea aria-label="Mensagem de teste" required value={message} maxLength={8_000} onChange={event => setMessage(event.target.value)} rows={3} className={control} />
-          </label>
+          </label>}
           {flow === 'strategist' && (
             <label className="md:col-span-2">Instrução candidata da síntese (opcional)
               <textarea aria-label="Instrução candidata da síntese (opcional)" value={candidateInstruction} maxLength={4_000} onChange={event => setCandidateInstruction(event.target.value)} rows={3} className={control} />
@@ -221,15 +266,16 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
           )}
         </fieldset>
         {scopeError && <p role="alert" className="text-sm text-red-700">Não foi possível consultar os contratos da subconta.</p>}
+        {inspectingSupervisor && missionError && <p role="alert" className="text-sm text-red-700">Não foi possível consultar as missões deste escopo.</p>}
         {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
-        <button type="submit" disabled={!scopeReady || !message.trim() || running || saving} className="rounded-md bg-yux-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+        <button type="submit" disabled={!scopeReady || !hasPreviewInput || running || saving} className="rounded-md bg-yux-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
           {running ? 'Montando prévia…' : 'Simular sem custo'}
         </button>
       </form>
 
       {preview && (
         <div className={`grid gap-4 ${preview.candidate ? 'lg:grid-cols-2' : ''}`}>
-          <SimulationResult title="Configuração herdada" simulation={preview.baseline} />
+          <SimulationResult title={inspectingSupervisor ? "Requisição do supervisor" : "Configuração herdada"} simulation={preview.baseline} />
           {preview.candidate && <SimulationResult title="Configuração candidata" simulation={preview.candidate} />}
         </div>
       )}
@@ -297,6 +343,7 @@ function SimulationResult({ title, simulation }: { title: string; simulation: Si
   return (
     <section className="min-w-0 space-y-3 rounded-lg border bg-white p-5">
       <h3 className="font-semibold">{title}</h3>
+      {simulation.blockedReason && <p role="status" className="text-sm text-amber-800">O orçamento de planejamento impede a requisição neste cenário.</p>}
       {simulation.requests.map(stage => (
         <details key={stage.stage} className="rounded-md border p-3">
           <summary className="cursor-pointer text-sm font-semibold">{stage.stage} · {stage.request.model}</summary>
@@ -304,6 +351,7 @@ function SimulationResult({ title, simulation }: { title: string; simulation: Si
             <p>Perfil {stage.profile} · rota {stage.route} · versão global {stage.versions.global} · perfil {stage.versions.profile}</p>
             <p>Saída de até {stage.request.max_tokens} tokens · contingência {stage.attempts?.slice(1).map(item => item.modelName).join(', ') || stage.request.fallback_models?.join(', ') || 'indisponível'}</p>
             <p className="break-all text-xs text-gray-600">Impressão digital {stage.providerFingerprint || stage.fingerprint}</p>
+            {stage.selectedPacks?.length ? <p>Pacotes selecionados {stage.selectedPacks.join(', ')}</p> : null}
             <p>Ferramentas da política {stage.policyTools.join(', ') || 'nenhuma'}</p>
             {stage.coverage?.includesOperationalContext && (
               <div className="space-y-1">

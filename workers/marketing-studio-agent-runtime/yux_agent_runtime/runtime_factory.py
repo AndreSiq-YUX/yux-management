@@ -136,10 +136,11 @@ def build_mission_supervisor(
     )
     from .campaign_launch import CampaignLaunchSpecialistWorkflow
     from .funnel_nurture import FunnelNurtureSpecialistWorkflow
-    client = build_routed_client(store, "mission_supervisor", context=context, llm_client=llm_client)
+    routed_context = {**(context or {}), "record_workflow_attempts": True}
+    client = build_routed_client(store, "mission_supervisor", context=routed_context, llm_client=llm_client)
     return MissionSupervisor(client, profile,
-        campaign_launch=CampaignLaunchSpecialistWorkflow(build_routed_client(store, "campaign_launch_specialist", context=context, llm_client=llm_client), profile),
-        funnel_nurture=FunnelNurtureSpecialistWorkflow(build_routed_client(store, "funnel_nurture_specialist", context=context, llm_client=llm_client), profile))
+        campaign_launch=CampaignLaunchSpecialistWorkflow(build_routed_client(store, "campaign_launch_specialist", context=routed_context, llm_client=llm_client), profile),
+        funnel_nurture=FunnelNurtureSpecialistWorkflow(build_routed_client(store, "funnel_nurture_specialist", context=routed_context, llm_client=llm_client), profile))
 
 
 def _active(records: list[dict[str, Any]]) -> list[dict[str, Any]]:

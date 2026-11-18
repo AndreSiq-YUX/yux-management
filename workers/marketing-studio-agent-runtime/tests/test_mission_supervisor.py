@@ -5,6 +5,7 @@ from hashlib import sha256
 
 import pytest
 
+from yux_agent_runtime.instruction_preview import preview_mission_supervisor
 from yux_agent_runtime.mission_supervisor import MissionSupervisor, MissionSupervisorError
 from yux_agent_runtime.model_profiles import ModelProfile
 from yux_agent_runtime.providers import OpenRouterClient
@@ -97,6 +98,30 @@ def _supervisor(response: dict | str) -> MissionSupervisor:
         prompt_bundle_hash=sha256(b"mission-supervisor-v1").hexdigest(),
     )
     return MissionSupervisor(OpenRouterClient(api_key="test", transport=transport), profile)
+
+
+def test_supervisor_preview_reuses_exact_payload_without_calling_original_transport():
+    supervisor = _supervisor(_plan_response())
+    original = supervisor.client.transport
+    sent = []
+
+    def capture(url, headers, payload, method):
+        sent.append(payload)
+        return original(url, headers, payload, method)
+
+    supervisor.client.transport = capture
+    value = _request()
+    preview = preview_mission_supervisor(supervisor, value)
+    assert not sent
+    stage = preview["requests"][0]
+    assert stage["selectedPacks"] == ["crm_funnel"]
+    assert stage["sources"][0]["id"] == "source-1"
+
+    supervisor.propose(value)
+    assert len(sent) == 1
+    assert stage["providerPayload"] == {
+        key: item for key, item in sent[0].items() if key != "session_id"
+    }
 
 
 def test_returns_at_most_three_grounded_clarification_questions() -> None:

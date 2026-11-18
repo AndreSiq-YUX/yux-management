@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from hashlib import sha256
 import json
+from math import isfinite
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -31,6 +32,24 @@ def build_model_trace(profile: ModelProfile, resolved_model_id: str, messages: l
         "requestedModelId": profile.model, "resolvedModelId": resolved_model_id,
         "parameters": {"temperature": profile.temperature, "maxTokens": profile.max_tokens, "timeoutSeconds": profile.timeout_seconds},
         "promptBundleHash": profile.prompt_bundle_hash, "promptHash": prompt_hash, "usage": usage,
+    }
+
+
+def measure_generation(node: str, response: dict[str, Any]) -> dict[str, Any]:
+    usage = response.get("model_usage") or {}
+    attempts = response.get("attempts")
+    cost = response.get("cost_usd")
+    # A provider-side fallback without receipts can incur usage that the final
+    # response alone does not account for.
+    if not attempts or any(attempt.get("cost_usd") is None for attempt in attempts):
+        cost = None
+    return {
+        "node": node,
+        "attemptCount": len(attempts) if attempts else None,
+        "inputTokens": usage.get("input_tokens"),
+        "outputTokens": usage.get("output_tokens"),
+        "reasoningTokens": usage.get("reasoning_tokens"),
+        "reportedCostUsd": cost if type(cost) in (int, float) and isfinite(cost) and cost >= 0 else None,
     }
 
 

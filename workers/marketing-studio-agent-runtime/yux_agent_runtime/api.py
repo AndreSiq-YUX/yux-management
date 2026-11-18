@@ -31,7 +31,7 @@ from .mission_contracts import MissionConversationTurnRequestWire
 from .mission_conversation import MissionConversationWorkflow
 from .mission_diagnostics import mission_failure_diagnostic
 from .workflow import StrategyWorkflowEngine, estimate_workflow_credits, resolve_retrieval_audience
-from .instruction_preview import preview_workflow
+from .instruction_preview import preview_mission_supervisor, preview_workflow
 
 
 logger = logging.getLogger(__name__)
@@ -563,6 +563,17 @@ def create_app(
         )
         selected = build_strategy_workflow_engine(runtime_store, context=request.model_dump(), offline_preview=True)
         return {"baseline": preview_workflow(selected, MissionConversationWorkflow.workflow_input(request))}
+
+    @app.post("/instructions/preview/mission-supervisor", dependencies=[Depends(require_runtime_token)])
+    def preview_supervisor(request: MissionPlanRequest) -> dict[str, Any]:
+        validate_tenant(request.organization_id, request.client_id, request.contract_id, profile_key="mission_supervisor")
+        value = request.model_dump()
+        if request.proposed_plan is not None:
+            raise HTTPException(status_code=400, detail="mission_supervisor_preview_requires_generation")
+        try:
+            return {"baseline": preview_mission_supervisor(mission_planner(value), value)}
+        except MissionSupervisorError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     @app.post("/missions/plan", dependencies=[Depends(require_runtime_token)])
     def create_mission_plan(request: MissionPlanRequest) -> dict[str, Any]:

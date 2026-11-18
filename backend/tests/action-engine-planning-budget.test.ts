@@ -1,10 +1,20 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   evaluatePlanningReservation,
+  reconcilePlanningCost,
   shouldRunSpecialist,
   type PlanningCycleBudget,
   type PlanningUsage,
 } from '../src/modules/action-engine/planning-cycle.js'
+
+it('keeps the reservation until provider cost is fully measured in reais', () => {
+  expect(reconcilePlanningCost([{ node: 'planner', reportedCostUsd: 0.25 }, { node: 'funnel', reportedCostUsd: null }], '5'))
+    .toMatchObject({ budgetCostBrl: '5', measurements: { reportedCostUsd: null, pendingReconciliation: true } })
+  expect(reconcilePlanningCost([{ node: 'planner', reportedCostUsd: 0.25 }], '5'))
+    .toMatchObject({ budgetCostBrl: '5', measurements: { reportedCostUsd: 0.25, recognizedCostBrl: null } })
+  expect(reconcilePlanningCost([{ node: 'planner', reportedCostUsd: 0 }], '5'))
+    .toMatchObject({ budgetCostBrl: '0', measurements: { recognizedCostBrl: '0', pendingReconciliation: false } })
+})
 import {
   createPlanningArtifactCacheKey,
   getCachedArtifact,

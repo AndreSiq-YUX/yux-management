@@ -19,6 +19,30 @@ export type PlanningUsage = {
 
 export type PlanningReservation = PlanningUsage
 
+export function reconcilePlanningCost(value: unknown, reservedBrl: string) {
+  const validAmount = (amount: unknown) => typeof amount === 'number' && Number.isFinite(amount) && amount >= 0 ? amount : null
+  const validCount = (count: unknown) => typeof count === 'number' && Number.isSafeInteger(count) && count >= 0 ? count : null
+  const stages = (Array.isArray(value) ? value : []).map(item => {
+    const row = item && typeof item === 'object' ? item as Record<string, unknown> : {}
+    return {
+      node: typeof row.node === 'string' && /^[a-z0-9_.-]{1,80}$/.test(row.node) ? row.node : null,
+      attemptCount: validCount(row.attemptCount),
+      inputTokens: validCount(row.inputTokens),
+      outputTokens: validCount(row.outputTokens),
+      reasoningTokens: validCount(row.reasoningTokens),
+      reportedCostUsd: validAmount(row.reportedCostUsd),
+    }
+  })
+  const amounts = stages.map(stage => stage.reportedCostUsd)
+  const reportedCostUsd = amounts.length && amounts.every(amount => amount !== null)
+    ? amounts.reduce((total, amount) => total + amount, 0) : null
+  const recognizedCostBrl = reportedCostUsd === 0 ? '0' : null
+  return {
+    budgetCostBrl: recognizedCostBrl ?? reservedBrl,
+    measurements: { stages, reportedCostUsd, recognizedCostBrl, pendingReconciliation: recognizedCostBrl === null },
+  }
+}
+
 export type PlanningReservationDecision =
   | { allowed: true; projected: PlanningUsage }
   | { allowed: false; reason: string; projected: PlanningUsage }
@@ -122,11 +146,21 @@ export async function settlePlanningCall(client: Queryable, input: {
             reservation.input_tokens, reservation.output_tokens, reservation.cost_brl::TEXT, reservation.latency_ms
      FROM public.action_planning_cycles cycle
      JOIN public.action_planning_usage_entries reservation ON reservation.id = $3 AND reservation.cycle_id = cycle.id
+       AND reservation.organization_id = cycle.organization_id AND reservation.nature = 'reservation'
      WHERE cycle.id = $1 AND cycle.organization_id = $2 FOR UPDATE OF cycle`,
     [input.cycleId, input.organizationId, input.reservationId],
   )
   const row = result.rows[0]
-  if (!row || row.status !== 'active') throw new Error('planning_reservation_unavailable')
+  if (!row) throw new Error('planning_reservation_unavailable')
+  // Read after locking the cycle so a concurrent settlement has committed.
+  const prior = await client.query<{ nature: string }>(
+    `SELECT nature FROM public.action_planning_usage_entries
+     WHERE cycle_id = $1 AND organization_id = $2 AND reservation_id = $3
+       AND nature IN ('actual', 'release') LIMIT 1`,
+    [input.cycleId, input.organizationId, input.reservationId],
+  )
+  if (prior.rows[0]?.nature === 'actual') return row.usage
+  if (prior.rows.length || row.status !== 'active') throw new Error('planning_reservation_unavailable')
   const reserved: PlanningUsage = {
     calls: Number(row.calls), inputTokens: Number(row.input_tokens), outputTokens: Number(row.output_tokens),
     costBrl: String(row.cost_brl), latencyMs: Number(row.latency_ms),

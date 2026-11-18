@@ -6,6 +6,8 @@ from typing import Any, Callable
 
 from .harness import Harness, filter_allowed_tools, select_model_route
 from .llm_routing import RoutedLlmClient
+from .mission_supervisor import MissionSupervisor
+from .planning_budget import decision_from_wire
 from .providers import OpenRouterClient
 from .runtime_store import InMemoryAgentRuntimeStore
 from .trace import stable_hash
@@ -76,30 +78,13 @@ class _PreviewProvider:
                 "recommended_actions": [],
                 "summary": "Síntese simulada.",
             }
-        def transport(_url, _headers, payload, _method):
-            preview["providerPayload"] = {key: value for key, value in payload.items() if key != "session_id"}
-            return {
-                "model": payload["model"],
-                "choices": [{"finish_reason": "stop", "message": {"content": json.dumps(synthetic)}}],
-                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-            }
-
-        def simulated_client(provider_name):
-            return OpenRouterClient(api_key="offline-preview", provider_name=provider_name, transport=transport)
-
         original_factory: Callable | None = self.harness.routed_client_factory
         configured = original_factory(self.route_key, self.state) if original_factory is not None else None
-        if isinstance(configured, RoutedLlmClient):
-            client = replace(configured, client_builder=lambda _: {
-                key: simulated_client(key) for key in ("openrouter", "openai_direct")
-            })
-            route, _ = client.configuration()
-            preview["attempts"] = route["attempts"]
-        else:
+        provider = ""
+        if not isinstance(configured, RoutedLlmClient):
             route = select_model_route(agent, self.harness.routes, self.state.get("routing_tier", "default"), self.state)
-            client = simulated_client(route["provider"])
-        result = client.chat_completion(**request)
-        preview["providerFingerprint"] = stable_hash(preview["providerPayload"])
+            provider = route["provider"]
+        result = _capture_transport(preview, request, provider, configured, synthetic)
         self.requests.append(preview)
         return result
 
@@ -123,3 +108,68 @@ def preview_workflow(engine: StrategyWorkflowEngine, execution: dict[str, Any]) 
         "retrieval": "lexical",
         "requests": requests,
     }
+
+def _capture_transport(
+    preview: dict[str, Any],
+    request: dict[str, Any],
+    provider: str,
+    configured: Any,
+    synthetic: dict[str, Any],
+) -> dict[str, Any]:
+    def transport(_url, _headers, payload, _method):
+        preview["providerPayload"] = {key: value for key, value in payload.items() if key != "session_id"}
+        return {
+            "model": payload["model"],
+            "choices": [{"finish_reason": "stop", "message": {"content": json.dumps(synthetic)}}],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        }
+
+    def simulated_client(provider_name):
+        return OpenRouterClient(api_key="offline-preview", provider_name=provider_name, transport=transport)
+
+    if isinstance(configured, RoutedLlmClient):
+        client = replace(configured, client_builder=lambda _: {
+            key: simulated_client(key) for key in ("openrouter", "openai_direct")
+        })
+        route, _ = client.configuration()
+        preview["attempts"] = route["attempts"]
+    else:
+        client = simulated_client(provider)
+    result = client.chat_completion(**request)
+    preview["providerFingerprint"] = stable_hash(preview["providerPayload"])
+    return result
+
+
+def preview_mission_supervisor(supervisor: MissionSupervisor, value: dict[str, Any]) -> dict[str, Any]:
+    preview = {"generation": "simulated", "retrieval": "verified_sources", "requests": []}
+    if budget := value.get("planning_budget"):
+        decision = decision_from_wire(budget)
+        if not decision.allowed:
+            return {**preview, "blockedReason": decision.reason}
+
+    route, request = supervisor.prepare_request(value)
+    wire = {key: item for key, item in request.items() if key != "session_id"}
+    context = value.get("strategy_context") or {}
+    known = {
+        str(item.get("id") or item.get("sourceId")): item
+        for key in ("knowledgeItems", "strategyItems")
+        for item in context.get(key, [])
+        if isinstance(item, dict)
+    }
+    stage = {
+        "stage": "planner",
+        "profile": supervisor.profile.key,
+        "route": supervisor.profile.key,
+        "fingerprint": stable_hash(wire),
+        "versions": {"global": 1, "profile": supervisor.profile.version},
+        "request": wire,
+        "policyTools": [item["key"] for item in value.get("capabilities", [])],
+        "sources": [
+            {"id": source, "kind": known.get(source, {}).get("kind", "verified"),
+             "version": known.get(source, {}).get("version")}
+            for source in value.get("allowed_source_ids", [])
+        ],
+        "selectedPacks": route.selected_pack_keys,
+    }
+    _capture_transport(stage, request, supervisor.profile.provider, supervisor.client, {})
+    return {**preview, "requests": [stage]}

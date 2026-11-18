@@ -31,6 +31,7 @@ it('settles actual model usage with the worker and rejects a reservation from an
         await expect(settlePlanningCall(client, { ...input, cycleId: randomUUID() })).rejects.toThrow('planning_reservation_unavailable')
         await expect(settlePlanningCall(client, { ...input, organizationId: rig.ids.organizationB })).rejects.toThrow('planning_reservation_unavailable')
         await expect(settlePlanningCall(client, input)).resolves.toEqual(actual)
+        await expect(settlePlanningCall(client, input)).resolves.toEqual(actual)
         await client.query('COMMIT')
       } catch (error) {
         await client.query('ROLLBACK')

@@ -4,7 +4,9 @@ import { requireAdminRole } from '../../http/guards.js'
 import { ApiError } from '../../http/errors.js'
 import { invokeAgentRuntime } from '../../lib/agent-runtime-client.js'
 import { buildMissionTurnRequest } from '../action-engine/mission-turn-request.js'
-import type { Queryable } from '../action-engine/repository.js'
+import { getMission, type Queryable } from '../action-engine/repository.js'
+import { buildMissionPlanningCatalog, buildMissionPlanningContext, buildMissionPlanRequest, getMissionPlanningLimits } from '../action-engine/mission-plan-request.js'
+import { toMissionPlanWire } from '../action-engine/planner.js'
 import { strategyAdminChatRequestSchema } from './admin-chat.js'
 import { changePromptVersion, listPromptVersions, presalesPilotEnabled } from './prompt-versions.js'
 import { listPresalesLeads, loadCommercialCatalog } from './presales-context.js'
@@ -12,7 +14,7 @@ import { listPresalesLeads, loadCommercialCatalog } from './presales-context.js'
 const inventory = [
   { key: 'strategist', name: 'Estrategista, Diagnóstico 48h e proposta consultiva', owner: 'Estratégia YUX', audience: 'Admin', state: 'Prévia disponível', instructions: 'Perfil, instruções globais e especialistas da especificação publicada' },
   { key: 'mission-intake', name: 'Action Engine · conversa da missão', owner: 'Operações YUX', audience: 'Portal e admin', state: 'Prévia disponível', instructions: 'Perfil Growth Strategist, contrato de conversa e contexto operacional' },
-  { key: 'mission-supervisor', name: 'Action Engine · supervisor e planejamento', owner: 'Operações YUX', audience: 'Portal e admin', state: 'A migrar', instructions: 'Instruções protegidas do supervisor. Especialistas de campanha e nutrição têm composição própria.' },
+  { key: 'mission-supervisor', name: 'Action Engine · supervisor e planejamento', owner: 'Operações YUX', audience: 'Portal e admin', state: 'Prévia disponível', instructions: 'Instruções protegidas do supervisor e contexto do planejamento aprovado' },
   { key: 'omnichannel', name: 'Omnichannel · SDR, closer, suporte e retenção', owner: 'Atendimento', audience: 'Comprador', state: 'Herdado', instructions: 'Perfil por rota do assistente e prompt nas regras de segurança' },
   { key: 'radar', name: 'Radar · avaliação comercial', owner: 'Produto', audience: 'Admin', state: 'A migrar', instructions: 'Especificação e contrato do Radar no runtime' },
   { key: 'studio', name: 'Marketing Studio · pesquisa, escrita e curadoria', owner: 'Marketing', audience: 'Portal e admin', state: 'Herdado', instructions: 'Prompt global do Studio e instruções de cada etapa' },
@@ -24,18 +26,20 @@ const tenantSchema = z.object({
   organizationId: z.uuid(),
   contractId: z.uuid().optional(),
 })
-const previewRequest = tenantSchema.extend({
-  message: z.string().trim().min(1).max(8_000),
-}).and(z.discriminatedUnion('flow', [
+const scenarioMessage = z.string().trim().min(1).max(8_000)
+const previewRequest = tenantSchema.and(z.discriminatedUnion('flow', [
   z.object({
     flow: z.literal('strategist'),
+    message: scenarioMessage,
     mode: strategyAdminChatRequestSchema.shape.mode,
     candidateInstruction: z.string().trim().min(1).max(4_000).optional(),
   }),
   z.object({
     flow: z.literal('mission-intake'),
+    message: scenarioMessage,
     audience: z.enum(['internal_operator', 'client_user']),
   }),
+  z.object({ flow: z.literal('mission-supervisor'), missionId: z.uuid() }),
 ]))
 const versionChange = z.object({
   organizationId: z.uuid(),
@@ -172,6 +176,26 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
     return changePromptVersion(app.pg, { ...shared, instruction: input.instruction, fingerprints })
   })
 
+  app.get('/agent-prompts/missions', async (request, reply) => {
+    requireAdminRole(request)
+    const parsed = tenantSchema.safeParse(request.query)
+    if (!parsed.success) throw new ApiError(400, 'invalid_mission_preview_scope')
+    const { organizationId, contractId } = parsed.data
+    const scope = await loadAgentPromptScope(app.pg, organizationId)
+    if (contractId && !scope.contracts.some(contract => contract.id === contractId)) {
+      throw new ApiError(409, 'agent_prompt_contract_out_of_scope')
+    }
+    const { rows } = await app.pg.query<{ id: string; title: string }>(
+      `SELECT id, title FROM public.action_missions
+       WHERE organization_id = $1 AND contract_id IS NOT DISTINCT FROM $2::uuid
+         AND status NOT IN ('cancelled','expired','failed')
+       ORDER BY updated_at DESC, id LIMIT 50`,
+      [organizationId, contractId ?? null],
+    )
+    reply.header('Cache-Control', 'no-store')
+    return { missions: rows }
+  })
+
   app.post('/agent-prompts/preview', async (request, reply) => {
     const actor = requireAdminRole(request)
     const parsed = previewRequest.safeParse(request.body)
@@ -182,6 +206,19 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
       throw new ApiError(409, 'agent_prompt_contract_out_of_scope')
     }
     reply.header('Cache-Control', 'no-store')
+    if (input.flow === 'mission-supervisor') {
+      const mission = await getMission(app.pg, input.missionId, input.organizationId)
+      if (!mission || (mission.contractId ?? null) !== (input.contractId ?? null)) {
+        throw new ApiError(404, 'mission_preview_not_found')
+      }
+      const catalog = await buildMissionPlanningCatalog(app.pg, app.config, mission)
+      const { planningContext } = await buildMissionPlanningContext(app.pg, mission, catalog, true)
+      const payload = await buildMissionPlanRequest(
+        app.pg, mission, catalog, planningContext, mission.status === 'pending_replan_approval', getMissionPlanningLimits(mission),
+      )
+      const wire = toMissionPlanWire(payload)
+      return invokeAgentRuntime(app.config, '/instructions/preview/mission-supervisor', { ...wire })
+    }
     if (input.flow === 'strategist') {
       return invokeAgentRuntime(app.config, '/instructions/preview/strategist', {
         organization_id: input.organizationId,

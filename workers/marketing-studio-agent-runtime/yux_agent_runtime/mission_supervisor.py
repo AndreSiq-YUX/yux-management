@@ -8,11 +8,11 @@ from pydantic import ValidationError
 
 from .contracts import AgentContractError, parse_json_object, validate_composite_mission_plan, validate_mission_plan
 from .mission_contracts import MissionSupervisorProposal, PlanWire
-from .model_profiles import ModelProfile, build_model_trace
+from .model_profiles import ModelProfile, build_model_trace, measure_generation
 from .providers import OpenRouterClient, ProviderRequestError
 from .funnel_nurture import FunnelNurtureError, FunnelNurtureSpecialistWorkflow
 from .campaign_launch import CampaignLaunchError, CampaignLaunchSpecialistWorkflow
-from .mission_router import MissionRouter, MissionRoutingError
+from .mission_router import MissionRoute, MissionRouter, MissionRoutingError
 from .mission_verifier import CompositeMissionVerifier, MissionVerificationError
 
 
@@ -92,23 +92,26 @@ class MissionSupervisor:
             {"role": "user", "content": json.dumps(envelope, ensure_ascii=False, sort_keys=True, separators=(",", ":"))},
         ]
 
-    def propose(self, value: dict[str, Any]) -> dict[str, Any]:
+    def prepare_request(self, value: dict[str, Any]) -> tuple[MissionRoute, dict[str, Any]]:
         try:
             route = self.router.route(value)
         except MissionRoutingError as error:
             raise MissionSupervisorError(str(error)) from error
-        routed_value = dict(value)
-        routed_value["mission_route"] = route.model_dump()
-        messages = self.compose_messages(routed_value)
+        messages = self.compose_messages({**value, "mission_route": route.model_dump()})
+        return route, {
+            "model": self.profile.model,
+            "messages": messages,
+            "max_tokens": self.profile.max_tokens,
+            "temperature": self.profile.temperature,
+            "fallback_models": self.profile.fallback_models,
+            "session_id": str((value.get("mission") or {}).get("id") or "") or None,
+        }
+
+    def propose(self, value: dict[str, Any]) -> dict[str, Any]:
+        route, request = self.prepare_request(value)
+        messages = request["messages"]
         try:
-            response = self.client.chat_completion(
-                model=self.profile.model,
-                messages=messages,
-                max_tokens=self.profile.max_tokens,
-                temperature=self.profile.temperature,
-                fallback_models=self.profile.fallback_models,
-                session_id=str((value.get("mission") or {}).get("id") or "") or None,
-            )
+            response = self.client.chat_completion(**request)
         except ProviderRequestError as error:
             raise MissionSupervisorError("mission_supervisor_model_unavailable") from error
 
@@ -126,12 +129,15 @@ class MissionSupervisor:
                 raise MissionSupervisorError("mission_supervisor_clarification_round_exhausted")
             proposal.questions = self._prioritize_questions(proposal.questions)
         self._validate_authority(proposal, value)
+        funnel_traces = []
+        campaign_traces = []
         if proposal.plan is not None:
             if [pack.key for pack in proposal.selected_packs] != route.selected_pack_keys:
                 raise MissionSupervisorError("mission_supervisor_route_selection_mismatch")
             if any(pack.key in {"funnel_nurture", "crm_preparation"} for pack in proposal.selected_packs):
                 try:
                     artifacts = self.funnel_nurture.generate(value)
+                    funnel_traces = list(getattr(self.funnel_nurture, "traces", []))
                 except FunnelNurtureError as error:
                     raise MissionSupervisorError(str(error)) from error
                 if any(pack.key == 'crm_preparation' for pack in proposal.selected_packs):
@@ -145,6 +151,7 @@ class MissionSupervisor:
             if any(pack.key == "campaign_launch" for pack in proposal.selected_packs):
                 try:
                     artifacts = self.campaign_launch.generate(value)
+                    campaign_traces = list(getattr(self.campaign_launch, "traces", []))
                 except CampaignLaunchError as error:
                     raise MissionSupervisorError(str(error)) from error
                 proposal.plan = self._inject_campaign_launch_artifacts(proposal.plan, artifacts)
@@ -189,7 +196,14 @@ class MissionSupervisor:
             usage,
         )
         result["trace"]["provider"] = response.get("provider") or self.profile.provider
-        result["trace"]["specialists"] = [*getattr(self.campaign_launch, "traces", []), *getattr(self.funnel_nurture, "traces", [])]
+        result["trace"]["specialists"] = [
+            {key: item for key, item in trace.items() if key != "_measurement"}
+            for trace in [*campaign_traces, *funnel_traces]
+        ]
+        result["trace"]["planningMeasurements"] = [
+            measure_generation("planner", response),
+            *(trace.get("_measurement") or {"node": trace.get("node")} for trace in [*funnel_traces, *campaign_traces]),
+        ]
         parameters = response.get("request_parameters") or {}
         result["trace"]["parameters"].update({
             "temperature": parameters.get("temperature", self.profile.temperature),

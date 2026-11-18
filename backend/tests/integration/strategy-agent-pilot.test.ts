@@ -5,6 +5,8 @@ import { loadEnv } from '../../src/config/env.js'
 import { createContextAwarePool } from '../../src/db/client.js'
 import { runWithDatabaseRequestContext } from '../../src/db/request-context.js'
 import { handleStrategyAdminChat } from '../../src/jobs/handlers/strategy.js'
+import { REVENUE_RECOVERY_PACK_V0 } from '../../src/modules/action-engine/packs/revenue-recovery-v0.js'
+import { publishActionPackVersion } from '../../src/modules/action-engine/repository.js'
 import { buildServer, type AppJobQueue } from '../../src/server.js'
 import { fixtureIds, fixturePassword, fixtureUsers, seedIntegrationFixtures } from './support/fixtures.js'
 
@@ -90,6 +92,60 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     await worker?.end()
     await admin?.query('DELETE FROM public.organizations WHERE id = $1', [organizationId])
     await admin?.end()
+  })
+
+  it('inspects the supervisor only as global admin and leaves the mission unchanged', async () => {
+    const missionId = randomUUID()
+    const { parameters: _schema, ...definition } = REVENUE_RECOVERY_PACK_V0
+    const pack = await publishActionPackVersion(admin, {
+      packKey: definition.key, name: 'Revenue Recovery', description: 'Fixture do piloto',
+      semanticVersion: definition.semanticVersion, outcomeType: definition.outcomeType,
+      definition, contentHash: definition.contentHash, createdBy: fixtureUsers.yux_admin.id,
+    })
+    await admin.query(
+      `INSERT INTO public.action_missions
+       (id,organization_id,pack_version_id,title,objective,status,mode,create_idempotency_key,created_by)
+       VALUES ($1,$2,$3,'Recuperação sintética','Propor recuperação em rascunho','draft','assisted',$4,$5)`,
+      [missionId, organizationId, pack.id, missionId, fixtureUsers.yux_admin.id],
+    )
+    const runtime = vi.fn(async (url: string, init: RequestInit) => {
+      expect(url).toBe('http://127.0.0.1:4109/instructions/preview/mission-supervisor')
+      const wire = JSON.parse(String(init.body))
+      expect(wire.organization_id).toBe(organizationId)
+      expect(wire.mission.id).toBe(missionId)
+      expect(wire.action_pack.key).toBe('revenue_recovery')
+      expect(wire).not.toHaveProperty('context_snapshot_id')
+      expect(wire.capabilities.length).toBeGreaterThan(0)
+      return Response.json({ baseline: { requests: [{ stage: 'planner' }] } })
+    })
+    vi.stubGlobal('fetch', runtime)
+    const root = '/api/strategy-engine/agent-prompts'
+    const body = { flow: 'mission-supervisor', organizationId, missionId }
+    for (const user of [fixtureUsers.yux_operator, fixtureUsers.client_admin_A, fixtureUsers.client_member_A]) {
+      const session = await app.inject({
+        method: 'POST', url: '/api/auth/login', payload: { email: user.email, password: fixturePassword },
+      })
+      expect(session.statusCode).toBe(200)
+      const cookie = session.cookies.map(item => item.name + '=' + item.value).join('; ')
+      expect((await call('GET', root + '/missions?organizationId=' + organizationId, undefined, cookie)).statusCode).toBe(403)
+      expect((await call('POST', root + '/preview', body, cookie)).statusCode).toBe(403)
+    }
+    expect((await call('POST', root + '/preview', { ...body, organizationId: fixtureIds.organizationA })).statusCode).toBe(404)
+    expect((await call('POST', root + '/preview', { ...body, contractId: fixtureIds.contractA })).statusCode).toBe(409)
+    expect(runtime).not.toHaveBeenCalled()
+    expect((await call('GET', root + '/missions?organizationId=' + organizationId)).json().missions)
+      .toContainEqual({ id: missionId, title: 'Recuperação sintética' })
+    const result = await call('POST', root + '/preview', body)
+    expect(result.statusCode, result.body).toBe(200)
+    expect(result.headers['cache-control']).toBe('no-store')
+    expect(runtime).toHaveBeenCalledTimes(1)
+    expect((await admin.query('SELECT status, version::int FROM public.action_missions WHERE id = $1', [missionId])).rows)
+      .toEqual([{ status: 'draft', version: 1 }])
+    for (const table of ['action_planning_cycles', 'action_mission_context_snapshots', 'action_plans']) {
+      expect((await admin.query('SELECT COUNT(*)::int AS count FROM public.' + table + ' WHERE mission_id = $1', [missionId])).rows[0].count)
+        .toBe(0)
+    }
+    await admin.query('DELETE FROM public.action_missions WHERE id = $1', [missionId])
   })
 
   it('promotes by account, retains earlier budget and imports only current prices once', async () => {
