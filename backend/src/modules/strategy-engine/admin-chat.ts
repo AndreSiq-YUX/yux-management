@@ -261,6 +261,7 @@ export async function processStrategyAdminChat(
       }
       await verifyMissionKnowledgeContext(pool, {
         organizationId, audience: 'internal_operator', sourceRefs: sources,
+        restrictDocumentScope: true,
         contractId: request.contractId, workflowKey: typeof synthesis.workflow_key === 'string' ? synthesis.workflow_key : undefined,
       })
     }

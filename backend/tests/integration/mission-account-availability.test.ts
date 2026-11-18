@@ -7,6 +7,7 @@ import { handleActionEngineProcessMissionConversation } from '../../src/jobs/han
 import { createMissionConversation } from '../../src/modules/action-engine/mission-conversations.js'
 import type { MissionConversationTurnRequestWire, MissionConversationTurnResponseWire } from '../../src/modules/action-engine/generated/mission-wire.js'
 import { resolveMissionAccountAccess } from '../../src/modules/action-engine/mission-account-availability.js'
+import { buildMissionTurnRequest } from '../../src/modules/action-engine/mission-turn-request.js'
 import { ACTIVE_MISSION_CHANNELS_SQL } from '../../src/modules/action-engine/channel-readiness-source.js'
 import { createIntegrationRig } from './support/rig.js'
 import { fixtureUsers } from './support/fixtures.js'
@@ -69,6 +70,31 @@ it('uses real entitlements and role access in the worker turn, refreshes account
       expect(after.enabledModules).not.toContain('automations')
       await expect(resolveMissionAccountAccess(pool, {}, { organizationId: rig.ids.organizationA, actorId: fixtureUsers.client_admin_A.id, contractId: rig.ids.contractB })).rejects.toThrow('mission_account_contract_unavailable')
       await expect(resolveMissionAccountAccess(pool, {}, { organizationId: rig.ids.organizationB, actorId: fixtureUsers.client_admin_A.id })).rejects.toThrow('mission_account_access_unavailable')
+    })
+    const olderContractId = randomUUID()
+    await rig.sql(`INSERT INTO public.contracts(id,client_id,package_id,status,starts_at)
+      SELECT $2,client_id,package_id,'active',COALESCE(starts_at,NOW())-INTERVAL '30 days'
+      FROM public.contracts WHERE id=$1`, [rig.ids.contractA, olderContractId])
+    await rig.sql(`INSERT INTO public.contract_modules(contract_id,module_key,enabled)
+      VALUES($1,'action_engine',TRUE),($1,'campaigns',TRUE)`, [olderContractId])
+    await runWithDatabaseRequestContext({ role: 'client_admin', organizationIds: [rig.ids.organizationA], serviceRole: 'worker' }, async () => {
+      const scenario = { organizationId: rig.ids.organizationA, actorId: fixtureUsers.client_admin_A.id,
+        conversationId: randomUUID(), audience: 'client_user' as const, message: 'Prepare a captação.',
+        currentBrief: {}, messages: [], preview: true }
+      const { request: older } = await buildMissionTurnRequest(pool, {} as AppEnv, { ...scenario, contractId: olderContractId })
+      expect(older.contract_id).toBe(olderContractId)
+      expect(older.operationalContext?.accountAvailability).toMatchObject({
+        contractId: olderContractId, enabledModules: ['action_engine', 'campaigns'],
+      })
+      expect(older.allowedCapabilityKeys?.some(key => key.startsWith('crm.'))).toBe(false)
+      const { request: unscoped } = await buildMissionTurnRequest(pool, {} as AppEnv, scenario)
+      expect(unscoped.contract_id).toBeUndefined()
+      expect(unscoped.operationalContext?.accountAvailability).toMatchObject({
+        contractId: null, enabledModules: [], preparation: { available: false, blockers: expect.arrayContaining(['contract_required']) },
+      })
+      expect(unscoped.allowedActionPacks).toHaveLength(0)
+      await expect(buildMissionTurnRequest(pool, {} as AppEnv, { ...scenario, contractId: rig.ids.contractB }))
+        .rejects.toThrow('mission_account_contract_unavailable')
     })
     expect(await rig.providerCalls()).toHaveLength(0)
   } finally { await pool.end(); await rig.close() }

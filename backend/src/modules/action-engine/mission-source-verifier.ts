@@ -140,9 +140,11 @@ export async function verifyMissionKnowledgeContext(client: Queryable, input: {
   moduleKey?: string
   workflowKey?: string | null
   channel?: string | null
+  restrictDocumentScope?: boolean
 }): Promise<VerifiedMissionKnowledgeContext> {
   const profileKey = input.agentProfileKey ?? 'growth_strategist'
   const moduleKey = input.moduleKey ?? 'marketing_studio'
+  const restrictDocumentScope = input.restrictDocumentScope ?? (input.workflowKey === 'mission_intake_conversation')
   const requested = [...input.sourceRefs].sort((left, right) => left.ref.localeCompare(right.ref))
   const duplicate = requested.find((item, index) => index > 0 && item.ref === requested[index - 1]?.ref)
   if (duplicate) throw new Error(`mission_source_duplicate:${duplicate.ref}`)
@@ -180,10 +182,12 @@ export async function verifyMissionKnowledgeContext(client: Queryable, input: {
        JOIN public.knowledge_sources source
          ON source.id = document.source_id AND source.organization_id = chunk.organization_id
        WHERE chunk.organization_id = $1 AND chunk.id = ANY($2::UUID[])
+         AND (NOT $4::boolean OR (chunk.contract_id = $3::uuid AND document.contract_id = $3::uuid
+           AND chunk.client_id = document.client_id))
          AND chunk.chunk_kind IN ('curated_fact','curated_summary')
          AND chunk.curation_status = 'approved' AND document.status = 'published'
          AND source.status = 'published'`,
-      [input.organizationId, customerChunkIds],
+      [input.organizationId, customerChunkIds, input.contractId ?? null, restrictDocumentScope],
     ) : Promise.resolve({ rows: [] as CustomerChunkRow[] }),
     customerChunkIds.length ? client.query<CustomerEntryRow>(
       `SELECT entry.id, entry.updated_at, entry.title, entry.body, entry.status AS entry_status,
@@ -194,8 +198,12 @@ export async function verifyMissionKnowledgeContext(client: Queryable, input: {
        JOIN public.knowledge_sources source
          ON source.id = entry.source_id AND source.organization_id = entry.organization_id
        WHERE entry.organization_id = $1 AND entry.id = ANY($2::UUID[])
+         AND (NOT $3::boolean OR NOT EXISTS (
+           SELECT 1 FROM public.marketing_knowledge_documents document
+           WHERE document.organization_id = entry.organization_id AND document.source_id = source.id
+         ))
          AND entry.status IN ('approved','published') AND source.status = 'published'`,
-      [input.organizationId, customerChunkIds],
+      [input.organizationId, customerChunkIds, restrictDocumentScope],
     ) : Promise.resolve({ rows: [] as CustomerEntryRow[] }),
     governedCardIds.length ? client.query<GovernedStrategyRow>(
       `SELECT card.id,release.id AS publication_id,card.pack_item_id AS item_id,
@@ -252,13 +260,13 @@ export async function verifyMissionKnowledgeContext(client: Queryable, input: {
        JOIN public.knowledge_publication_items publication_item
          ON publication_item.publication_id=publication.id AND publication_item.item_id=chunk.id
        WHERE document.organization_id=$1 AND chunk.id=ANY($2::UUID[])
-         AND ($3::UUID IS NULL OR document.contract_id=$3)
+         AND ((NOT $5::boolean AND $3::UUID IS NULL) OR document.contract_id=$3)
          AND chunk.organization_id=document.organization_id
          AND chunk.client_id=document.client_id AND chunk.contract_id=document.contract_id
          AND chunk.chunk_kind IN ('curated_fact','curated_summary') AND chunk.curation_status='approved'
          AND (cardinality(publication.allowed_agent_profile_keys)=0 OR $4=ANY(publication.allowed_agent_profile_keys))
          AND NOT $4=ANY(publication.blocked_agent_profile_keys)`,
-      [input.organizationId, governedCustomerIds, input.contractId ?? null, profileKey],
+      [input.organizationId, governedCustomerIds, input.contractId ?? null, profileKey, restrictDocumentScope],
     ) : Promise.resolve({ rows: [] as GovernedCustomerRow[] }),
   ])
 

@@ -31,21 +31,23 @@ class _PreviewProvider:
         context = inputs["strategy_context"]
         company_strategy = inputs.get("company_strategy_context") or {}
         portfolio = inputs.get("portfolio_context") or {}
+        coverage = inputs.get("context_coverage") or {}
         sources = [
             {
                 "kind": kind,
                 "id": item["id"],
-                "version": item.get("version") or item.get("source_content_hash") or item.get("content_hash"),
+                "version": item.get("publication_id") or item.get("version") or item.get("source_content_hash") or item.get("content_hash"),
+                "scope": "contract" if item.get("document_id") else "organization" if item.get("source_scope") == "organization" else "methodology",
             }
             for kind in ("concept_cards", "chunks", "assets")
             for item in context.get(kind, [])
             if isinstance(item, dict) and item.get("id")
         ]
         sources.extend({
-            "kind": "company_strategy", "id": item["revisionId"], "version": item["revisionNumber"],
+            "kind": "company_strategy", "id": item["revisionId"], "version": item["revisionNumber"], "scope": "organization",
         } for item in company_strategy.get("selected", []))
         sources.extend({
-            "kind": "portfolio", "id": item["id"], "version": item.get("updatedAt"),
+            "kind": "portfolio", "id": item["id"], "version": item.get("updatedAt"), "scope": "contract",
         } for item in portfolio.get("items", []))
         wire = {key: value for key, value in request.items() if key != "session_id"}
         preview = {
@@ -66,6 +68,10 @@ class _PreviewProvider:
                 "companyStrategy": company_strategy.get("coverage"),
                 "portfolio": portfolio.get("coverage"),
                 "includesOperationalContext": bool(inputs.get("mission_context")),
+                **({"knowledge": {
+                    "selected": coverage["customerKnowledge"],
+                    "contractRequired": coverage.get("knowledgeContractRequired", False),
+                }} if "customerKnowledge" in coverage else {}),
             },
         }
         if self.state["context"].get("mission_context"):

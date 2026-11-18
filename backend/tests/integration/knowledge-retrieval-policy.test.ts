@@ -1,11 +1,18 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
+import pg from 'pg'
+import { createContextAwarePool } from '../../src/db/client.js'
+import { runWithDatabaseRequestContext } from '../../src/db/request-context.js'
+import { verifyMissionKnowledgeContext } from '../../src/modules/action-engine/mission-source-verifier.js'
+import { retrieveAuthorizedKnowledge } from '../../src/modules/company-intelligence/retrieval-policy.js'
+import type { MissionSourceRefWire } from '../../src/modules/action-engine/generated/mission-wire.js'
 import { createIntegrationRig, type IntegrationRig } from './support/rig.js'
 
 const themes = ['temaazul', 'temaverde', 'temadourado', 'temavioleta', 'temacoral', 'tematurquesa', 'temarubi', 'temasafira', 'temaambar', 'temagrafite']
 
 it('filtra antes de ranquear dez mil trechos e preserva recall, escopo e latência', async () => {
   const rig = await createIntegrationRig({ queueMode: 'stub' })
+  const worker = createContextAwarePool(new pg.Pool({ connectionString: rig.serviceDatabaseUrl('yux_worker') }), 'worker')
   try {
     const corpus = await createLargePublishedCorpus(rig)
     const forbiddenIds = await createForbiddenCompanyRows(rig)
@@ -70,6 +77,27 @@ it('filtra antes de ranquear dez mil trechos e preserva recall, escopo e latênc
     })
     expect(exactThree.body.sources).toHaveLength(3)
     expect(exactThree.body.sources.map((source: any) => source.itemId).sort()).toEqual([...corpus.themeIds[0]].sort())
+    const secondContractId = randomUUID()
+    await rig.sql(`INSERT INTO public.contracts(id,client_id,package_id,status,starts_at)
+      SELECT $2,client_id,package_id,'active',COALESCE(starts_at,NOW())-INTERVAL '60 days'
+      FROM public.contracts WHERE id=$1`, [rig.ids.contractA, secondContractId])
+    await runWithDatabaseRequestContext({ role: 'yux_operator', organizationIds: [rig.ids.organizationA], serviceRole: 'worker' }, async () => {
+      const scope = { ...base, workflowKey: 'mission_intake_conversation', queryText: 'temaazul' }
+      const selected = await retrieveAuthorizedKnowledge(worker, scope)
+      const candidate = selected.candidates.find(item => item.documentId === corpus.documentId)!
+      expect(candidate).toBeDefined()
+      const reference: MissionSourceRefWire = {
+        ref: `customer:${candidate.id}`, kind: 'knowledge_chunk', id: candidate.id,
+        version: candidate.publicationId, contentHash: candidate.contentHash, visibility: 'internal', title: 'Documento de teste',
+        displayMode: 'named', publicationId: candidate.publicationId, itemId: candidate.itemId,
+        knowledgePolicyVersion: 1, useMode: candidate.useMode, bindingFingerprint: candidate.bindingFingerprint,
+      }
+      expect((await verifyMissionKnowledgeContext(worker, { ...scope, sourceRefs: [reference] })).sourceIds).toHaveLength(1)
+      for (const contractId of [null, secondContractId]) {
+        await expect(verifyMissionKnowledgeContext(worker, { ...scope, contractId, sourceRefs: [reference] }))
+          .rejects.toThrow('mission_source_verification_failed')
+      }
+    })
     const library = await rig.request('client_member_A', 'GET', `/api/company-intelligence/organizations/${rig.ids.organizationA}/knowledge`)
     const usedDocument = library.body.find((document: { id: string }) => document.id === corpus.documentId)
     expect(usedDocument).toMatchObject({ lastUsedQueryId: exactThree.body.queryId })
@@ -113,6 +141,7 @@ it('filtra antes de ranquear dez mil trechos e preserva recall, escopo e latênc
       name: 'match_marketing_knowledge', args: { target_contract_id: rig.ids.contractA, query_text: 'temaazul', search_query: 'temaverde' },
     })).statusCode).toBe(400)
   } finally {
+    await worker.end()
     await rig.close()
   }
 })

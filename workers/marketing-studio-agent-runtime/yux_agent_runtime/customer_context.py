@@ -53,9 +53,10 @@ class CustomerContextService:
         retrieval_audience = audience or ("external_contact" if external else "client_user")
         if retrieval_audience not in {"internal_operator", "client_user", "external_contact"}:
             raise ValueError("invalid_customer_context_audience")
+        contract_required = bool(scoped_workflow_key) and contract_id is None
         strategy = CompanyStrategyContextService(self.store).retrieve(organization_id=organization_id, contract_id=contract_id, profile_key=profile_key, audience=retrieval_audience, query=query)
         portfolio=CompanyPortfolioContextService(self.store).retrieve(organization_id=organization_id,contract_id=contract_id,profile_key=profile_key,audience=retrieval_audience,query=query,represented_business_ids=strategy.get('portfolio_selection',{}).get('representedBusinessIds',[]))
-        if scoped_workflow_key and contract_id is None:
+        if contract_required:
             # Products in the CRM portfolio belong to a contract. Without a
             # contract, only organization-level represented businesses apply.
             portfolio = {
@@ -81,8 +82,8 @@ class CustomerContextService:
         products=[{**item,'value_proposition':item.get('valueProposition'),'target_audience':item.get('targetAudience'),'proof_points':item.get('proofPoints',[]),'objections':item.get('objections',[]),'cta':item.get('cta')} for item in portfolio['items']]
         authorized_search = getattr(self.store, "retrieve_authorized_knowledge", None)
         if callable(authorized_search):
-            query_embedding = self.embedding_service.embed_query(query) if self.embedding_service is not None else None
-            records = authorized_search(
+            query_embedding = self.embedding_service.embed_query(query) if not contract_required and self.embedding_service is not None else None
+            records = [] if contract_required else authorized_search(
                 organization_id=organization_id,
                 contract_id=contract_id,
                 profile_key=profile_key,
@@ -131,25 +132,37 @@ class CustomerContextService:
                 "company_chunks": context_items,
                 "company_context_source_ids": source_ids,
                 "brand_profile_id": brand.get("id") if brand else None,
-                "context_coverage": {"company": bool(company), "brand": bool(brand), "products": len(products), "customerKnowledge": len(context_items)},
+                "context_coverage": {
+                    "company": bool(company), "brand": bool(brand), "products": len(products),
+                    "customerKnowledge": len(context_items),
+                    **({"knowledgeContractRequired": True} if contract_required else {}),
+                },
             }
+        documents = self.store.list("marketing_knowledge_documents", {"organization_id": organization_id})
+        document_source_ids = {
+            str(document["source_id"]) for document in documents
+            if document.get("source_id") and document.get("contract_id")
+        } if scoped_workflow_key else set()
         sources = [
             item for item in self.store.list("knowledge_sources", {"organization_id": organization_id})
-            if item.get("status") == "published" and in_scope(item) and self._source_allowed(item, profile_key, external)
+            if item.get("status") == "published" and in_scope(item)
+            and self._source_allowed(item, profile_key, external or retrieval_audience == "external_contact")
         ]
         source_by_id = {str(item.get("id")): item for item in sources if item.get("id")}
         entries = [
             item for item in self.store.list("knowledge_entries", {"organization_id": organization_id})
-            if item.get("status") in ("approved", "published") and str(item.get("source_id")) in source_by_id
+            if item.get("status") in ("approved", "published") and in_scope(item)
+            and str(item.get("source_id")) in source_by_id and str(item.get("source_id")) not in document_source_ids
         ]
-        documents = [
-            item for item in self.store.list("marketing_knowledge_documents", {"organization_id": organization_id})
-            if item.get("status") == "published" and in_scope(item) and str(item.get("source_id")) in source_by_id
-        ]
-        documents_by_id = {str(item.get("id")): item for item in documents if item.get("id")}
+        documents_by_id = {
+            str(item["id"]): item for item in documents
+            if item.get("id") and item.get("status") == "published" and in_scope(item)
+            and str(item.get("source_id")) in source_by_id
+        }
         curated_chunks = [
             item for item in self.store.list("marketing_knowledge_chunks", {"organization_id": organization_id})
             if str(item.get("document_id")) in documents_by_id
+            and in_scope(item)
             and item.get("chunk_kind") in ("curated_fact", "curated_summary")
             and item.get("curation_status") == "approved"
         ]
@@ -163,6 +176,7 @@ class CustomerContextService:
                 {
                     "id": f"company:{item.get('id')}",
                     "entry_id": item.get("entry_id"),
+                    **({"document_id": item.get("document_id")} if scoped_workflow_key else {}),
                     "source_id": (documents_by_id.get(str(item.get("document_id"))) or {}).get("source_id"),
                     "section_key": item.get("title") or item.get("source_locator") or "knowledge",
                     "chunk_text": str(item.get("body") or "")[:1600],
@@ -209,6 +223,7 @@ class CustomerContextService:
                 "brand": bool(brand),
                 "products": len(products),
                 "customerKnowledge": len(context_items),
+                **({"knowledgeContractRequired": True} if contract_required else {}),
             },
         }
 

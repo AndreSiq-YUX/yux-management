@@ -9,7 +9,7 @@ const organizationId = '00000000-0000-4000-8000-000000000002'
 
 function conversationRow(change: Record<string, unknown> = {}) {
   return {
-    id: conversationId, organization_id: organizationId, contract_id: null, mission_id: null,
+    id: conversationId, organization_id: organizationId, contract_id: 'contract-1', mission_id: null,
     status: 'collecting_context', title: 'Campanha', current_brief: { allowedModules: ['unknown'] },
     context_readiness: {}, last_context_hash: null, last_harness_run_id: null, version: 2,
     created_by: 'user-1', created_at: now, updated_at: now, completed_at: null, ...change,

@@ -33,9 +33,9 @@ export async function resolveMissionAccountAccess(pool: Queryable, config: Pick<
   if (!actor?.is_active) throw new Error('mission_account_actor_unavailable')
   const workspace = await resolveWorkspaceContext(pool, config, {
     userId: input.actorId, role: actor.role, organizationIds: [input.organizationId], enabledModuleKeys: [],
-  }, input.organizationId)
+  }, input.organizationId, input.contractId)
   if (!workspace) throw new Error('mission_account_access_unavailable')
-  if (input.contractId && workspace.kind === 'client' && input.contractId !== workspace.contractId) {
+  if (input.contractId && input.contractId !== workspace.contractId) {
     throw new Error('mission_account_contract_unavailable')
   }
   const permissions = await pool.query<{ permission_key: string }>(

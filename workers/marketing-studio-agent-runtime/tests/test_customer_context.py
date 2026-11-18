@@ -125,6 +125,45 @@ class CustomerContextTest(unittest.TestCase):
 
         self.assertEqual(store.authorized_calls[0]["audience"], "internal_operator")
 
+    def test_pilot_requires_an_explicit_contract_before_retrieving_company_documents(self):
+        class ScopedStore(InMemoryAgentRuntimeStore):
+            def retrieve_authorized_knowledge(self, *, contract_id, namespace, **_):
+                assert contract_id in ("contract-a", "contract-a-older")
+                assert namespace == "company"
+                return [{"id": f"doc-{contract_id}", "content": f"Condição de {contract_id}."}]
+
+        tables = self.store.tables
+        tables["marketing_products_services"].append({
+            "id": "product-older", "organization_id": "org-a", "contract_id": "contract-a-older",
+            "status": "active", "name": "Massas congeladas",
+        })
+        service = CustomerContextService(ScopedStore(tables=tables))
+        for workflow in ("mission_intake_conversation", "proposal_consultative"):
+            with self.subTest(workflow=workflow):
+                scope = dict(organization_id="org-a", profile_key="growth_strategist", query="oferta",
+                             scoped_workflow_key=workflow)
+                older = service.retrieve(contract_id="contract-a-older", **scope)
+                current = service.retrieve(contract_id="contract-a", **scope)
+                organization = service.retrieve(contract_id=None, **scope)
+                self.assertEqual(older["knowledge_snippets"], ["Condição de contract-a-older."])
+                self.assertEqual([item["name"] for item in older["product_profiles"]], ["Massas congeladas"])
+                self.assertEqual(current["knowledge_snippets"], ["Condição de contract-a."])
+                self.assertEqual([item["name"] for item in current["product_profiles"]], ["Radar YUX"])
+                self.assertTrue(organization["context_coverage"]["knowledgeContractRequired"])
+                self.assertEqual(organization["knowledge_snippets"], [])
+                self.assertEqual(organization["product_profiles"], [])
+                self.assertIn("YUX", organization["customer_context"])
+
+    def test_legacy_document_entry_is_not_considered_organization_level_in_the_pilot(self):
+        self.store.tables["marketing_knowledge_documents"][0]["contract_id"] = "contract-a"
+        result = CustomerContextService(self.store).retrieve(
+            organization_id="org-a", contract_id=None, profile_key="ai_sdr_comercial_1",
+            query="Diagnóstico antes da proposta", scoped_workflow_key="mission_intake_conversation",
+        )
+        self.assertNotIn("Diagnóstico antes da proposta", str(result))
+        self.assertNotIn("Diagnóstico comercial tradicional", str(result))
+        self.assertIn("Nota interna: Nunca enviar ao contato.", result["knowledge_snippets"])
+
     def test_rejects_unknown_explicit_audience(self):
         with self.assertRaisesRegex(ValueError, "invalid_customer_context_audience"):
             CustomerContextService(self.store).retrieve(

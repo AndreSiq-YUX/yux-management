@@ -30,7 +30,7 @@ export async function buildMissionTurnRequest(pool: Queryable, env: AppEnv, inpu
   const { organizationId, audience } = input
   const registry = createActionEngineCapabilityRegistry()
   const [access, radar] = await Promise.all([
-    resolveMissionAccountAccess(pool, env, { organizationId, actorId: input.actorId, contractId: input.contractId }),
+    resolveMissionAccountAccess(pool, env, { organizationId, actorId: input.actorId, contractId: input.contractId ?? null }),
     resolveRadarMissionAvailability(pool, env, organizationId, input.actorId),
   ])
   const availability = buildMissionAccountAvailability(registry, access, radar)

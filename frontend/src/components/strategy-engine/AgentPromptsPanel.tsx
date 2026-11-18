@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { apiRequest } from '@/lib/apiClient'
 import type { StrategyOrganization } from '@/types/strategyEngine'
 
@@ -25,13 +26,13 @@ type StagePreview = {
   coverage?: {
     companyStrategy?: { selected: number; omittedSections?: number; truncatedSections?: number } | null
     portfolio?: { selected: number; contractRequired?: boolean; hasMore?: boolean } | null
-    includesOperationalContext?: boolean
+    knowledge?: { selected: number; contractRequired?: boolean }
   }
   selectedPacks?: string[]
   conditional?: boolean
   unavailableRoute?: boolean
   policyTools: string[]
-  sources: Array<{ kind: string; id: string; version?: string | number | null }>
+  sources: Array<{ kind: string; id: string; version?: string | number | null; scope?: 'contract' | 'organization' | 'methodology' }>
 }
 type Simulation = {
   requests: StagePreview[]
@@ -53,6 +54,7 @@ type AccountScope = {
 }
 
 const endpoint = '/strategy-engine/agent-prompts'
+const sourceScopeLabels = { contract: 'Contrato', organization: 'Subconta', methodology: 'Metodologia' }
 
 export function AgentPromptsPanel({ organizations }: { organizations: StrategyOrganization[] }) {
   const [consumers, setConsumers] = useState<Consumer[]>([])
@@ -239,11 +241,14 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
       </section>
 
       <form onSubmit={simulate} onChange={() => setPreview(null)} className="space-y-4 rounded-lg border bg-white p-5">
-        <div>
-          <h2 className="text-lg font-semibold">Prévia efetiva</h2>
-          <p className="text-sm text-gray-600">{inspectingSupervisor
-            ? 'Selecione uma missão para inspecionar as requisições do planejamento com as fontes atualmente autorizadas.'
-            : 'A simulação usa busca textual e respostas fictícias dos especialistas. Use uma mensagem de teste sem dados pessoais.'}</p>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-semibold">Prévia efetiva</h2>
+            <p className="text-sm text-gray-600">{inspectingSupervisor
+              ? 'Selecione uma missão para inspecionar as requisições do planejamento com as fontes atualmente autorizadas.'
+              : 'A simulação usa busca textual e respostas fictícias dos especialistas. Use uma mensagem de teste sem dados pessoais.'}</p>
+          </div>
+          <Link to="?tab=packs" className="text-sm font-medium text-yux-700 underline">Gerenciar vínculos da metodologia</Link>
         </div>
         <fieldset disabled={running || saving} className="grid gap-4 text-sm md:grid-cols-2">
           <label>Fluxo
@@ -457,18 +462,23 @@ function SimulationResult({ title, simulation }: { title: string; simulation: Si
             <p className="break-all text-xs text-gray-600">Impressão digital {stage.providerFingerprint || stage.fingerprint}</p>
             {stage.selectedPacks?.length ? <p>Pacotes selecionados {stage.selectedPacks.join(', ')}</p> : null}
             <p>Ferramentas da política {stage.policyTools.join(', ') || 'nenhuma'}</p>
-            {stage.coverage?.includesOperationalContext && (
+            {stage.coverage && (
               <div className="space-y-1">
                 {stage.coverage.companyStrategy?.selected === 0 && <p className="text-amber-800">Nenhuma estratégia publicada selecionada.</p>}
                 {stage.coverage.portfolio?.contractRequired
                   ? <p className="text-amber-800">Selecione o contrato para consultar o portfólio.</p>
                   : stage.coverage.portfolio?.selected === 0 && <p className="text-amber-800">Nenhum produto ativo localizado no contrato.</p>}
+                {stage.coverage.knowledge?.contractRequired
+                  ? <p className="text-amber-800">Selecione o contrato para consultar seus documentos publicados.</p>
+                  : stage.coverage.knowledge?.selected === 0 && <p className="text-gray-600">Nenhum documento da empresa recuperado neste cenário.</p>}
               </div>
             )}
             <h4 className="font-medium">Fontes recuperadas</h4>
             {stage.sources.length ? (
               <ul className="space-y-1 break-all text-xs text-gray-600">
-                {stage.sources.map((source, index) => <li key={`${source.id}-${index}`}>{source.kind} · {source.id}{source.version && ` · ${source.version}`}</li>)}
+                {stage.sources.map((source, index) => <li key={`${source.id}-${index}`}>
+                  {source.scope && `${sourceScopeLabels[source.scope]} · `}{source.kind} · {source.id}{source.version && ` · ${source.version}`}
+                </li>)}
               </ul>
             ) : <p className="text-gray-600">Nenhuma fonte recuperada neste cenário.</p>}
             {stage.request.messages.map((message, index) => (

@@ -25,6 +25,7 @@ export async function resolveWorkspaceContext(
   config: Pick<AppEnv, 'MISSION_SUPERVISOR_ENABLED' | 'MISSION_CONVERSATIONS_ENABLED' | 'MISSION_CONVERSATIONS_TENANT_ALLOWLIST'>,
   requestContext: RequestContext,
   organizationId: string,
+  requestedContractId?: string | null,
 ): Promise<WorkspaceContextV1 | null> {
   const organization = await pool.query<OrganizationContextRow>(
     `SELECT id, kind, client_id, COALESCE(is_internal_growth_workspace, FALSE) AS is_internal_growth_workspace
@@ -50,11 +51,12 @@ export async function resolveWorkspaceContext(
       `SELECT key AS module_key FROM public.platform_modules ORDER BY key`,
     )
     moduleKeys = modules.rows.map(item => item.module_key)
-    if (row.client_id) {
+    if (row.client_id && requestedContractId !== null) {
       const technicalContract = await pool.query<{ id: string }>(
         `SELECT id FROM public.contracts WHERE client_id = $1 AND status = 'active'
+         ${requestedContractId ? 'AND id = $2' : ''}
          ORDER BY starts_at DESC, id DESC LIMIT 1`,
-        [row.client_id],
+        requestedContractId ? [row.client_id, requestedContractId] : [row.client_id],
       )
       contractId = technicalContract.rows[0]?.id ?? null
     }
@@ -65,11 +67,12 @@ export async function resolveWorkspaceContext(
        LEFT JOIN LATERAL (
          SELECT candidate.id FROM public.contracts candidate
          WHERE candidate.client_id = organization.client_id AND candidate.status = 'active'
+           ${requestedContractId !== undefined ? 'AND candidate.id = $2::uuid' : ''}
          ORDER BY candidate.starts_at DESC, candidate.id DESC LIMIT 1
        ) contract ON TRUE
        LEFT JOIN public.contract_modules module ON module.contract_id = contract.id AND module.enabled = TRUE
       WHERE organization.id = $1 ORDER BY module.module_key`,
-      [organizationId],
+      requestedContractId !== undefined ? [organizationId, requestedContractId] : [organizationId],
     )
     moduleKeys = [...new Set(entitlement.rows.flatMap(item => item.module_key ? [item.module_key] : []))]
     contractId = entitlement.rows[0]?.contract_id ?? null
