@@ -551,8 +551,10 @@ class MissionConversationWorkflow:
         request: dict[str, Any] | MissionConversationTurnRequestWire,
         *,
         execution: dict[str, Any] | None = None,
+        measure_pilot_usage: bool = False,
     ) -> MissionConversationTurnResponseWire:
         typed = request if isinstance(request, MissionConversationTurnRequestWire) else MissionConversationTurnRequestWire.model_validate(request)
+        inputs = execution if execution is not None else self.workflow_input(typed)
         with provider_request_budget(120):
-            result = self.workflow_engine.execute(**(execution if execution is not None else self.workflow_input(typed)))
+            result = self.workflow_engine.execute(**inputs, measure_mission_usage=measure_pilot_usage)
         return validate_mission_conversation_response(result["synthesis"], typed)

@@ -144,6 +144,29 @@ class TraceRecorder:
             },
         )
 
+    def mission_usage_reporter(self, run_id: str, profile_key: str):
+        context_id = None
+
+        def record(attempts: list[dict[str, Any]]) -> None:
+            nonlocal context_id
+            context = {"measurement": "mission_turn_provider_attempts", "attempts": [
+                {
+                    **sanitize_trace_payload({key: attempt[key] for key in ("stage", "kind", "provider", "status", "costUsd", "tokens")}),
+                    "model": sanitize_trace_payload(attempt["model"], "effective_model"),
+                    "requestedModels": [sanitize_trace_payload(model, "effective_model") for model in attempt["requestedModels"]],
+                }
+                for attempt in attempts
+            ]}
+            snapshot = {"safe_context": context, "context_hash": stable_hash(context)}
+            if context_id is None:
+                context_id = self.store.insert("agent_context_snapshots", {
+                    "run_id": run_id, "profile_key": profile_key, "context_kind": "runtime", **snapshot,
+                })["id"]
+            else:
+                self.store.update("agent_context_snapshots", context_id, snapshot)
+
+        return record
+
     def record_verification(
         self,
         *,

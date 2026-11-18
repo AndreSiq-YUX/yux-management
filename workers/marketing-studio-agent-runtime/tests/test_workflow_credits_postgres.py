@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from threading import Event
+from types import SimpleNamespace
 from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
@@ -220,7 +221,7 @@ def mission_turn(billing, transport):
         "schemaVersion": 1, "organization_id": ORG, "client_id": CLIENT, "contract_id": contract,
         "conversation_id": conversation_id, "audience": "client_user", "user_message": "Planeje o diagnóstico.",
     }
-    return TestClient(app, raise_server_exceptions=False), body, headers, engine.harness.llm_client
+    return TestClient(app, raise_server_exceptions=False), body, headers, engine
 
 
 def mission_turn_output():
@@ -232,6 +233,69 @@ def mission_turn_output():
         "usage": {"prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14,
                   "completion_tokens_details": {"reasoning_tokens": 2}},
     }
+
+
+@pytest.mark.parametrize("provider_succeeds", [False, True])
+def test_unbilled_inherited_pilot_turn_measures_provider_without_a_wallet_hold(billing, provider_succeeds):
+    db, _, contract = billing
+
+    def read_attempts():
+        return db.execute(
+            """SELECT snapshot.safe_context->'attempts' AS attempts, run.id, run.status
+               FROM public.agent_execution_runs run
+               JOIN public.agent_context_snapshots snapshot ON snapshot.run_id=run.id
+               WHERE run.mission_conversation_id=%s AND snapshot.safe_context->>'measurement'='mission_turn_provider_attempts'""",
+            [body["conversation_id"]],
+        ).fetchone()
+
+    def transport(_url, _headers, request, _method):
+        is_retrieval = _url.endswith("/embeddings")
+        before = read_attempts()
+        assert before["attempts"][-1] == {
+            "stage": "retrieval" if is_retrieval else "synthesizer",
+            "kind": "retrieval" if is_retrieval else "generation", "provider": "openrouter",
+            "model": request["model"], "requestedModels": [request["model"]],
+            "status": "started", "costUsd": None, "tokens": None,
+        }
+        if is_retrieval:
+            return {"data": [{"embedding": [0.5]}], "usage": {"prompt_tokens": 4, "total_tokens": 4, "cost": 0.001}}
+        if not provider_succeeds:
+            raise ProviderRequestError("synthetic_timeout")
+        result = mission_turn_output()
+        result["model"] = "synthetic/chat-2026-11-18"
+        result["usage"]["cost"] = 0.012
+        return result
+
+    client, body, _, engine = mission_turn(billing, transport)
+
+    def retrieve(**scope):
+        engine.harness.llm_client.embed_texts([scope["query"]], input_type="search_query", dimensions=1)
+        return {}
+
+    engine.retrieval_service = SimpleNamespace(retrieve_strategy_context=retrieve)
+    body.update(client_id=None, contract_id=None)
+    headers = {"Authorization": "Bearer test-runtime-token", "X-YUX-Mission-Pilot-Usage": "1"}
+    try:
+        response = client.post("/missions/conversations/turn", json=body, headers=headers)
+        assert response.status_code == (200 if provider_succeeds else 503), response.text
+        assert '"costUsd"' not in response.text and '"attempts"' not in response.text
+        receipt = read_attempts()
+        retrieval, attempt = receipt["attempts"]
+        assert retrieval["kind"] == "retrieval" and retrieval["costUsd"] == pytest.approx(0.001)
+        assert body["user_message"] not in json.dumps(receipt["attempts"])
+        if provider_succeeds:
+            assert response.json()["retrievalTraceId"] == str(receipt["id"])
+            assert attempt["status"] == "received" and attempt["costUsd"] == pytest.approx(0.012)
+            assert attempt["model"] == "synthetic/chat-2026-11-18"
+            assert attempt["tokens"]["reasoning"] == 2
+        else:
+            assert receipt["status"] == "failed"
+            assert attempt["status"] == "started" and attempt["costUsd"] is None
+        assert wallet(db, contract) == {"current_balance": 10, "monthly_used": 0}
+        assert ledger(db, contract) == []
+    finally:
+        db.execute("DELETE FROM public.agent_execution_runs WHERE mission_conversation_id=%s AND contract_id IS NULL",
+                   [body["conversation_id"]])
 
 
 def test_mission_turn_recovers_completed_response_after_worker_replay(billing):
@@ -262,7 +326,7 @@ def test_mission_turn_recovers_completed_response_after_worker_replay(billing):
     assert completed.status_code == 200, completed.text
     assert "credits" not in completed.json()
     assert completed.json()["usage"] == {"inputTokens": 10, "outputTokens": 4, "totalTokens": 14}
-    replay = client.post(endpoint, json=body, headers=headers)
+    replay = client.post(endpoint, json=body, headers={**headers, "X-YUX-Mission-Pilot-Usage": "1"})
     assert replay.status_code == 200, replay.text
     assert replay.json() == completed.json()
     for changed in [
@@ -287,12 +351,14 @@ def test_mission_turn_recovers_completed_response_after_worker_replay(billing):
     assert measured["attempts"][0]["kind"] == "generation"
     assert measured["attempts"][0]["tokens"]["reasoning"] == 2
     assert measured["attempts"][0]["stage"] == "synthesizer"
-    context = db.execute(
+    context, = db.execute(
         "SELECT safe_context FROM public.agent_context_snapshots WHERE run_id=%s AND context_kind='runtime'",
         [measured["agent_run_id"]],
-    ).fetchone()["safe_context"]
+    ).fetchall()
+    context = context["safe_context"]
     assert context["organization_prompt_version"] == 1
     assert context["effective_model"] == measured["attempts"][0]["model"]
+    assert "measurement" not in context
     assert "Confirme o objetivo da missão." not in json.dumps(context)
     assert len(ledger(db, contract)) == 1
 
@@ -305,7 +371,8 @@ def test_mission_turn_retries_only_when_failure_preceded_provider(billing):
         calls.append(True)
         return mission_turn_output()
 
-    client, body, headers, provider = mission_turn(billing, transport)
+    client, body, headers, engine = mission_turn(billing, transport)
+    provider = engine.harness.llm_client
     provider.api_key = None
     endpoint = "/missions/conversations/turn"
     assert client.post(endpoint, json=body, headers=headers).status_code == 503

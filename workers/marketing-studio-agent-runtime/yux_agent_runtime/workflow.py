@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import ExitStack
 import json
 from dataclasses import dataclass, field
 from typing import Any
@@ -18,7 +19,7 @@ from .mission_prompt import format_stage_adjustment
 from .source_rules import apply_source_rules
 from .radar import RadarCompanyInput, build_radar_workflow_spec, synthesize_radar_output
 from .runtime_store import AgentRuntimeStore
-from .strategy_usage import strategy_usage_stage
+from .strategy_usage import measure_without_credit_hold, strategy_usage_stage
 from .trace import TraceRecorder, sanitize_trace_payload, stable_hash
 
 
@@ -306,6 +307,7 @@ class StrategyWorkflowEngine:
         presales_prompt_version: int | None = None,
         presales_source_rules: dict[str, str] | None = None,
         mission_prompt: dict[str, Any] | None = None,
+        measure_mission_usage: bool = False,
     ) -> dict[str, Any]:
         workflow_spec = self.resolve_workflow_spec(mode, source, workflow_spec)
         workflow_key = workflow_spec["workflow_key"]
@@ -316,12 +318,13 @@ class StrategyWorkflowEngine:
         ) else {}
         organization_prompt_version = presales_prompt_version
         source_rules = presales_source_rules if presales_candidate and profile_key == "growth_strategist" else None
-        mission_pilot = source == "mission_intake" and workflow_key == "mission_intake_conversation" and bool(mission_prompt)
-        if mission_pilot:
+        mission_intake = source == "mission_intake" and workflow_key == "mission_intake_conversation"
+        mission_trace = mission_intake and (measure_mission_usage or bool(mission_prompt))
+        if mission_intake and mission_prompt:
             stage_instructions = mission_prompt["instructions"]
             organization_prompt_version = mission_prompt["version"]
             source_rules = mission_prompt.get("source_rules")
-        pilot_trace = presales_candidate or mission_pilot
+        pilot_trace = presales_candidate or mission_trace
         trace_query = {"message_hash": stable_hash(message)} if pilot_trace else {"message": message}
         run_input = {"mode": mode, **trace_query}
         if pilot_trace:
@@ -345,7 +348,10 @@ class StrategyWorkflowEngine:
             }
         )
         run_id = run["id"]
+        usage_scope = ExitStack()
         try:
+            if mission_trace:
+                usage_scope.enter_context(measure_without_credit_hold(self.trace.mission_usage_reporter(run_id, profile_key)))
             with self.trace.step(run_id, "classify", "classify", trace_query) as step:
                 classification = classify_intent_and_stage(message, source)
                 step.succeed(classification, classification)
@@ -467,6 +473,7 @@ class StrategyWorkflowEngine:
                         presales_instruction=presales_instruction,
                         stage_instruction=stage_instructions.get("synthesizer"),
                         organization_prompt_version=organization_prompt_version,
+                        mission_trace=mission_trace,
                     )
                 elif plan["workflow_key"] == "commercial_radar_local_niche":
                     synthesis = synthesize_radar_workflow_result(message, plan, subagent_outputs, retrieval_context)
@@ -545,6 +552,8 @@ class StrategyWorkflowEngine:
         except Exception as error:
             self.trace.complete_run(run_id, "failed", {"error_message": str(error), "output_payload": {"error": str(error)}})
             raise
+        finally:
+            usage_scope.close()
 
     def _execute_subagent(
         self,
@@ -675,6 +684,7 @@ class StrategyWorkflowEngine:
         presales_instruction: str | None = None,
         stage_instruction: str | None = None,
         organization_prompt_version: int | None = None,
+        mission_trace: bool = False,
     ) -> dict[str, Any]:
         if plan["workflow_key"] == "mission_intake_conversation":
             source_catalog = []
@@ -829,6 +839,7 @@ class StrategyWorkflowEngine:
             ),
             output_contract=contract if plan["workflow_key"] == "mission_intake_conversation" else None,
             mission_source_catalog=source_catalog if plan["workflow_key"] == "mission_intake_conversation" else None,
+            mission_trace=mission_trace,
         )
         if plan["workflow_key"] == "mission_intake_conversation" and provider.get("finish_reason") == "length":
             raise AgentContractError("mission_conversation_output_truncated")
@@ -895,6 +906,7 @@ class StrategyWorkflowEngine:
         presales_instruction: str | None = None,
         stage_instruction: str | None = None,
         organization_prompt_version: int | None = None,
+        mission_trace: bool = False,
     ) -> dict[str, Any]:
         if self.harness is None:
             raise RuntimeError("agent_harness_not_configured")
@@ -935,7 +947,7 @@ class StrategyWorkflowEngine:
             "stage_key": stage_key,
             "stage_instruction_applied": bool(stage_instruction),
             "organization_prompt_version": organization_prompt_version if presales_candidate or output_contract else None,
-            "record_workflow_attempts": presales_candidate or bool(output_contract and organization_prompt_version),
+            "record_workflow_attempts": presales_candidate or mission_trace,
             "context": {
                 "objective": None if presales_candidate else objective,
                 "strategy_context": strategy_context,
@@ -967,7 +979,7 @@ class StrategyWorkflowEngine:
         output = result["agent_runs"][-1]["output_payload"]
         run = result["agent_runs"][-1]
         trace = run.get("model_request_hash")
-        if trace and (presales_candidate or stage_instruction or organization_prompt_version and output_contract):
+        if trace and (presales_candidate or stage_instruction or mission_trace):
             self.trace.record_context(
                 run_id=run_id, step_id=None, profile_key=profile_key, context_kind="runtime",
                 safe_context={

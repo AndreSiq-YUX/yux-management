@@ -36,16 +36,17 @@ describe('Mission conversation runtime client', () => {
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 
-  it('uses the typed endpoint, bearer token and exactly one HTTP call', async () => {
+  it.each([false, true])('uses the typed endpoint and one HTTP call when pilot measurement is %s', async measurePilotUsage => {
     const fetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify(valid), { status: 200 }))
     vi.stubGlobal('fetch', fetch)
     const operationId = '00000000-0000-4000-8000-000000000001'
-    const response = await invokeMissionConversationTurn(env, request, operationId)
+    const response = await invokeMissionConversationTurn(env, request, operationId, measurePilotUsage)
     expect(response.retrievalTraceId).toBe('trace-1')
     expect(fetch).toHaveBeenCalledTimes(1)
     expect(fetch.mock.calls[0]?.[0]).toBe('https://runtime.example/missions/conversations/turn')
     const sent = fetch.mock.calls[0]?.[1] as RequestInit
     expect(sent.headers).toMatchObject({ Authorization: 'Bearer secret-token', 'X-YUX-Mission-Turn-Operation': operationId })
+    expect(new Headers(sent.headers).get('X-YUX-Mission-Pilot-Usage')).toBe(measurePilotUsage ? '1' : null)
     expect(JSON.parse(String(sent.body))).toEqual(request)
   })
 

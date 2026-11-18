@@ -33,13 +33,17 @@ export async function invokeMissionConversationTurn(
   env: AppEnv,
   body: MissionConversationTurnRequestWire,
   operationId?: string,
+  measurePilotUsage = false,
 ): Promise<MissionConversationTurnResponseWire> {
   try {
     const response = await invokeAgentRuntime<unknown>(
       env, '/missions/conversations/turn', body as unknown as Record<string, unknown>,
       {
         timeoutMs: MISSION_CONVERSATION_TIMEOUT_MS,
-        ...(operationId ? { headers: { 'X-YUX-Mission-Turn-Operation': operationId } } : {}),
+        headers: {
+          ...(operationId ? { 'X-YUX-Mission-Turn-Operation': operationId } : {}),
+          ...(measurePilotUsage ? { 'X-YUX-Mission-Pilot-Usage': '1' } : {}),
+        },
       },
     )
     const validated = validateMissionConversationTurnResponseWire(response)

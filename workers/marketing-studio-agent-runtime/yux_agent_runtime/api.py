@@ -751,6 +751,7 @@ def create_app(
     def mission_conversation_turn(
         request: MissionConversationTurnRequestWire,
         operation_id: UUID | None = Header(default=None, alias="X-YUX-Mission-Turn-Operation"),
+        pilot_usage: str | None = Header(default=None, alias="X-YUX-Mission-Pilot-Usage"),
     ) -> dict[str, Any]:
         try:
             validate_tenant(request.organization_id, request.client_id, request.contract_id, profile_key="growth_strategist", audience=request.audience)
@@ -771,7 +772,7 @@ def create_app(
                 if replay is not None:
                     return validate_mission_conversation_response(replay, request).model_dump()
                 with measured_workflow(meter, settle):
-                    response = workflow.respond(request, execution=execution)
+                    response = workflow.respond(request, execution=execution, measure_pilot_usage=pilot_usage == "1")
                 settle(credits, agent_run_id=response.retrievalTraceId)
                 return response.model_dump()
             try:
@@ -784,7 +785,8 @@ def create_app(
                 )
             except RuntimeError as error:
                 raise HTTPException(status_code=402, detail=str(error)) from error
-            response = conversation_workflow(request.model_dump()).respond(request)
+            workflow = conversation_workflow(request.model_dump())
+            response = workflow.respond(request, measure_pilot_usage=True) if pilot_usage == "1" else workflow.respond(request)
             return response.model_dump()
         except HTTPException:
             raise

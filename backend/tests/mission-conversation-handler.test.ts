@@ -52,6 +52,8 @@ class Pool {
     if (sql.includes('FROM public.organizations')) return { rows: [{ client_id: 'client-1' }] as T[] }
     if (sql.includes('harness_run_id = $3')) return { rows: [] as T[] }
     if (sql.includes('AS next_sequence')) return { rows: [{ next_sequence: 2 }] as T[] }
+    if (sql.includes('INSERT INTO private.mission_prompt_execution_versions')) return { rows: [] as T[] }
+    if (sql.includes('FROM private.mission_prompt_execution_versions')) return { rows: [{ prompt_version: null, instructions: null }] as T[] }
     if (sql.includes('INSERT INTO private.mission_conversation_turn_context')) return { rows: [] as T[] }
     if (sql.includes('INSERT INTO public.action_mission_conversation_messages')) {
       const message = { ...userMessage(), id: 'message-2', sequence: 2, actor_type: 'agent',
@@ -97,10 +99,13 @@ describe('Mission conversation job handler', () => {
     expect(pool.status).toBe('blocked')
   })
 
-  it('builds context, calls Harness once and atomically completes the accepted turn', async () => {
+  it.each([false, true])('completes the inherited turn with pilot measurement set to %s', async measurePilotUsage => {
     const pool = new Pool()
-    const invokeTurn = vi.fn(async (_env: AppEnv, _request: import('../src/modules/action-engine/generated/mission-wire.js').MissionConversationTurnRequestWire) => response)
-    const result = await handleActionEngineProcessMissionConversation(pool as never, { MISSION_CONVERSATIONS_ENABLED: true } as AppEnv, {
+    const invokeTurn = vi.fn(async (_env: AppEnv, _request: import('../src/modules/action-engine/generated/mission-wire.js').MissionConversationTurnRequestWire,
+      _operation?: string, _measurePilotUsage?: boolean) => response)
+    const env = { MISSION_CONVERSATIONS_ENABLED: true,
+      ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS: measurePilotUsage ? organizationId : conversationId } as AppEnv
+    const result = await handleActionEngineProcessMissionConversation(pool as never, env, {
       conversationId, organizationId, requestedVersion: 2, audience: 'client_user',
     }, { invokeTurn })
 
@@ -110,6 +115,8 @@ describe('Mission conversation job handler', () => {
       organization_id: organizationId, user_message: 'Quero uma campanha', audience: 'client_user',
     })
     const request = invokeTurn.mock.calls[0]![1]
+    expect(request.mission_prompt).toBeUndefined()
+    expect(invokeTurn.mock.calls[0]?.[3]).toBe(measurePilotUsage)
     expect(request.operationalContext?.platformToolCatalog).toMatchObject({
       knowledgeScope: 'shared_platform', tools: expect.arrayContaining([
         expect.objectContaining({ key: 'radar', title: 'Radar Comercial', planningAvailable: false }),

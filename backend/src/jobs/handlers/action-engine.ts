@@ -31,7 +31,7 @@ import { invokeMissionConversationTurn } from '../../lib/agent-runtime-client.js
 import { buildMissionPlanningCatalog, buildMissionPlanningContext, buildMissionPlanRequest, getMissionPlanningLimits } from '../../modules/action-engine/mission-plan-request.js'
 import { buildMissionTurnRequest } from '../../modules/action-engine/mission-turn-request.js'
 import { missionIntakeSourceScope, missionSourceFingerprint, resolveMissionTurnHistory } from '../../modules/action-engine/mission-conversation-history.js'
-import { intakePromptScope, pinMissionPromptVersion } from '../../modules/action-engine/mission-prompt-versions.js'
+import { intakePromptScope, missionPromptPilotEnabled, pinMissionPromptVersion } from '../../modules/action-engine/mission-prompt-versions.js'
 import { agentSourceCategory, excludedAgentSources, requiredSourcesMessage } from '../../modules/action-engine/agent-source-rules.js'
 import {
   completeAgentConversationTurn,
@@ -90,7 +90,9 @@ export async function handleActionEngineProcessMissionConversation(
       && access.enabledModules.includes('automations')) await ensureCrmPreparationPackVersion(pool, conversation.createdBy)
     if (missionPrompt) request.mission_prompt = missionPrompt
     const operationId = request.client_id && request.contract_id ? userMessage.id : undefined
-    const response = await (dependencies.invokeTurn ?? invokeMissionConversationTurn)(env, request, operationId)
+    const response = await (dependencies.invokeTurn ?? invokeMissionConversationTurn)(
+      env, request, operationId, missionPromptPilotEnabled(env, organizationId),
+    )
     const sourceScope = missionIntakeSourceScope(conversation, audience)
     const cited = response.sources ?? []
     const citedFingerprints = new Set(cited.map(missionSourceFingerprint))
