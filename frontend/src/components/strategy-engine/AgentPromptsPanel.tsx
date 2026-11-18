@@ -11,6 +11,7 @@ type StagePreview = {
   route: string
   fingerprint: string
   providerFingerprint?: string
+  providerPayload?: { model?: string; max_completion_tokens?: number }
   attempts?: Array<{ provider: string; modelName: string }>
   versions: { global: number; profile: number }
   request: {
@@ -25,10 +26,16 @@ type StagePreview = {
     includesOperationalContext?: boolean
   }
   selectedPacks?: string[]
+  conditional?: boolean
+  unavailableRoute?: boolean
   policyTools: string[]
   sources: Array<{ kind: string; id: string; version?: string | number | null }>
 }
-type Simulation = { requests: StagePreview[]; blockedReason?: string }
+type Simulation = {
+  requests: StagePreview[]
+  blockedReason?: string
+  missingSpecialistInputs?: { workflow: string; fields: string[] }
+}
 type Preview = { baseline: Simulation; candidate?: Simulation }
 type Version = { version: number; instruction: string | null; reason: string; author_id: string; operation: string; created_at: string }
 type AccountScope = {
@@ -192,7 +199,7 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
         <div>
           <h2 className="text-lg font-semibold">Prévia efetiva</h2>
           <p className="text-sm text-gray-600">{inspectingSupervisor
-            ? 'Selecione uma missão para inspecionar a primeira requisição do planejador com as fontes autorizadas no momento da consulta.'
+            ? 'Selecione uma missão para inspecionar as requisições do planejamento com as fontes atualmente autorizadas.'
             : 'A simulação usa busca textual e respostas fictícias dos especialistas. Use uma mensagem de teste sem dados pessoais.'}</p>
         </div>
         <fieldset disabled={running || saving} className="grid gap-4 text-sm md:grid-cols-2">
@@ -275,7 +282,7 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
 
       {preview && (
         <div className={`grid gap-4 ${preview.candidate ? 'lg:grid-cols-2' : ''}`}>
-          <SimulationResult title={inspectingSupervisor ? "Requisição do supervisor" : "Configuração herdada"} simulation={preview.baseline} />
+          <SimulationResult title={inspectingSupervisor ? "Requisições do planejamento" : "Configuração herdada"} simulation={preview.baseline} />
           {preview.candidate && <SimulationResult title="Configuração candidata" simulation={preview.candidate} />}
         </div>
       )}
@@ -340,16 +347,25 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
 }
 
 function SimulationResult({ title, simulation }: { title: string; simulation: Simulation }) {
+  const missing = simulation.missingSpecialistInputs
   return (
     <section className="min-w-0 space-y-3 rounded-lg border bg-white p-5">
       <h3 className="font-semibold">{title}</h3>
       {simulation.blockedReason && <p role="status" className="text-sm text-amber-800">O orçamento de planejamento impede a requisição neste cenário.</p>}
+      {missing && (
+        <p role="status" className="text-sm text-amber-800">
+          {missing.workflow === 'campaign_launch' ? 'Campanha' : 'Funil e nutrição'} requer {missing.fields
+            .map(field => field === 'icp' ? 'perfil do cliente ideal' : 'oferta').join(' e ')}.
+        </p>
+      )}
       {simulation.requests.map(stage => (
         <details key={stage.stage} className="rounded-md border p-3">
-          <summary className="cursor-pointer text-sm font-semibold">{stage.stage} · {stage.request.model}</summary>
+          <summary className="cursor-pointer text-sm font-semibold">{stage.stage} · {stage.providerPayload?.model ?? stage.request.model}</summary>
           <div className="mt-3 space-y-3 text-sm">
+            {stage.conditional && <p>Esta etapa depende de um plano válido do supervisor.</p>}
+            {stage.unavailableRoute && <p role="status" className="text-amber-800">Rota indisponível nesta configuração.</p>}
             <p>Perfil {stage.profile} · rota {stage.route} · versão global {stage.versions.global} · perfil {stage.versions.profile}</p>
-            <p>Saída de até {stage.request.max_tokens} tokens · contingência {stage.attempts?.slice(1).map(item => item.modelName).join(', ') || stage.request.fallback_models?.join(', ') || 'indisponível'}</p>
+            <p>Saída de até {stage.providerPayload?.max_completion_tokens ?? stage.request.max_tokens} tokens · contingência {stage.attempts?.slice(1).map(item => item.modelName).join(', ') || stage.request.fallback_models?.join(', ') || 'indisponível'}</p>
             <p className="break-all text-xs text-gray-600">Impressão digital {stage.providerFingerprint || stage.fingerprint}</p>
             {stage.selectedPacks?.length ? <p>Pacotes selecionados {stage.selectedPacks.join(', ')}</p> : null}
             <p>Ferramentas da política {stage.policyTools.join(', ') || 'nenhuma'}</p>

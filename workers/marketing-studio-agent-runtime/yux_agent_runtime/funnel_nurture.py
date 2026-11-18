@@ -69,10 +69,13 @@ class FunnelNurtureSpecialistWorkflow:
         self.profile = profile
         self.traces: list[dict[str, Any]] = []
 
-    def generate(self, value: dict[str, Any]) -> dict[str, Any]:
-        self.traces = []
+    def check_requirements(self, value: dict[str, Any]) -> None:
         if not self._has_icp(value):
             raise FunnelNurtureClarificationRequired(["icp"])
+
+    def generate(self, value: dict[str, Any]) -> dict[str, Any]:
+        self.traces = []
+        self.check_requirements(value)
         allowed_sources = {str(item) for item in value.get("allowed_source_ids") or []}
         results: dict[str, BaseModel] = {}
         for node, contract in self.NODES:
@@ -142,14 +145,20 @@ class FunnelNurtureSpecialistWorkflow:
             {"role": "user", "content": json.dumps(envelope, ensure_ascii=False, sort_keys=True, separators=(",", ":"))},
         ]
 
+    def prepare_request(self, node: str, value: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "model": self.profile.model,
+            "messages": self.compose_messages(node, value),
+            "max_tokens": self.profile.max_tokens,
+            "temperature": self.profile.temperature,
+            "fallback_models": self.profile.fallback_models,
+            "session_id": f"{(value.get('mission') or {}).get('id', '')}:{node}",
+        }
+
     def _invoke(self, node: str, value: dict[str, Any]) -> dict[str, Any]:
-        messages = self.compose_messages(node, value)
+        request = self.prepare_request(node, value)
         try:
-            response = self.client.chat_completion(
-                model=self.profile.model, messages=messages, max_tokens=self.profile.max_tokens,
-                temperature=self.profile.temperature, fallback_models=self.profile.fallback_models,
-                session_id=f"{(value.get('mission') or {}).get('id', '')}:{node}",
-            )
+            response = self.client.chat_completion(**request)
             self.traces.append({"node": node, "provider": response.get("provider") or self.profile.provider,
                                 "model": response.get("model") or self.profile.model,
                                 "inputTokens": int(response.get("input_tokens") or 0), "outputTokens": int(response.get("output_tokens") or 0),

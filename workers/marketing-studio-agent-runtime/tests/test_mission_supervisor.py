@@ -6,9 +6,12 @@ from hashlib import sha256
 import pytest
 
 from yux_agent_runtime.instruction_preview import preview_mission_supervisor
+from yux_agent_runtime.llm_routing import RoutedLlmClient
 from yux_agent_runtime.mission_supervisor import MissionSupervisor, MissionSupervisorError
 from yux_agent_runtime.model_profiles import ModelProfile
 from yux_agent_runtime.providers import OpenRouterClient
+import test_campaign_launch_mission
+import test_funnel_nurture
 
 
 def _request() -> dict:
@@ -122,6 +125,59 @@ def test_supervisor_preview_reuses_exact_payload_without_calling_original_transp
     assert stage["providerPayload"] == {
         key: item for key, item in sent[0].items() if key != "session_id"
     }
+
+
+@pytest.mark.parametrize("pack,fixture,objective", [
+    ("funnel_nurture", test_funnel_nurture, "Criar funil e nutrição"),
+    ("crm_preparation", test_funnel_nurture, "Preparar CRM e nutrição"),
+    ("campaign_launch", test_campaign_launch_mission, "Criar campanha Meta Ads"),
+])
+def test_specialist_preview_reuses_live_requests_without_generating_artifacts(pack, fixture, objective):
+    value = fixture.request()
+    value["mission"].update(objective=objective, mode="prepare")
+    value["action_pack"] = {"key": pack}
+    value["pack_catalog"] = [value["action_pack"]]
+    supervisor = _supervisor({})
+    specialist, client = fixture.workflow()
+    if pack == "campaign_launch":
+        supervisor.campaign_launch = specialist
+    else:
+        supervisor.funnel_nurture = specialist
+
+    preview = preview_mission_supervisor(supervisor, value)
+    assert client.calls == []
+    assert specialist.traces == []
+    assert preview["requests"][0]["selectedPacks"] == [pack]
+    stages = preview["requests"][1:]
+    assert len(stages) == len(specialist.NODES)
+    assert all(stage["conditional"] and stage["policyTools"] == [] for stage in stages)
+    specialist.generate(value)
+    for stage, call in zip(stages, client.calls, strict=True):
+        assert stage["request"] == {key: item for key, item in call.items() if key != "session_id"}
+        assert stage["providerPayload"]["messages"] == call["messages"]
+        assert stage["sources"][0]["id"] == "source-1"
+
+
+def test_supervisor_preview_preserves_planner_when_specialist_needs_input_or_route():
+    value = test_campaign_launch_mission.request()
+    value["mission"]["objective"] = "Criar campanha Meta Ads"
+    value["action_pack"] = {"key": "campaign_launch"}
+    value["pack_catalog"] = [value["action_pack"]]
+    offer = value["company_context"].pop("offer")
+    supervisor = _supervisor({})
+    missing = preview_mission_supervisor(supervisor, value)
+    assert [stage["stage"] for stage in missing["requests"]] == ["planner"]
+    assert missing["missingSpecialistInputs"] == {"workflow": "campaign_launch", "fields": ["offer"]}
+
+    value["company_context"]["offer"] = offer
+    supervisor.campaign_launch.client = RoutedLlmClient(
+        "campaign_launch_specialist",
+        lambda: [{"agent_type": "campaign_launch_specialist", "status": "paused"}],
+        lambda _routes: pytest.fail("preview should never construct the real client"),
+    )
+    unavailable = preview_mission_supervisor(supervisor, value)
+    assert [stage["stage"] for stage in unavailable["requests"]] == ["planner", "campaign_launch.campaign_strategist"]
+    assert unavailable["requests"][-1]["unavailableRoute"] is True
 
 
 def test_returns_at_most_three_grounded_clarification_questions() -> None:

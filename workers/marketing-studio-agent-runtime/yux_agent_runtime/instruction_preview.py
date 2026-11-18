@@ -4,11 +4,13 @@ import json
 from dataclasses import dataclass, replace
 from typing import Any, Callable
 
+from .campaign_launch import CampaignLaunchClarificationRequired
+from .funnel_nurture import FunnelNurtureClarificationRequired
 from .harness import Harness, filter_allowed_tools, select_model_route
 from .llm_routing import RoutedLlmClient
 from .mission_supervisor import MissionSupervisor
 from .planning_budget import decision_from_wire
-from .providers import OpenRouterClient
+from .providers import OpenRouterClient, ProviderRequestError
 from .runtime_store import InMemoryAgentRuntimeStore
 from .trace import stable_hash
 from .workflow import StrategyWorkflowEngine
@@ -156,6 +158,11 @@ def preview_mission_supervisor(supervisor: MissionSupervisor, value: dict[str, A
         for item in context.get(key, [])
         if isinstance(item, dict)
     }
+    sources = [
+        {"id": source, "kind": known.get(source, {}).get("kind", "verified"),
+         "version": known.get(source, {}).get("version")}
+        for source in value.get("allowed_source_ids", [])
+    ]
     stage = {
         "stage": "planner",
         "profile": supervisor.profile.key,
@@ -164,12 +171,42 @@ def preview_mission_supervisor(supervisor: MissionSupervisor, value: dict[str, A
         "versions": {"global": 1, "profile": supervisor.profile.version},
         "request": wire,
         "policyTools": [item["key"] for item in value.get("capabilities", [])],
-        "sources": [
-            {"id": source, "kind": known.get(source, {}).get("kind", "verified"),
-             "version": known.get(source, {}).get("version")}
-            for source in value.get("allowed_source_ids", [])
-        ],
+        "sources": sources,
         "selectedPacks": route.selected_pack_keys,
     }
     _capture_transport(stage, request, supervisor.profile.provider, supervisor.client, {})
-    return {**preview, "requests": [stage]}
+    preview["requests"].append(stage)
+    selected = set(route.selected_pack_keys)
+    for workflow, pack_keys, specialist in (
+        ("funnel_nurture", {"funnel_nurture", "crm_preparation"}, supervisor.funnel_nurture),
+        ("campaign_launch", {"campaign_launch"}, supervisor.campaign_launch),
+    ):
+        if not selected.intersection(pack_keys):
+            continue
+        try:
+            specialist.check_requirements(value)
+        except (FunnelNurtureClarificationRequired, CampaignLaunchClarificationRequired) as error:
+            preview["missingSpecialistInputs"] = {"workflow": workflow, "fields": error.question_keys}
+            break
+        for node, _ in specialist.NODES:
+            request = specialist.prepare_request(node, value)
+            wire = {key: item for key, item in request.items() if key != "session_id"}
+            client = specialist.client
+            specialist_stage = {
+                "stage": f"{workflow}.{node}",
+                "profile": node,
+                "route": client.use_case if isinstance(client, RoutedLlmClient) else specialist.profile.key,
+                "fingerprint": stable_hash(wire),
+                "versions": {"global": 1, "profile": specialist.profile.version},
+                "request": wire,
+                "policyTools": [],
+                "sources": sources,
+                "conditional": True,
+            }
+            preview["requests"].append(specialist_stage)
+            try:
+                _capture_transport(specialist_stage, request, specialist.profile.provider, client, {})
+            except ProviderRequestError:
+                specialist_stage["unavailableRoute"] = True
+                return preview
+    return preview

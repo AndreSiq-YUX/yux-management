@@ -166,6 +166,9 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
       } })
     }))
     expect((await call('GET', base, undefined, clientCookie)).statusCode).toBe(403)
+    const scope = await call('GET', base + '/scope?organizationId=' + organizationId)
+    expect(scope.statusCode).toBe(200)
+    expect(scope.json().contracts).toContainEqual({ id: fixtureIds.contractA, name: expect.stringMatching(/\S/) })
     expect((await call('PUT', base + '/catalog', { organizationId, templateId, approved: true })).statusCode).toBe(200)
     expect((await call('PUT', base + '/catalog', { organizationId, templateId: excludedTemplateId, approved: true })).statusCode).toBe(409)
     const publication = { organizationId, expectedVersion: 0, operation: 'publish', instruction: 'Compare ofertas.',

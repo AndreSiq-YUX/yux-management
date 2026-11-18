@@ -66,8 +66,11 @@ export async function loadAgentPromptScope(pool: Queryable, organizationId: stri
     contracts: Array<{ id: string; name: string }>
   }>(
     `SELECT o.client_id, COALESCE(
-       (SELECT jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name) ORDER BY c.name, c.id)
-        FROM public.contracts c WHERE c.client_id = o.client_id AND c.status = 'active'),
+       (SELECT jsonb_agg(jsonb_build_object('id', c.id, 'name',
+          COALESCE(NULLIF(btrim(c.name), ''), COALESCE(p.name, 'Contrato') || ' · ' || right(c.id::text, 8))
+        ) ORDER BY c.name, c.id)
+        FROM public.contracts c LEFT JOIN public.packages p ON p.id = c.package_id
+        WHERE c.client_id = o.client_id AND c.status = 'active'),
        '[]'::jsonb
      ) AS contracts
      FROM public.organizations o WHERE o.id = $1`,
