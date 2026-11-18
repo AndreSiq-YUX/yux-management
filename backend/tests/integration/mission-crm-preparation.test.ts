@@ -26,7 +26,7 @@ it.each(planningOutcomes)('preserves the CRM preparation journey and private acc
   const org = rig.ids.organizationA
   const within = <T>(work: () => Promise<T>) => runWithDatabaseRequestContext({role:'yux_admin',organizationIds:[org],serviceRole:'worker'},work)
   const env = {MISSION_CONVERSATIONS_ENABLED:true, YUX_AGENT_RUNTIME_URL:'http://simulated.invalid',YUX_AGENT_RUNTIME_TOKEN:'fixture',
-    ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS:org,
+    ACTION_ENGINE_PROMPT_PILOT_SCOPES:`${org}:${rig.ids.contractA}:mission-intake-internal,${org}:${rig.ids.contractA}:mission-planning`,
     ACTION_ENGINE_MUTATION_LEASE_SECRET:'integration-mutation-lease-secret-32-chars'} as AppEnv
   const intakeInstruction = 'Confirme a retirada antes de propor o briefing.'
   const planningInstruction = 'Use a condição de retirada ao definir a qualificação.'
@@ -247,7 +247,7 @@ it.each(planningOutcomes)('preserves the CRM preparation journey and private acc
       expect(input.mission_prompt).toEqual({version:1,instructions:{'funnel_nurture.crm_architect':planningInstruction},source_rules:sourceRules})
       expect(input.allowed_source_ids).toContain(sourceId)
       expect(input).toMatchObject({mission:{parameters:{icp:revisedIcp,offer:'Massas congeladas'}}})
-      const disabled = { ...env, ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS: undefined }
+      const disabled = { ...env, ACTION_ENGINE_PROMPT_PILOT_SCOPES: `${org}:${rig.ids.contractA}:mission-intake-internal` }
       let retryConfiguration: unknown
       const duplicate = await handleActionEnginePlanMission(pool as never, disabled, planJob.data, queue, {
         resolvePlanningSpec: async (_env, retry) => {

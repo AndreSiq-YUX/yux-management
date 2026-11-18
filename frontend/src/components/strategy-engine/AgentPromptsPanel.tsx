@@ -68,6 +68,7 @@ type AccountScope = {
   contracts: Contract[]
   versions: Version[]
   pilotEnabled: boolean
+  pilotContractIds?: string[]
   catalog: Array<{ id: string; label: string; approved: boolean }>
 }
 
@@ -228,6 +229,8 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
 
   const control = 'mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2'
   const scopeReady = scope?.key === scopeKey
+  const pilotEnabled = scopeReady && (contractId && scope.pilotContractIds
+    ? scope.pilotContractIds.includes(contractId) : scope.pilotEnabled)
   const scopedMissions = availableMissions?.scope === missionScope ? availableMissions.items : []
   const hasPreviewInput = inspectingSupervisor ? scopedMissions.some(mission => mission.id === missionId) : Boolean(message.trim())
   const appliedCandidate = preview?.candidate?.requests.length && preview.publishedVersion !== undefined && ((!candidateStage && isStrategist) || preview.candidate.requests.some(
@@ -422,7 +425,9 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
             <h2 className="text-lg font-semibold">{isStrategist ? 'Publicação do estrategista'
               : inspectingSupervisor ? 'Publicação do planejamento' : 'Publicação da conversa de missão'}</h2>
             <p className="text-gray-600">
-              {scope.pilotEnabled ? 'Conta habilitada para o piloto.' : 'Execução do piloto desativada para esta subconta.'}
+              {isStrategist
+                ? (pilotEnabled ? 'Conta habilitada para o piloto.' : 'Execução do piloto desativada para esta subconta.')
+                : (pilotEnabled ? 'Piloto habilitado para a seleção atual.' : 'Piloto desativado para a seleção atual.')}
               {' '}{currentVersion && (currentVersion.instruction || currentVersion.stage_instructions?.length
                 || Object.keys(currentVersion.instructions ?? {}).length || currentVersion.source_rules)
                 ? `Versão publicada ${currentVersion.version}.` : 'Configuração herdada selecionada.'}

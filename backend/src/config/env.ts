@@ -73,6 +73,7 @@ const envSchema = z.object({
   MISSION_CONVERSATIONS_ENABLED: optionalBoolean,
   MISSION_CONVERSATIONS_TENANT_ALLOWLIST: optionalString,
   ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS: optionalString,
+  ACTION_ENGINE_PROMPT_PILOT_SCOPES: optionalString,
   MISSION_CONVERSATIONS_POLL_MAX_SECONDS: z.coerce.number().int().min(1).max(30).optional(),
   META_APP_SECRET: optionalString,
   META_APP_ID: optionalString,

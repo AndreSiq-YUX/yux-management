@@ -103,12 +103,22 @@ describe('Mission conversation job handler', () => {
     expect(pool.status).toBe('blocked')
   })
 
-  it.each([false, true])('completes the inherited turn with pilot measurement set to %s', async measurePilotUsage => {
+  it.each([
+    { label: 'another subaccount', legacy: conversationId, scoped: undefined, measured: false },
+    { label: 'legacy subaccount', legacy: organizationId, scoped: undefined, measured: true },
+    { label: 'legacy subaccount alongside a different scoped subaccount', legacy: organizationId,
+      scoped: `${conversationId}:contract-1:mission-intake-client`, measured: true },
+    { label: 'exact approved scope', legacy: undefined, scoped: `${organizationId}:contract-1:mission-intake-client`, measured: true },
+    { label: 'another contract', legacy: undefined, scoped: `${organizationId}:contract-2:mission-intake-client`, measured: false },
+    { label: 'another audience with stale legacy settings', legacy: organizationId,
+      scoped: `${organizationId}:contract-1:mission-intake-internal`, measured: false },
+    { label: 'supervisor only', legacy: undefined, scoped: `${organizationId}:contract-1:mission-planning`, measured: false },
+  ])('completes the turn with the expected pilot measurement for $label', async ({ legacy, scoped, measured }) => {
     const pool = new Pool()
     const invokeTurn = vi.fn(async (_env: AppEnv, _request: import('../src/modules/action-engine/generated/mission-wire.js').MissionConversationTurnRequestWire,
       _operation?: string, _measurePilotUsage?: boolean) => response)
-    const env = { MISSION_CONVERSATIONS_ENABLED: true,
-      ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS: measurePilotUsage ? organizationId : conversationId } as AppEnv
+    const env = { MISSION_CONVERSATIONS_ENABLED: true, ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS: legacy,
+      ACTION_ENGINE_PROMPT_PILOT_SCOPES: scoped } as AppEnv
     const result = await handleActionEngineProcessMissionConversation(pool as never, env, {
       conversationId, organizationId, requestedVersion: 2, audience: 'client_user',
     }, { invokeTurn })
@@ -120,7 +130,8 @@ describe('Mission conversation job handler', () => {
     })
     const request = invokeTurn.mock.calls[0]![1]
     expect(request.mission_prompt).toBeUndefined()
-    expect(invokeTurn.mock.calls[0]?.[3]).toBe(measurePilotUsage)
+    expect(invokeTurn.mock.calls[0]?.[3]).toBe(measured)
+    expect(Boolean(pool.promptPin)).toBe(measured)
     expect(request.operationalContext?.platformToolCatalog).toMatchObject({
       knowledgeScope: 'shared_platform', tools: expect.arrayContaining([
         expect.objectContaining({ key: 'radar', title: 'Radar Comercial', planningAvailable: false }),

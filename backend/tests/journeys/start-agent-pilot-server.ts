@@ -46,7 +46,13 @@ const queue: AppJobQueue = {
 }
 const rig = await createIntegrationRig({
   queueMode: 'stub', stubJobQueue: queue, missionConversations: true, corsOrigin: 'http://127.0.0.1:4187',
-  agentPilots: { presalesOrganizationId: presalesOrg, missionOrganizationIds: [missionOrg, presalesOrg] },
+  agentPilots: {
+    presalesOrganizationId: presalesOrg,
+    missionScopes: [
+      `${missionOrg}:${missionContract}:mission-intake-internal`, `${missionOrg}:${missionContract}:mission-planning`,
+      `${presalesOrg}:${presalesContract}:mission-intake-internal`, `${presalesOrg}:${presalesContract}:mission-planning`,
+    ],
+  },
   drainStubQueue: async processJob => {
     for (let drained = 0; jobs.length > 0; drained++) {
       assert(drained < 50, 'Pilot job queue did not drain')

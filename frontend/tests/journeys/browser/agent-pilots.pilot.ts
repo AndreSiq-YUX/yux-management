@@ -88,6 +88,14 @@ test('compares pilot prompts, imports a CRM draft and executes a scoped preparat
   const publication = 'Publicação sintética para ensaiar a reversão.'
   await test.step('inspect the mission strategy, compare and publish the intake adjustment', async () => {
     await openRepresentationIntake()
+    await expect(page.getByText('Piloto habilitado para a seleção atual.')).toBeVisible()
+    await page.getByLabel('Público', { exact: true }).selectOption('client_user')
+    await expect(page.getByText('Piloto desativado para a seleção atual.')).toBeVisible()
+    await page.getByLabel('Público', { exact: true }).selectOption('internal_operator')
+    await page.getByLabel('Contrato', { exact: true }).selectOption('')
+    await expect(page.getByText('Piloto desativado para a seleção atual.')).toBeVisible()
+    await page.getByLabel('Contrato', { exact: true }).selectOption(data.missionContract)
+    await expect(page.getByText('Piloto habilitado para a seleção atual.')).toBeVisible()
     await page.getByLabel('Mensagem de teste').fill(data.objective)
     await simulate(page)
     await page.getByLabel('Etapa da instrução').selectOption('synthesizer')

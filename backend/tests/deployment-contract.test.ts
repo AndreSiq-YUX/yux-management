@@ -47,6 +47,9 @@ describe('Dokploy deployment contract', () => {
     const missionPilot = 'ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS: ${ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS:-}'
     expect(api).toContain(missionPilot)
     expect(worker).toContain(missionPilot)
+    const scopedPilot = 'ACTION_ENGINE_PROMPT_PILOT_SCOPES: ${ACTION_ENGINE_PROMPT_PILOT_SCOPES:-}'
+    expect(api).toContain(scopedPilot)
+    expect(worker).toContain(scopedPilot)
     expect(api).toContain('STRATEGY_PRESALES_PILOT_ORGANIZATION_IDS: ${STRATEGY_PRESALES_PILOT_ORGANIZATION_IDS:-}')
     expect(worker).toContain('STRATEGY_PRESALES_BILLABLE_CONTRACT_IDS: ${STRATEGY_PRESALES_BILLABLE_CONTRACT_IDS:-}')
     expect(api).not.toContain('STRATEGY_PRESALES_BILLABLE_CONTRACT_IDS')

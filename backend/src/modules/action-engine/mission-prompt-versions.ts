@@ -34,9 +34,19 @@ export function intakePromptScope(audience: 'internal_operator' | 'client_user')
   return audience === 'internal_operator' ? 'mission-intake-internal' : 'mission-intake-client'
 }
 
-export function missionPromptPilotEnabled(env: AppEnv, organizationId: string) {
+type MissionPromptTarget = { organizationId: string; contractId?: string | null; scope: MissionPromptScope }
+
+function legacyPilotEnabled(env: AppEnv, organizationId: string) {
   return (env.ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS ?? '').split(',')
     .some(id => id.trim().toLowerCase() === organizationId.toLowerCase())
+}
+
+export function missionPromptPilotEnabled(env: AppEnv, { organizationId, contractId, scope }: MissionPromptTarget) {
+  const prefix = `${organizationId.toLowerCase()}:`
+  const scopedEntries = (env.ACTION_ENGINE_PROMPT_PILOT_SCOPES ?? '').split(',')
+    .map(entry => entry.trim().toLowerCase()).filter(entry => entry.startsWith(prefix))
+  if (scopedEntries.length === 0) return legacyPilotEnabled(env, organizationId)
+  return Boolean(contractId && scopedEntries.includes(`${prefix}${contractId.toLowerCase()}:${scope}`))
 }
 
 export function missionPromptConfiguration(version: Pick<MissionPromptVersion, 'version' | 'instructions' | 'source_rules'> | undefined): MissionPromptConfigurationWire | undefined {
@@ -89,13 +99,14 @@ export async function changeMissionPromptVersion(pool: pg.Pool, input: {
   })
 }
 
-export async function pinMissionPromptVersion(pool: Queryable, env: AppEnv, input: {
-  organizationId: string
-  scope: MissionPromptScope
+export async function pinMissionPromptVersion(pool: Queryable, env: AppEnv, input: MissionPromptTarget & {
   operationId: string
   operationVersion: number
+  legacyRadarPlanning?: boolean
 }): Promise<{ pilot: boolean; configuration?: MissionPromptConfigurationWire }> {
-  const pilotEnabled = missionPromptPilotEnabled(env, input.organizationId)
+  const pilotEnabled = input.legacyRadarPlanning ? legacyPilotEnabled(env, input.organizationId) : missionPromptPilotEnabled(env, input)
+  // Radar planning keeps its existing rollout and does not use the granular pilot scope.
+  if (input.legacyRadarPlanning && !pilotEnabled) return { pilot: false }
   const values = [input.organizationId, input.scope, input.operationId, input.operationVersion]
   // NULL captures the inherited configuration when a turn starts before publication.
   if (pilotEnabled) await pool.query(

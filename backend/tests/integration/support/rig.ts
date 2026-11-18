@@ -64,7 +64,7 @@ type IntegrationRigOptions = {
   radarActionEngine?: boolean
   metaOAuth?: boolean
   metaTestPhoneNumberId?: string
-  agentPilots?: { presalesOrganizationId: string; missionOrganizationIds: readonly string[] }
+  agentPilots?: { presalesOrganizationId: string; missionScopes: readonly string[] }
   drainStubQueue?: (processJob: ReturnType<typeof createJobProcessor>) => Promise<void>
 }
 
@@ -107,7 +107,7 @@ export async function createIntegrationRig(options: IntegrationRigOptions = {}):
     KNOWLEDGE_CURATION_ENABLED: 'false',
     MISSION_CONVERSATIONS_ENABLED:options.missionConversations?'true':'false',
     STRATEGY_PRESALES_PILOT_ORGANIZATION_IDS: options.agentPilots?.presalesOrganizationId,
-    ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS: options.agentPilots?.missionOrganizationIds.join(','),
+    ACTION_ENGINE_PROMPT_PILOT_SCOPES: options.agentPilots?.missionScopes.join(','),
     RADAR_ACTION_ENGINE_ENABLED: options.radarActionEngine?'true':'false',
     RADAR_ACTION_ENGINE_TENANT_ALLOWLIST: options.radarActionEngine?fixtureIds.organizationA:'',
     KNOWLEDGE_STORAGE_DIR: storageRoot,

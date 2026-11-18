@@ -52,6 +52,7 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
       YUX_AGENT_RUNTIME_TOKEN: 'local-simulated-runtime', STRATEGY_PRESALES_PILOT_ORGANIZATION_IDS: organizationId,
       STRATEGY_PRESALES_BILLABLE_CONTRACT_IDS: fixtureIds.contractA,
       ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS: organizationId,
+      ACTION_ENGINE_PROMPT_PILOT_SCOPES: `${fixtureIds.organizationA}:${fixtureIds.contractA}:mission-intake-internal`,
     })
     const queued = { add: job.mockImplementation(async () => ({ id: randomUUID() })) } as unknown as AppJobQueue
     app = await buildServer(env, { pool: apiPool, jobQueue: queued })
@@ -115,6 +116,35 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     )
     return missionId
   }
+
+  it('reports the enabled contract and audience only to the global admin', async () => {
+    const { organizationA, contractA, organizationB } = fixtureIds
+    const otherContract = randomUUID()
+    await admin.query(`INSERT INTO public.contracts (id,client_id,package_id,status,starts_at)
+      SELECT $2,client_id,package_id,'active',starts_at FROM public.contracts WHERE id=$1`, [contractA, otherContract])
+    try {
+      const endpoint = `/api/strategy-engine/agent-prompts/scope?organizationId=${organizationA}`
+      const internal = `${endpoint}&promptScope=mission-intake-internal`
+      const approved = await call('GET', internal)
+      expect(approved.statusCode, approved.body).toBe(200)
+      expect(approved.json()).toMatchObject({ pilotEnabled: false, pilotContractIds: [contractA],
+        contracts: expect.arrayContaining([expect.objectContaining({ id: contractA }), expect.objectContaining({ id: otherContract })]) })
+      for (const scope of ['mission-intake-client', 'mission-planning']) {
+        const disabled = await call('GET', `${endpoint}&promptScope=${scope}`)
+        expect(disabled.statusCode).toBe(200)
+        expect(disabled.json()).toMatchObject({ pilotEnabled: false, pilotContractIds: [] })
+      }
+      for (const cookie of deniedCookies) {
+        const denied = await call('GET', internal, undefined, cookie)
+        expect(denied.statusCode).toBe(403)
+        expect(denied.json()).not.toHaveProperty('pilotContractIds')
+      }
+      expect((await call('GET', internal.replace(organizationA, organizationB))).json()).toMatchObject({ pilotContractIds: [] })
+      expect((await call('GET', internal.replace(organizationA, organizationId))).json()).toMatchObject({ pilotEnabled: true })
+    } finally {
+      await admin.query('DELETE FROM public.contracts WHERE id=$1', [otherContract])
+    }
+  })
 
   it('inspects the supervisor only as global admin and leaves the mission unchanged', async () => {
     const missionId = await createSupervisorScenario()

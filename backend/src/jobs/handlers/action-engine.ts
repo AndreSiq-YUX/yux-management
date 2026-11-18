@@ -32,7 +32,7 @@ import { invokeMissionConversationTurn } from '../../lib/agent-runtime-client.js
 import { buildMissionPlanningCatalog, buildMissionPlanningContext, buildMissionPlanRequest, getMissionPlanningLimits } from '../../modules/action-engine/mission-plan-request.js'
 import { buildMissionTurnRequest } from '../../modules/action-engine/mission-turn-request.js'
 import { missionIntakeSourceScope, missionSourceFingerprint, resolveMissionTurnHistory } from '../../modules/action-engine/mission-conversation-history.js'
-import { intakePromptScope, missionPromptPilotEnabled, pinMissionPromptVersion } from '../../modules/action-engine/mission-prompt-versions.js'
+import { intakePromptScope, pinMissionPromptVersion } from '../../modules/action-engine/mission-prompt-versions.js'
 import { agentSourceCategory, excludedAgentSources, requiredSourcesMessage } from '../../modules/action-engine/agent-source-rules.js'
 import {
   completeAgentConversationTurn,
@@ -78,7 +78,8 @@ export async function handleActionEngineProcessMissionConversation(
   const startedAt = Date.now()
   try {
     const { pilot, configuration: missionPrompt } = await pinMissionPromptVersion(pool, env, {
-      organizationId, scope: intakePromptScope(audience), operationId: userMessage.id, operationVersion: requestedVersion,
+      organizationId, contractId: conversation.contractId, scope: intakePromptScope(audience),
+      operationId: userMessage.id, operationVersion: requestedVersion,
     })
     const excludedSources = excludedAgentSources(missionPrompt?.source_rules)
     const history = await resolveMissionTurnHistory(pool, conversation, audience, excludedSources)
@@ -551,11 +552,11 @@ export async function handleActionEnginePlanMission(
   const { registry, packs, pack } = catalog
   let cycleForReconciliation: string | undefined
   try {
-    const execution = !catalog.radar || missionPromptPilotEnabled(env, organizationId)
-      ? await pinMissionPromptVersion(pool, env, { organizationId, scope: 'mission-planning', operationId: missionId, operationVersion: requestedVersion })
-      : undefined
-    const governedPlanning = !catalog.radar && execution?.pilot === true
-    const missionPrompt = execution?.configuration
+    const { pilot, configuration: missionPrompt } = await pinMissionPromptVersion(pool, env, {
+      organizationId, contractId: mission.contractId, scope: 'mission-planning', operationId: missionId,
+      operationVersion: requestedVersion, legacyRadarPlanning: catalog.radar,
+    })
+    const governedPlanning = !catalog.radar && pilot
     const { planningContext, groundingMetadata, linkedConversation, sourcePolicy } = await buildMissionPlanningContext(
       pool, mission, catalog, false, missionPrompt?.source_rules ?? undefined,
     )

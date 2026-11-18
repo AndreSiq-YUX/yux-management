@@ -222,7 +222,11 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
         loadAgentPromptScope(app.pg, organizationId),
         listMissionPromptVersions(app.pg, organizationId, promptScope),
       ])
-      return { contracts: scope.contracts, versions, pilotEnabled: missionPromptPilotEnabled(app.config, organizationId), catalog: [] }
+      const pilotEnabled = missionPromptPilotEnabled(app.config, { organizationId, scope: promptScope })
+      const pilotContractIds = scope.contracts.filter(({ id }) => missionPromptPilotEnabled(app.config, {
+        organizationId, contractId: id, scope: promptScope,
+      })).map(({ id }) => id)
+      return { contracts: scope.contracts, versions, pilotEnabled, pilotContractIds, catalog: [] }
     }
     const pilotEnabled = presalesPilotEnabled(app.config, organizationId)
     const [scope, versions, catalog] = await Promise.all([
