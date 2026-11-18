@@ -5,11 +5,11 @@ Base avaliada no plano, revisão 020308a de origin/main. A implantação local e
 
 ## Verificação inicial em produção
 
-Em 18/11/2026, a API de produção respondeu com saúde e prontidão confirmadas na revisão `7cba84f`. O Admin YUX mostrou os workspaces de Captação e Villeman e Massas e os respectivos contratos ativos **Captação** e **Personalizado**. O painel **Agentes e prompts** ainda não existia nessa revisão. Essa consulta foi somente leitura.
+Em 18/11/2026, o Dokploy registrava a revisão `020308a` como última implantação concluída do Portal, a partir da branch `main`. A API respondeu com saúde e prontidão, mas os metadados de saúde ainda informavam `7cba84f`. Use o commit do histórico do Dokploy e uma verificação funcional do Portal para conferir a versão publicada. A leitura no Admin confirmou os contratos ativos e a ausência do painel **Agentes e prompts**.
 
-O ensaio em PostgreSQL local partiu das 140 migrações versionadas em `7cba84f`, inseriu registros sintéticos e aplicou a candidata com 173 migrações. Contratos, subcontas, leads, propostas, projetos, conversas e missões preservaram os campos conferidos. A repetição aplicou zero migrações e a contagem de mensagens de saída permaneceu igual. A situação das migrações e dos backups do banco real ainda precisa ser verificada no ambiente de produção.
+O ensaio em PostgreSQL local partiu das 140 migrações versionadas na revisão histórica `7cba84f`, inseriu registros sintéticos e aplicou a candidata com 173 migrações. Contratos, subcontas, leads, propostas, projetos, conversas e missões preservaram os campos conferidos. A repetição aplicou zero migrações e a contagem de mensagens de saída permaneceu igual. Entre a revisão implantada `020308a` e a candidata há nove migrações novas.
 
-A produção foi autorizada para os testes, sem envio aos leads. A versão candidata precisa estar disponível para que as prévias possam ser verificadas nesse ambiente. Antes de atualizar a stack, confronte a versão e as migrações do ambiente com a candidata e confirme o backup restaurável e o retorno da versão estável conforme o [procedimento de rollout](yux-remediation-rollout.md). Na primeira validação, mantenha as listas do piloto vazias e use a prévia **Simular sem custo**. A geração paga e a ativação dos dois pilotos dependem dos aceites previstos no plano.
+A produção foi autorizada para os testes, sem envio aos leads. O responsável informou que não há backup completo e autorizou seguir com a validação. Use as listas de execução vazias, confirme a revisão de retorno e valide as prévias com **Simular sem custo**. A geração paga e a ativação dos dois pilotos dependem dos aceites previstos no plano. O estado da restauração continua registrado no [manifesto de rollout](../releases/yux-remediation-manifest.json).
 
 ## Operação em homologação
 
