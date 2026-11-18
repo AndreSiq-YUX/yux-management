@@ -247,11 +247,17 @@ it.each(planningOutcomes)('preserves the CRM preparation journey and private acc
       expect(input.mission_prompt).toEqual({version:1,instructions:{'funnel_nurture.crm_architect':planningInstruction},source_rules:sourceRules})
       expect(input.allowed_source_ids).toContain(sourceId)
       expect(input).toMatchObject({mission:{parameters:{icp:revisedIcp,offer:'Massas congeladas'}}})
-      const duplicate = await handleActionEnginePlanMission(pool as never, env, planJob.data, queue, {
-        resolvePlanningSpec: async () => { throw new Error('preflight temporarily unavailable') },
+      const disabled = { ...env, ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS: undefined }
+      let retryConfiguration: unknown
+      const duplicate = await handleActionEnginePlanMission(pool as never, disabled, planJob.data, queue, {
+        resolvePlanningSpec: async (_env, retry) => {
+          retryConfiguration = retry.mission_prompt
+          throw new Error('preflight temporarily unavailable')
+        },
         invokePlan: async () => { throw new Error('duplicate reached the planner') },
       })
       expect(duplicate).toEqual({ skipped: 'planning_call_in_progress' })
+      expect(retryConfiguration).toEqual(input.mission_prompt)
       const recheck = jobs.filter(job => job.name === 'action-engine.planMission').at(-1)
       expect(recheck?.options?.jobId).toMatch(/^mission-planning-recheck-/)
       expect(recheck?.options?.delay).toBeGreaterThan(0)

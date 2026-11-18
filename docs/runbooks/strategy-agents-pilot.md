@@ -20,7 +20,7 @@ Em **Agentes e prompts**, selecione a conversa de missão ou o planejamento. Na 
 
 O histórico da conversa é separado entre usuário do portal e operador interno. O histórico do planejamento é próprio da subconta. A missão e o contrato selecionados fornecem o cenário e as permissões da simulação. O ajuste publicado vale para a etapa da subconta nesse fluxo. Etapas de planejamento do Radar ficam protegidas.
 
-A migração 0267 deve ser aplicada antes da atualização dos serviços. Após os aceites, a configuração `ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS` indica as subcontas aprovadas, em lista separada por vírgula, para a execução no worker e a indicação de status na API. A lista inicia vazia. O turno ou planejamento conserva a versão registrada na primeira execução, inclusive ao reprocessar. Para reverter com operações em andamento, restaure a configuração herdada ou uma versão anterior, mantenha a subconta na lista até concluir os reprocessamentos e retire-a depois, se o piloto for encerrado.
+A migração 0267 deve ser aplicada antes da atualização dos serviços. Após os aceites, a configuração `ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS` indica as subcontas aprovadas, em lista separada por vírgula, para a execução no worker e a indicação de status na API. A lista inicia vazia. Para reverter, retire a subconta da lista e restaure no histórico a configuração herdada ou a versão anterior. Novos turnos e planejamentos seguem o fluxo herdado. Operações já registradas continuam com as instruções, regras de fontes e controles de consumo originais durante o reprocessamento. As permissões e as fontes são verificadas novamente, inclusive em operações já registradas.
 
 Nos planejamentos do piloto, a primeira entrega da revisão obtém a reserva. Uma entrega concorrente agenda uma conferência após a janela do worker. Quando o resultado da revisão segue pendente, a missão fica bloqueada para conciliação. O registro conserva a reserva enquanto o resultado da chamada estiver em aberto. Quando o runtime devolve as medições, a conciliação soma as etapas e tentativas registradas. Se o consumo superar o limite, o ciclo fica esgotado e mantém os valores observados para conferência, sem publicar um plano para aprovação.
 
@@ -103,6 +103,8 @@ npm --prefix frontend exec -- playwright test --config frontend/playwright.agent
 ```
 
 O teste aplica migrações, cadastra dados sintéticos e inicia os serviços locais. O runtime compõe as prévias com recuperação lexical e executa os fluxos de geração, planejamento e recuperação com respostas simuladas no transporte do provedor, inclusive para a busca vetorial. O navegador usa a sessão do Admin YUX para importar e abrir a proposta certa dentro da subconta e revisar o plano na área de Missões do portal. O teste verifica o preço vigente, o vínculo com a recomendação, a fonte publicada, a ausência de ações disparadas antes da aprovação e os registros de uso por turno e etapa no Admin. Após a aprovação sintética, a fila executa as oito etapas de preparação e grava um funil, três modelos de e-mail e uma sequência desativada. Repetir a aprovação mantém os mesmos rascunhos e a conversa registra uma única conclusão. O teste também confere que nenhuma inscrição, ativação ou solicitação de envio foi gravada.
+
+O ensaio local inclui publicação e reversão de uma instrução de missão pelo Admin. A prévia volta à configuração herdada, o histórico mostra as duas versões e os cinco rascunhos continuam acessíveis na missão concluída.
 
 ## Comparação cega e aceite dos pilotos
 

@@ -198,9 +198,11 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     expect((await call('POST', base + '/versions', publication)).statusCode).toBe(409)
     expect((await call('POST', base + '/preview', { flow: 'strategist', organizationId,
       contractId: fixtureIds.contractB, mode: 'proposal', message: 'Contraprova' })).statusCode).toBe(409)
-    const run = async (message: string, sessionId?: string, billableContract = false) => {
+    const run = async (message: string, { sessionId, billableContract = false, includeLead = true }: {
+      sessionId?: string; billableContract?: boolean; includeLead?: boolean
+    } = {}) => {
       const sent = await call('POST', '/api/functions/run-strategy-admin-chat', {
-        body: { message, sessionId, organizationId, leadId, mode: 'proposal',
+        body: { message, sessionId, organizationId, ...(includeLead ? { leadId } : {}), mode: 'proposal',
           contractId: fixtureIds.contractA },
       })
       expect(sent.statusCode, sent.body).toBe(202)
@@ -212,7 +214,7 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
       return sent.json<{ session: { id: string }; assistantMessage: { id: string } }>()
     }
     const first = await run('Orçamento confirmado de R$ 2.000.')
-    const second = await run('Recomende agora.', first.session.id, true)
+    const second = await run('Recomende agora.', { sessionId: first.session.id, billableContract: true })
     expect(received[0].client_id).toBeNull()
     expect(received[1].client_id).toBe(fixtureIds.clientA)
     expect(received[1].strategy_operation_id).toBe(second.assistantMessage.id)
@@ -249,7 +251,7 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     await admin.query('UPDATE public.proposal_price_rules SET recommended_value=1750 WHERE id=$1', [priceId])
     expect((await importRequest(prior)).statusCode).toBe(409)
 
-    const deferred = await run(insufficientEvidence, first.session.id)
+    const deferred = await run(insufficientEvidence, { sessionId: first.session.id })
     const savedDeferral = await admin.query(
       'SELECT safe_context FROM public.yux_strategy_chat_messages WHERE id=$1', [deferred.assistantMessage.id],
     )
@@ -272,6 +274,15 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     expect(restored.statusCode, restored.body).toBe(200)
     expect(restored.json()).toMatchObject({ version: 2, instruction: null })
     expect((await call('GET', base + '/opportunities?organizationId=' + organizationId)).json().enabled).toBe(false)
+    await run('Analise pelo fluxo herdado.', { includeLead: false })
+    expect(received.at(-1)).not.toHaveProperty('presales_prompt_version')
+    expect(received.at(-1)).not.toHaveProperty('retrieval_context.commercial_catalog')
+    const saved = await admin.query(`SELECT id,final_value,status,strategy_recommendation_message_id
+      FROM public.proposals WHERE organization_id=$1 AND lead_id=$2`, [organizationId, leadId])
+    expect(saved.rows).toEqual([{ id: draftOne.json().id, final_value: '1500.00', status: 'draft',
+      strategy_recommendation_message_id: second.assistantMessage.id }])
+    expect((await admin.query('SELECT safe_context FROM public.yux_strategy_chat_messages WHERE id=$1', [second.assistantMessage.id])).rows)
+      .toEqual(persistedUsage.rows)
   })
 
   it('publishes a single specialist for one task and keeps the enqueued version during later edits', async () => {
@@ -375,20 +386,27 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     expect((await call('GET', internal.replace(organizationId, fixtureIds.organizationA))).json().versions).toEqual([])
 
     const run = { organizationId, scope: 'mission-intake-internal' as const, operationId: randomUUID(), operationVersion: 1 }
-    const pin = (request: typeof run) => runWithDatabaseRequestContext(
+    const pin = (request: typeof run, env = app.config) => runWithDatabaseRequestContext(
       { role: 'yux_operator', organizationIds: [organizationId], serviceRole: 'worker' },
-      () => pinMissionPromptVersion(worker, app.config, request),
+      () => pinMissionPromptVersion(worker, env, request),
     )
-    expect(await pin(run)).toEqual({ version: 1, instructions: { synthesizer: issue.instruction } })
+    const pinned = { pilot: true, configuration: { version: 1, instructions: { synthesizer: issue.instruction } } }
+    expect(await pin(run)).toEqual(pinned)
     const revised = await call('POST', base + '/versions', { ...issue, expectedVersion: 1, instruction: 'Confirme a região atendida.' })
     expect(revised.statusCode, revised.body).toBe(200)
-    expect(await pin(run)).toEqual({ version: 1, instructions: { synthesizer: issue.instruction } })
-    expect(await pin({ ...run, operationId: randomUUID() })).toEqual({ version: 2, instructions: revised.json().instructions })
+    expect(await pin(run)).toEqual(pinned)
+    expect(await pin({ ...run, operationId: randomUUID() })).toEqual({ pilot: true,
+      configuration: { version: 2, instructions: revised.json().instructions } })
     const restored = await call('POST', base + '/versions', { organizationId, operation: 'restore',
       promptScope: 'mission-intake-internal', restoreVersion: 0, expectedVersion: 2, reason: 'Retomar a configuração herdada.' })
     expect(restored.statusCode, restored.body).toBe(200)
-    expect(await pin(run)).toEqual({ version: 1, instructions: { synthesizer: issue.instruction } })
-    expect(await pin({ ...run, operationId: randomUUID() })).toBeUndefined()
+    const disabled = { ...app.config, ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS: undefined }
+    const inherited = { ...run, operationId: randomUUID() }
+    expect(await pin(run, disabled)).toEqual(pinned)
+    expect(await pin(inherited)).toEqual({ pilot: true, configuration: undefined })
+    expect(await pin(inherited, disabled)).toEqual({ pilot: true, configuration: undefined })
+    expect(await pin({ ...run, operationVersion: 2 }, disabled)).toEqual({ pilot: false })
+    expect(await pin({ ...run, operationId: randomUUID() }, disabled)).toEqual({ pilot: false })
   })
 
   it('publishes tested source rules independently for each pilot flow and restores the inherited policy', async () => {
@@ -424,13 +442,13 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     const pin = (request: typeof run) => runWithDatabaseRequestContext({
       role: 'yux_operator', organizationIds: [organizationId], serviceRole: 'worker',
     }, () => pinMissionPromptVersion(worker, app.config, request))
-    expect((await pin(run))?.source_rules).toEqual(sourceRules)
+    expect((await pin(run)).configuration?.source_rules).toEqual(sourceRules)
     const restored = await call('POST', base + '/versions', {
       operation: 'restore', organizationId, promptScope: run.scope, restoreVersion: 0, expectedVersion: 1, reason: 'Reverter ensaio.',
     })
     expect(restored.statusCode, restored.body).toBe(200)
-    expect(await pin({ ...run, operationId: randomUUID() })).toBeUndefined()
-    expect((await pin(run))?.source_rules).toEqual(sourceRules)
+    expect(await pin({ ...run, operationId: randomUUID() })).toEqual({ pilot: true, configuration: undefined })
+    expect((await pin(run)).configuration?.source_rules).toEqual(sourceRules)
 
     const strategist = await scope()
     const strategic = await call('POST', base + '/versions', {

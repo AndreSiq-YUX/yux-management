@@ -77,7 +77,7 @@ export async function handleActionEngineProcessMissionConversation(
   if (!userMessage) throw new Error('mission_conversation_user_message_missing')
   const startedAt = Date.now()
   try {
-    const missionPrompt = await pinMissionPromptVersion(pool, env, {
+    const { pilot, configuration: missionPrompt } = await pinMissionPromptVersion(pool, env, {
       organizationId, scope: intakePromptScope(audience), operationId: userMessage.id, operationVersion: requestedVersion,
     })
     const excludedSources = excludedAgentSources(missionPrompt?.source_rules)
@@ -92,7 +92,7 @@ export async function handleActionEngineProcessMissionConversation(
     if (missionPrompt) request.mission_prompt = missionPrompt
     const operationId = request.client_id && request.contract_id ? userMessage.id : undefined
     const response = await (dependencies.invokeTurn ?? invokeMissionConversationTurn)(
-      env, request, operationId, missionPromptPilotEnabled(env, organizationId),
+      env, request, operationId, pilot,
     )
     const sourceScope = missionIntakeSourceScope(conversation, audience)
     const cited = response.sources ?? []
@@ -549,12 +549,13 @@ export async function handleActionEnginePlanMission(
 
   const catalog = await buildMissionPlanningCatalog(pool, env, mission)
   const { registry, packs, pack } = catalog
-  const governedPlanning = !catalog.radar && missionPromptPilotEnabled(env, organizationId)
   let cycleForReconciliation: string | undefined
   try {
-    const missionPrompt = await pinMissionPromptVersion(pool, env, {
-      organizationId, scope: 'mission-planning', operationId: missionId, operationVersion: requestedVersion,
-    })
+    const execution = !catalog.radar || missionPromptPilotEnabled(env, organizationId)
+      ? await pinMissionPromptVersion(pool, env, { organizationId, scope: 'mission-planning', operationId: missionId, operationVersion: requestedVersion })
+      : undefined
+    const governedPlanning = !catalog.radar && execution?.pilot === true
+    const missionPrompt = execution?.configuration
     const { planningContext, groundingMetadata, linkedConversation, sourcePolicy } = await buildMissionPlanningContext(
       pool, mission, catalog, false, missionPrompt?.source_rules ?? undefined,
     )

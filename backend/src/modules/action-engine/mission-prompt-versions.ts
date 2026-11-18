@@ -94,17 +94,18 @@ export async function pinMissionPromptVersion(pool: Queryable, env: AppEnv, inpu
   scope: MissionPromptScope
   operationId: string
   operationVersion: number
-}) {
-  if (!missionPromptPilotEnabled(env, input.organizationId)) return
+}): Promise<{ pilot: boolean; configuration?: MissionPromptConfigurationWire }> {
+  const pilotEnabled = missionPromptPilotEnabled(env, input.organizationId)
   const values = [input.organizationId, input.scope, input.operationId, input.operationVersion]
   // NULL captures the inherited configuration when a turn starts before publication.
-  await pool.query(
+  if (pilotEnabled) await pool.query(
     `INSERT INTO private.mission_prompt_execution_versions
          (organization_id, scope, operation_id, operation_version, prompt_version)
        VALUES ($1,$2,$3,$4,(SELECT version FROM private.mission_prompt_versions
                             WHERE organization_id=$1 AND scope=$2 ORDER BY version DESC LIMIT 1))
        ON CONFLICT (organization_id, scope, operation_id, operation_version) DO NOTHING`, values,
   )
+  // A disabled pilot stops recording new executions, but retries keep their original mode.
   const pinned = (await pool.query<{ prompt_version: number | null; instructions: MissionPromptVersion['instructions'] | null; source_rules: MissionPromptVersion['source_rules'] }>(
     `SELECT execution.prompt_version, publication.instructions, publication.source_rules
        FROM private.mission_prompt_execution_versions execution LEFT JOIN private.mission_prompt_versions publication
@@ -113,7 +114,9 @@ export async function pinMissionPromptVersion(pool: Queryable, env: AppEnv, inpu
       WHERE execution.organization_id=$1 AND execution.scope=$2 AND execution.operation_id=$3 AND execution.operation_version=$4`,
     values,
   )).rows[0]
+  if (!pinned && !pilotEnabled) return { pilot: false }
   if (!pinned || (pinned.prompt_version !== null && !pinned.instructions)) throw new Error('mission_prompt_version_unavailable')
-  return pinned.prompt_version === null || !pinned.instructions ? undefined
+  const configuration = pinned.prompt_version === null || !pinned.instructions ? undefined
     : missionPromptConfiguration({ version: pinned.prompt_version, instructions: pinned.instructions, source_rules: pinned.source_rules })
+  return { pilot: true, configuration }
 }

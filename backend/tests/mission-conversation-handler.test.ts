@@ -28,6 +28,7 @@ class Pool {
   status = 'collecting_context'
   messages: Array<Record<string, unknown>> = [userMessage()]
   calls: string[] = []
+  promptPin: { prompt_version: number | null; instructions: Record<string, string> | null } | undefined
   async query<T>(sql: string) {
     this.calls.push(sql)
     if (sql.includes('FROM public.company_strategies')) return {rows:[] as T[]}
@@ -52,8 +53,11 @@ class Pool {
     if (sql.includes('FROM public.organizations')) return { rows: [{ client_id: 'client-1' }] as T[] }
     if (sql.includes('harness_run_id = $3')) return { rows: [] as T[] }
     if (sql.includes('AS next_sequence')) return { rows: [{ next_sequence: 2 }] as T[] }
-    if (sql.includes('INSERT INTO private.mission_prompt_execution_versions')) return { rows: [] as T[] }
-    if (sql.includes('FROM private.mission_prompt_execution_versions')) return { rows: [{ prompt_version: null, instructions: null }] as T[] }
+    if (sql.includes('INSERT INTO private.mission_prompt_execution_versions')) {
+      this.promptPin ??= { prompt_version: null, instructions: null }
+      return { rows: [] as T[] }
+    }
+    if (sql.includes('FROM private.mission_prompt_execution_versions')) return { rows: (this.promptPin ? [this.promptPin] : []) as T[] }
     if (sql.includes('INSERT INTO private.mission_conversation_turn_context')) return { rows: [] as T[] }
     if (sql.includes('INSERT INTO public.action_mission_conversation_messages')) {
       const message = { ...userMessage(), id: 'message-2', sequence: 2, actor_type: 'agent',
@@ -142,6 +146,22 @@ describe('Mission conversation job handler', () => {
     }, { invokeTurn })
     expect(result).toEqual({ skipped: true, reason: 'mission_conversation_job_stale' })
     expect(invokeTurn).not.toHaveBeenCalled()
+  })
+
+  it('retains the recorded turn configuration and measurement after disabling the pilot', async () => {
+    const pool = new Pool()
+    const instructions = { synthesizer: 'Confirme o processo logístico.' }
+    pool.promptPin = { prompt_version: 1, instructions }
+    const invokeTurn = vi.fn(async () => response)
+    const result = await handleActionEngineProcessMissionConversation(pool as never, { MISSION_CONVERSATIONS_ENABLED: true } as AppEnv, {
+      conversationId, organizationId, requestedVersion: 2, audience: 'client_user',
+    }, { invokeTurn })
+
+    expect(result.skipped).toBe(false)
+    expect(invokeTurn).toHaveBeenCalledOnce()
+    expect(invokeTurn).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ mission_prompt: { version: 1, instructions } }),
+      'message-1', true)
+    expect(pool.calls.some(sql => sql.includes('INSERT INTO private.mission_prompt_execution_versions'))).toBe(false)
   })
 
   it('turns insufficient credits into a visible retryable blocked state', async () => {

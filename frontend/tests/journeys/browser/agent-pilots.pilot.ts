@@ -12,6 +12,13 @@ test('compares pilot prompts, imports a CRM draft and executes a scoped preparat
     const result = await request.post(`${control}/worker-tick`, { headers: controlHeaders })
     expect(result.ok(), await result.text()).toBe(true)
   }
+  const openRepresentationIntake = async () => {
+    await page.goto('/admin/strategy-engine?tab=agent-prompts')
+    await page.getByLabel('Fluxo', { exact: true }).selectOption('mission-intake')
+    await page.getByLabel('Subconta', { exact: true }).selectOption(data.missionOrg)
+    await page.getByLabel('Contrato', { exact: true }).selectOption(data.missionContract)
+    await page.getByLabel('Público', { exact: true }).selectOption('internal_operator')
+  }
 
   await page.goto('/auth/login')
   await page.locator('#email').fill('yux-admin@integration.test')
@@ -77,13 +84,10 @@ test('compares pilot prompts, imports a CRM draft and executes a scoped preparat
     await expect(page.getByPlaceholder('Escopo')).toHaveCount(0)
   })
 
-  await test.step('inspect the mission strategy and compare an intake adjustment', async () => {
-    const instruction = 'Confirme a retirada antes de propor o briefing.'
-    await page.goto('/admin/strategy-engine?tab=agent-prompts')
-    await page.getByLabel('Fluxo', { exact: true }).selectOption('mission-intake')
-    await page.getByLabel('Subconta', { exact: true }).selectOption(data.missionOrg)
-    await page.getByLabel('Contrato', { exact: true }).selectOption(data.missionContract)
-    await page.getByLabel('Público', { exact: true }).selectOption('internal_operator')
+  const instruction = 'Confirme a retirada antes de propor o briefing.'
+  const publication = 'Publicação sintética para ensaiar a reversão.'
+  await test.step('inspect the mission strategy, compare and publish the intake adjustment', async () => {
+    await openRepresentationIntake()
     await page.getByLabel('Mensagem de teste').fill(data.objective)
     await simulate(page)
     await page.getByLabel('Etapa da instrução').selectOption('synthesizer')
@@ -96,6 +100,9 @@ test('compares pilot prompts, imports a CRM draft and executes a scoped preparat
     await expect(sourceStage.getByRole('heading', { name: 'Fontes recuperadas' })).toBeVisible()
     await expect(sourceStage.getByText(data.sourceTitle, { exact: false }).first()).toBeVisible()
     expect(JSON.stringify(preview)).not.toContain('Acompanhamento comercial')
+    await page.getByLabel('Justificativa', { exact: true }).fill(publication)
+    const published = await postThroughUi(page, '/api/strategy-engine/agent-prompts/versions', 'Publicar instrução para esta subconta', 200)
+    expect(await published.json()).toMatchObject({ version: 1, instructions: { synthesizer: instruction } })
   })
 
   const revision = `Ajuste para ${data.revisedAudience}. Preserve a oferta de massas congeladas.`
@@ -125,11 +132,7 @@ test('compares pilot prompts, imports a CRM draft and executes a scoped preparat
   })
 
   await test.step('review actual runtime measurements in the admin', async () => {
-    await page.goto('/admin/strategy-engine?tab=agent-prompts')
-    await page.getByLabel('Fluxo', { exact: true }).selectOption('mission-intake')
-    await page.getByLabel('Subconta', { exact: true }).selectOption(data.missionOrg)
-    await page.getByLabel('Contrato', { exact: true }).selectOption(data.missionContract)
-    await page.getByLabel('Público', { exact: true }).selectOption('internal_operator')
+    await openRepresentationIntake()
     await page.getByLabel('Conversa da missão', { exact: true }).selectOption(conversationId)
     const turns = await readUsageThroughUi(page, 'mission-turn-history', 'Consultar turnos')
     expect(turns.turns).toHaveLength(2)
@@ -202,6 +205,31 @@ test('compares pilot prompts, imports a CRM draft and executes a scoped preparat
       id: plannedMissionId, status: 'succeeded', completed_steps: 8, funnels: ['draft'],
       emails: ['draft', 'draft', 'draft'], active_sequences: [false], sequence_versions: ['draft'], ...noEffects,
     }], providerCalls: 0 })
+  })
+
+  await test.step('restore the inherited instructions and preserve the mission outputs and history', async () => {
+    const delivered = page.url()
+    const reversal = 'Reverter o ajuste sintético após a revisão dos rascunhos.'
+    await openRepresentationIntake()
+    await page.getByLabel('Mensagem de teste').fill(data.objective)
+    const active = await simulate(page)
+    expect(JSON.stringify(active.baseline)).toContain(instruction)
+    await page.getByLabel('Versão deste fluxo a restaurar').selectOption('0')
+    await page.getByLabel('Justificativa', { exact: true }).fill(reversal)
+    const restored = await postThroughUi(page, '/api/strategy-engine/agent-prompts/versions', 'Restaurar versão', 200)
+    expect(await restored.json()).toMatchObject({ version: 2, instructions: {}, restored_from_version: 0 })
+    await expect(page.getByText(/Configuração herdada selecionada\./)).toBeVisible()
+    const inherited = await simulate(page)
+    expect(JSON.stringify(inherited.baseline)).not.toContain(instruction)
+    await page.getByText('Histórico de publicação', { exact: true }).click()
+    await expect(page.getByText(publication, { exact: true })).toBeVisible()
+    await expect(page.getByText(reversal, { exact: true })).toBeVisible()
+
+    await page.goto(delivered)
+    await expect(page.getByRole('heading', { name: 'Entregáveis da missão' })).toBeVisible()
+    await expect(page.getByText('Funil · Rascunho', { exact: true })).toHaveCount(1)
+    await expect(page.getByText('E-mail · Rascunho', { exact: true })).toHaveCount(3)
+    await expect(page.getByText('Sequência · Rascunho', { exact: true })).toHaveCount(1)
   })
 
   await test.step('plan the agency mission using only its own offer and available actions', async () => {
