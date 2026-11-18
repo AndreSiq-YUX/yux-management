@@ -113,6 +113,13 @@ await rig.sql(`WITH independent_lead AS (
 await rig.sql(`INSERT INTO public.proposal_templates (organization_id,package_id,name,scope,presales_sellable)
   SELECT $1,id,'Acompanhamento comercial','Recuperar oportunidades existentes',TRUE
   FROM public.packages WHERE key='maquina_comercial' ON CONFLICT DO NOTHING`, [presalesOrg])
+await rig.sql(`WITH unpriced AS (
+    INSERT INTO public.packages (key,name,description)
+    VALUES ('agent-pilot-unpriced','Pacote sintético','Fixture da pré-venda')
+    ON CONFLICT (key) DO UPDATE SET name=EXCLUDED.name RETURNING id
+  )
+  INSERT INTO public.proposal_templates (organization_id,package_id,name,scope,presales_sellable)
+  SELECT $1,id,'Escopo a precificar','Rascunho sem preço base',TRUE FROM unpriced ON CONFLICT DO NOTHING`, [presalesOrg])
 await rig.sql(`INSERT INTO public.proposal_price_rules (organization_id,package_id,item_key,label,minimum_value,recommended_value,maximum_value)
   SELECT $1,p.id,'base','Acompanhamento comercial',1000,1500,3000 FROM public.packages p
   WHERE p.key='maquina_comercial' AND NOT EXISTS (SELECT 1 FROM public.proposal_price_rules r

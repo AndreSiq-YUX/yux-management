@@ -15,7 +15,7 @@ import { changeMissionPromptVersion, intakePromptScope, listMissionPromptVersion
 import { strategyAdminChatRequestSchema } from './admin-chat.js'
 import { changePromptVersion, listPromptVersions, presalesPilotEnabled, presalesPilotScope, promptInstructionSchema, promptSettings,
   stageKeySchema, strategistModeSchema } from './prompt-versions.js'
-import { listPresalesCatalogTemplates, listPresalesLeads, loadCommercialCatalog, loadPresalesLead,
+import { getPresalesCatalogSetup, listPresalesLeads, loadCommercialCatalog, loadPresalesLead,
   presalesRuntimeClientId } from './presales-context.js'
 import { loadPlanningHistory } from './planning-history.js'
 import { listMissionUsageConversations, loadMissionTurnHistory } from './mission-turn-history.js'
@@ -243,14 +243,14 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
       return { contracts: scope.contracts, versions, pilotEnabled, pilotContractIds, catalog: [] }
     }
     const activation = presalesPilotScope(app.config, organizationId)
-    const [scope, versions, catalog] = await Promise.all([
+    const [scope, versions, setup] = await Promise.all([
       loadAgentPromptScope(app.pg, organizationId),
       listPromptVersions(app.pg, organizationId),
-      listPresalesCatalogTemplates(app.pg, organizationId, activation.organizationEnabled || activation.contractIds.length > 0),
+      getPresalesCatalogSetup(app.pg, organizationId, activation.organizationEnabled || activation.contractIds.length > 0),
     ])
     reply.header('Cache-Control', 'no-store')
     const pilotContractIds = scope.contracts.filter(({ id }) => activation.organizationEnabled || activation.contractIds.includes(id)).map(({ id }) => id)
-    return { contracts: scope.contracts, versions, pilotEnabled: activation.organizationEnabled, pilotContractIds, catalog }
+    return { contracts: scope.contracts, versions, pilotEnabled: activation.organizationEnabled, pilotContractIds, ...setup }
   })
 
   app.get('/agent-prompts/presales-scenario', async (request, reply) => {
@@ -259,12 +259,12 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
     if (!parsed.success) throw new ApiError(400, 'invalid_presales_preview_scope')
     const { organizationId, contractId } = parsed.data
     await loadAgentPromptScope(app.pg, organizationId, contractId)
-    const [leads, catalog] = await Promise.all([
+    const [leads, setup] = await Promise.all([
       listPresalesLeads(app.pg, organizationId, contractId),
-      listPresalesCatalogTemplates(app.pg, organizationId, true),
+      getPresalesCatalogSetup(app.pg, organizationId, true),
     ])
     reply.header('Cache-Control', 'no-store')
-    return { leads, catalog }
+    return { leads, ...setup }
   })
 
   app.get('/agent-prompts/opportunities', async (request, reply) => {
@@ -302,8 +302,8 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
            AND p.id = t.package_id AND p.key <> 'yux_internal_growth' AND t.is_active
            AND ($5::uuid IS NULL OR EXISTS (SELECT 1 FROM public.contracts c
              WHERE c.id = $5 AND c.client_id = o.client_id AND c.status = 'active'))
-           AND EXISTS (SELECT 1 FROM public.proposal_price_rules r
-             WHERE r.organization_id = t.organization_id AND r.package_id = t.package_id AND r.item_key = 'base')`,
+           AND ($3::boolean = FALSE OR EXISTS (SELECT 1 FROM public.proposal_price_rules r
+             WHERE r.organization_id = t.organization_id AND r.package_id = t.package_id AND r.item_key = 'base'))`,
         [organizationId, templateId, approved, Boolean(contractId) || activation.organizationEnabled || activation.contractIds.length > 0,
           contractId ?? null],
       )

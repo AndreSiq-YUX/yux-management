@@ -66,18 +66,24 @@ export async function loadCommercialCatalog(pool: Queryable, organizationId: str
   return { offers: rows, version: createHash('sha256').update(JSON.stringify(rows)).digest('hex') }
 }
 
-export async function listPresalesCatalogTemplates(pool: Queryable, organizationId: string, clientSetupAllowed: boolean) {
-  const { rows } = await pool.query<{ id: string; label: string; approved: boolean }>(
-    `SELECT t.id, p.name || ' · ' || t.name AS label, t.presales_sellable AS approved
+export async function getPresalesCatalogSetup(pool: Queryable, organizationId: string, clientSetupAllowed: boolean) {
+  const { rows } = await pool.query<{ id: string; label: string; approved: boolean; has_base_price: boolean }>(
+    `SELECT t.id, p.name || ' · ' || t.name AS label, t.presales_sellable AS approved,
+            EXISTS (SELECT 1 FROM public.proposal_price_rules r
+              WHERE r.organization_id = t.organization_id AND r.package_id = t.package_id AND r.item_key = 'base') AS has_base_price
        FROM public.proposal_templates t JOIN public.organizations o ON o.id = t.organization_id
        JOIN public.packages p ON p.id = t.package_id
       WHERE t.organization_id = $1 AND t.is_active AND (o.kind = 'yux' OR $2::boolean) AND p.key <> 'yux_internal_growth'
-        AND EXISTS (SELECT 1 FROM public.proposal_price_rules r
-          WHERE r.organization_id = t.organization_id AND r.package_id = t.package_id AND r.item_key = 'base')
       ORDER BY label, t.id`,
     [organizationId, clientSetupAllowed],
   )
-  return rows
+  const catalog: Array<{ id: string; label: string; approved: boolean }> = []
+  const unpricedTemplates: typeof catalog = []
+  for (const { id, label, approved, has_base_price } of rows) {
+    const group = has_base_price ? catalog : unpricedTemplates
+    group.push({ id, label, approved })
+  }
+  return { catalog, unpricedTemplates }
 }
 
 export async function listPresalesLeads(pool: Queryable, organizationId: string, contractId?: string) {

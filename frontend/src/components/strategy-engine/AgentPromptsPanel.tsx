@@ -10,7 +10,8 @@ type Consumer = { key: string; name: string; owner: string; audience: string; st
 type Contract = { id: string; name: string }
 type Mission = { id: string; title: string }
 type CatalogTemplate = { id: string; label: string; approved: boolean }
-type PresalesScenario = { leads: Array<{ id: string; name: string; company: string | null }>; catalog: CatalogTemplate[] }
+type CatalogSetup = { catalog: CatalogTemplate[]; unpricedTemplates?: CatalogTemplate[] }
+type PresalesScenario = CatalogSetup & { leads: Array<{ id: string; name: string; company: string | null }> }
 const sourceLabels = {
   methodology: 'Metodologia publicada',
   company_strategy: 'Estratégia publicada da subconta',
@@ -67,12 +68,11 @@ type Version = {
   instructions?: Record<string, string>
   source_rules?: SourceRules | null
 }
-type AccountScope = {
+type AccountScope = CatalogSetup & {
   contracts: Contract[]
   versions: Version[]
   pilotEnabled: boolean
   pilotContractIds?: string[]
-  catalog: CatalogTemplate[]
 }
 
 const endpoint = '/strategy-engine/agent-prompts'
@@ -224,9 +224,11 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
       setScope(current => current && ({
         ...current,
         catalog: current.catalog.map(updateApproval),
+        unpricedTemplates: current.unpricedTemplates?.map(updateApproval),
       }))
       setPresalesScenario(current => current?.scope === missionScope ? ({
         ...current, catalog: current.catalog.map(updateApproval),
+        unpricedTemplates: current.unpricedTemplates?.map(updateApproval),
       }) : current)
       setPreview(null)
       setFeedback(approved ? 'Oferta aprovada para o estrategista.' : 'Oferta retirada do catálogo do estrategista.')
@@ -261,7 +263,9 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
     ? scope.pilotContractIds.includes(contractId) : scope.pilotEnabled)
   const scopedMissions = availableMissions?.scope === missionScope ? availableMissions.items : []
   const scopedPresales = presalesScenario?.scope === missionScope ? presalesScenario : undefined
-  const catalogTemplates = contractId ? scopedPresales?.catalog : scope?.catalog
+  const catalogSetup = contractId ? scopedPresales : scope
+  const catalogTemplates = catalogSetup?.catalog
+  const unpricedTemplates = catalogSetup?.unpricedTemplates ?? []
   const hasPreviewInput = inspectingSupervisor ? scopedMissions.some(mission => mission.id === missionId) : Boolean(message.trim())
   const appliedCandidate = preview?.candidate?.requests.length && preview.publishedVersion !== undefined && ((!candidateStage && isStrategist) || preview.candidate.requests.some(
     stage => stage.stage === candidateStage && stage.stageInstructionApplied,
@@ -539,13 +543,36 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
           )}
           {isStrategist && <div className="space-y-2 border-t pt-4">
             <h3 className="font-semibold">Catálogo comercial do CRM</h3>
-            {catalogTemplates && !catalogTemplates.some(item => item.approved) && <p className="text-amber-800">Esta subconta não tem oferta aprovada para o estrategista.</p>}
+            {catalogTemplates && !catalogTemplates.some(item => item.approved) && (
+              <p className="text-amber-800">
+                {contractId && catalogSetup?.unpricedTemplates && !catalogTemplates.length && !unpricedTemplates.length
+                  ? 'Nenhum modelo ativo de proposta comercial nesta subconta.'
+                  : 'Esta subconta não tem oferta aprovada e com preço base para o estrategista.'}
+              </p>
+            )}
             {catalogTemplates?.map(item => (
               <label key={item.id} className="flex items-center gap-2">
                 <input type="checkbox" checked={item.approved} disabled={saving || running} onChange={event => changeCatalog(item.id, event.target.checked)} />
                 {item.label}
               </label>
             ))}
+            {unpricedTemplates.length > 0 && (
+              <div className="space-y-2">
+                <p className="font-medium text-amber-800">Modelos sem regra de preço base</p>
+                <ul className="space-y-2">
+                  {unpricedTemplates.map(item => (
+                    <li key={item.id} className="flex flex-wrap items-center justify-between gap-2">
+                      <span>{item.label}</span>
+                      {item.approved && <button type="button" disabled={saving || running}
+                        onClick={() => changeCatalog(item.id, false)}
+                        className="rounded border px-2 py-1 font-medium disabled:opacity-50">
+                        Retirar aprovação
+                      </button>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>}
         </section>
       )}

@@ -229,10 +229,6 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
         [lead, organizationA, crm])
       await admin.query("INSERT INTO public.proposal_templates(id,organization_id,package_id,name,scope) VALUES($1,$2,$3,'Modelo de ensaio','Escopo do ensaio')",
         [template, organizationA, offer])
-      await admin.query(`INSERT INTO public.proposal_price_rules
-        (organization_id,package_id,item_key,label,minimum_value,recommended_value,maximum_value)
-        VALUES ($1,$2,'base','Preço sintético',100,200,300)`, [organizationA, offer])
-
       const params = `organizationId=${organizationA}&contractId=${first}`
       const setup = `${root}/presales-scenario?${params}`
       const approve = { organizationId: organizationA, contractId: first, templateId: template, approved: true }
@@ -254,6 +250,15 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
         expect((await call('PUT', root + '/catalog', approve, cookie)).statusCode).toBe(403)
         expect((await call('POST', root + '/preview', input, cookie)).statusCode).toBe(403)
       }
+      const missingPrice = await call('GET', setup)
+      expect(missingPrice.statusCode, missingPrice.body).toBe(200)
+      expect(missingPrice.json().catalog).not.toContainEqual(expect.objectContaining({ id: template }))
+      expect(missingPrice.json().unpricedTemplates).toContainEqual(expect.objectContaining({ id: template, approved: false }))
+      expect((await call('PUT', root + '/catalog', approve)).statusCode).toBe(409)
+      await admin.query(`INSERT INTO public.proposal_price_rules
+        (organization_id,package_id,item_key,label,minimum_value,recommended_value,maximum_value)
+        VALUES ($1,$2,'base','Preço sintético',100,200,300)`, [organizationA, offer])
+
       const prepared = await call('GET', setup)
       expect(prepared.statusCode, prepared.body).toBe(200)
       expect(prepared.headers['cache-control']).toBe('no-store')
@@ -261,6 +266,7 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
         leads: expect.arrayContaining([expect.objectContaining({ id: lead })]),
         catalog: expect.arrayContaining([expect.objectContaining({ id: template, approved: false })]),
       })
+      expect(prepared.json().unpricedTemplates).not.toContainEqual(expect.objectContaining({ id: template }))
       const differentContract = await call('GET', setup.replace(first, second))
       expect(differentContract.statusCode).toBe(200)
       expect(differentContract.json().leads).not.toContainEqual(expect.objectContaining({ id: lead }))
@@ -275,6 +281,12 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
       expect(preview.statusCode, preview.body).toBe(200)
       expect(runtime).toHaveBeenCalledTimes(1)
       expect(job.mock.calls).toHaveLength(queued)
+
+      await admin.query('DELETE FROM public.proposal_price_rules WHERE organization_id=$1 AND package_id=$2', [organizationA, offer])
+      const withdrawnPrice = await call('GET', setup)
+      expect(withdrawnPrice.json().unpricedTemplates).toContainEqual(expect.objectContaining({ id: template, approved: true }))
+      expect((await call('PUT', root + '/catalog', { ...approve, approved: false })).statusCode).toBe(200)
+      expect((await call('GET', setup)).json().unpricedTemplates).toContainEqual(expect.objectContaining({ id: template, approved: false }))
     } finally {
       await admin.query('DELETE FROM public.leads WHERE id=$1', [lead])
       await admin.query('DELETE FROM public.crm_instances WHERE id=$1', [crm])
