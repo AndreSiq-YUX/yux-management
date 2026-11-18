@@ -44,6 +44,21 @@ type CommercialOffer = {
   items: Array<{ key: string; label: string; minimum: string; recommended: string; maximum: string }>
 }
 
+export async function lockCommercialOffer(client: pg.PoolClient, organizationId: string, packageId: string) {
+  await client.query(
+    `SELECT price.id
+     FROM public.proposal_templates template
+     JOIN public.packages pkg ON pkg.id = template.package_id AND pkg.key <> 'yux_internal_growth'
+     JOIN public.proposal_price_rules price
+       ON price.organization_id = template.organization_id AND price.package_id = template.package_id
+     WHERE template.organization_id = $1 AND template.package_id = $2
+       AND template.is_active AND template.presales_sellable
+     ORDER BY price.id
+     FOR SHARE OF template, pkg, price`,
+    [organizationId, packageId],
+  )
+}
+
 export async function loadCommercialCatalog(pool: Queryable, organizationId: string) {
   const { rows } = await pool.query<CommercialOffer>(
     `SELECT pkg.id AS "packageId", pkg.name, pkg.description, template.id AS "templateId",

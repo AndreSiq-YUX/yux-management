@@ -1,7 +1,8 @@
 import type pg from 'pg'
 import { withDatabaseTransaction } from '../../db/client.js'
 import { ApiError } from '../../http/errors.js'
-import { loadCommercialCatalog, loadPresalesLead, recommendationSchema, validateRecommendation } from '../strategy-engine/presales-context.js'
+import { loadCommercialCatalog, loadPresalesLead, lockCommercialOffer, recommendationSchema,
+  validateRecommendation } from '../strategy-engine/presales-context.js'
 
 type Queryable = Pick<pg.Pool, 'query'>
 type Scope = { organizationId: string; leadId: string }
@@ -55,7 +56,8 @@ export async function importStrategyRecommendation(pool: pg.Pool, input: Scope &
     if (message.contract_id) {
       const contract = await client.query(
         `SELECT 1 FROM public.contracts c JOIN public.organizations o ON o.client_id = c.client_id
-         WHERE o.id = $1 AND c.id = $2 AND c.status = 'active'`,
+         WHERE o.id = $1 AND c.id = $2 AND c.status = 'active'
+         FOR SHARE OF c, o`,
         [input.organizationId, message.contract_id],
       )
       if (!contract.rows.length) throw new ApiError(409, 'strategy_recommendation_contract_inactive')
@@ -63,6 +65,10 @@ export async function importStrategyRecommendation(pool: pg.Pool, input: Scope &
     const prospect = await loadPresalesLead(
       client, input.organizationId, input.leadId, message.contract_id ?? undefined, { lock: true },
     )
+    const saved = recommendationSchema.safeParse(message.scope.recommendation)
+    if (saved.success && saved.data.decision === 'recommend') {
+      await lockCommercialOffer(client, input.organizationId, saved.data.packageId)
+    }
     const catalog = await loadCommercialCatalog(client, input.organizationId)
     if (catalog.version !== input.expectedCatalogVersion || message.scope.catalogVersion !== catalog.version) {
       throw new ApiError(409, 'strategy_recommendation_catalog_changed')

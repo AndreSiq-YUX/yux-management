@@ -491,8 +491,44 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     expect(draftOne.json().id).toBe(draftTwo.json().id)
     const { rows } = await admin.query('SELECT final_value,status FROM public.proposals WHERE organization_id=$1 AND lead_id=$2', [organizationId, leadId])
     expect(rows).toEqual([{ final_value: '1500.00', status: 'draft' }])
-    await admin.query('UPDATE public.proposal_price_rules SET recommended_value=1750 WHERE id=$1', [priceId])
-    expect((await importRequest(prior)).statusCode).toBe(409)
+    async function changeCatalogDuringApproval(statement: string, id: string) {
+      const editor = await admin.connect()
+      let approval: ReturnType<typeof importRequest> | undefined
+      let editing = false
+      try {
+        await editor.query('BEGIN')
+        editing = true
+        const { rows: [{ pid }] } = await editor.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')
+        await editor.query(statement, [id])
+        let completed = false
+        approval = importRequest(prior).finally(() => { completed = true })
+
+        let waiting = false
+        const deadline = Date.now() + 5_000
+        while (!completed && !waiting && Date.now() < deadline) {
+          const { rows } = await admin.query(
+            `SELECT 1 FROM pg_stat_activity WHERE datname = current_database()
+             AND $1::int = ANY(pg_blocking_pids(pid))`, [pid],
+          )
+          waiting = rows.length > 0
+          if (!waiting && !completed) await new Promise(resolve => setTimeout(resolve, 25))
+        }
+        await editor.query('COMMIT')
+        editing = false
+        const rejected = await approval
+        expect(rejected.statusCode, rejected.body).toBe(409)
+        expect(rejected.json().error).toBe('strategy_recommendation_catalog_changed')
+        expect(waiting).toBe(true)
+      } finally {
+        if (editing) await editor.query('ROLLBACK')
+        editor.release()
+        await approval?.catch(() => undefined)
+      }
+    }
+
+    await changeCatalogDuringApproval('UPDATE public.proposal_templates SET presales_sellable=FALSE WHERE id=$1', templateId)
+    await admin.query('UPDATE public.proposal_templates SET presales_sellable=TRUE WHERE id=$1', [templateId])
+    await changeCatalogDuringApproval('UPDATE public.proposal_price_rules SET recommended_value=1750 WHERE id=$1', priceId)
 
     const deferred = await run(insufficientEvidence, { sessionId: first.session.id })
     const savedDeferral = await admin.query(
