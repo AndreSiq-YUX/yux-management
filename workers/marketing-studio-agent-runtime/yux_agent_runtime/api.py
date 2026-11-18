@@ -592,6 +592,7 @@ def create_app(
         meter = StrategyUsage()
         credits = None
         settle = None
+        operation_id = str(request.strategy_operation_id) if request.strategy_operation_id else None
         if request.client_id and request.contract_id:
             if request.strategy_operation_id is None:
                 raise HTTPException(status_code=422, detail="strategy_credit_operation_required")
@@ -600,12 +601,12 @@ def create_app(
                 action="agent_runtime_workflow", audience="internal_operator",
             )
         with measured_workflow(meter, settle):
-            result = selected_engine.execute(**execution)
+            result = selected_engine.execute(**execution, strategy_operation_id=operation_id)
         if settle is not None:
             completed_specialists = sum(
                 output["verification"]["status"] != "failed" for output in result["subagents"]
             )
-            credits = settle(CREDITS_BASE_PER_RUN + completed_specialists)
+            credits = settle(CREDITS_BASE_PER_RUN + completed_specialists, agent_run_id=result["run"]["id"])
         usage = {
             **result.get("usage", {}),
             "providerAttempts": meter.attempts,

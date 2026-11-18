@@ -306,6 +306,7 @@ class StrategyWorkflowEngine:
         presales_stage_instructions: dict[str, str] | None = None,
         presales_prompt_version: int | None = None,
         presales_source_rules: dict[str, str] | None = None,
+        strategy_operation_id: str | None = None,
         mission_prompt: dict[str, Any] | None = None,
         measure_mission_usage: bool = False,
     ) -> dict[str, Any]:
@@ -325,6 +326,7 @@ class StrategyWorkflowEngine:
             organization_prompt_version = mission_prompt["version"]
             source_rules = mission_prompt.get("source_rules")
         pilot_trace = presales_candidate or mission_trace
+        track_presales_usage = presales_candidate and profile_key == "growth_strategist" and strategy_operation_id is not None
         trace_query = {"message_hash": stable_hash(message)} if pilot_trace else {"message": message}
         run_input = {"mode": mode, **trace_query}
         if pilot_trace:
@@ -333,6 +335,8 @@ class StrategyWorkflowEngine:
                 input_context_hash=stable_hash(retrieval_context or {}),
                 workflow_spec_hash=stable_hash(workflow_spec),
             )
+        if track_presales_usage:
+            run_input["strategy_operation_id"] = strategy_operation_id
         run = self.trace.start_run(
             {
                 "organization_id": organization_id,
@@ -351,8 +355,9 @@ class StrategyWorkflowEngine:
         usage_scope = ExitStack()
         try:
             retrieval_audience = resolve_retrieval_audience(source, (retrieval_context or {}).get("audience"))
-            if mission_trace:
-                recorder = self.trace.mission_usage_reporter(run_id, profile_key, retrieval_audience)
+            if mission_trace or track_presales_usage:
+                measurement = "mission_turn_provider_attempts" if mission_trace else "presales_provider_attempts"
+                recorder = self.trace.provider_usage_reporter(run_id, profile_key, retrieval_audience, measurement)
                 usage_scope.enter_context(measure_without_credit_hold(recorder))
             with self.trace.step(run_id, "classify", "classify", trace_query) as step:
                 classification = classify_intent_and_stage(message, source)

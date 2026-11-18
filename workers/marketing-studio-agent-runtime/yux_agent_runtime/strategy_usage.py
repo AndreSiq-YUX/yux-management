@@ -116,11 +116,19 @@ def strategy_usage_stage(stage: str):
 
 @contextmanager
 def measure_without_credit_hold(record: Callable[[list[dict[str, Any]]], None]):
-    if _meter.get() is not None:
-        yield  # The caller already records attempts against its reservation.
-    else:
+    active = _meter.get()
+    if active is None:
         with StrategyUsage(record=record).activate():
             yield
+    elif active.record is None:
+        # Preserve the caller's meter (also used in its success response).
+        active.record = record
+        try:
+            yield
+        finally:
+            active.record = None
+    else:
+        yield  # The caller already records attempts against its reservation.
 
 
 def strategy_metered_transport(transport, url, headers, payload, method, *, provider, kind):

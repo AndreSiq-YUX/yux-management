@@ -180,7 +180,7 @@ test('compares pilot prompts, imports a CRM draft and executes a scoped preparat
   const verified = await evidence.json()
   expect(verified).toEqual({
     drafts: [{ status: 'draft', final_value: '1500.00', traced: true }],
-    presalesTurns: [data.budget, recommendation], missionTurns: [data.objective, revision],
+    presalesTurns: [data.budget, recommendation], presalesReceipts: 2, missionTurns: [data.objective, revision],
     plans: [{ mission_id: plannedMissionId, status: 'pending_approval', steps: 8, runs: 0 }], providerCalls: 0,
   })
 

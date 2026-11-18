@@ -76,7 +76,7 @@ const rig = await createIntegrationRig({
 const leadId = randomUUID()
 const otherPresalesContract = randomUUID()
 await rig.sql(`INSERT INTO public.contracts(id,client_id,package_id,name,status,starts_at)
-  SELECT $2,client_id,package_id,'Contrato fora do piloto','active',starts_at FROM public.contracts WHERE id=$1`,
+  SELECT $2,client_id,package_id,'Contrato fora do piloto','active',starts_at - interval '1 day' FROM public.contracts WHERE id=$1`,
   [presalesContract, otherPresalesContract])
 const names = { presales: 'YUX Captação · teste local', mission: 'Villeman e Massas · teste local', lead: `Prospect de acompanhamento ${leadId.slice(0, 8)}` }
 const budget = 'Orçamento confirmado de R$ 2.000 para recuperar oportunidades já geradas.'
@@ -189,11 +189,19 @@ const listener = createServer(async (req, res) => {
     if (req.method === 'GET' && req.url === '/evidence') {
       const drafts = await rig.sql(`SELECT status,final_value::text,strategy_recommendation_message_id IS NOT NULL AS traced
         FROM public.proposals WHERE organization_id=$1 AND lead_id=$2`, [presalesOrg, leadId])
+      const { rows: [receipts] } = await rig.sql(`SELECT COUNT(*)::int AS count
+        FROM public.agent_execution_runs run JOIN public.agent_context_snapshots snapshot ON snapshot.run_id=run.id
+        JOIN public.yux_strategy_chat_messages message ON message.id::text=run.input_payload->>'strategy_operation_id'
+        JOIN public.yux_strategy_chat_sessions session ON session.id=message.session_id
+        WHERE run.organization_id=$1 AND run.contract_id=$2 AND session.organization_id=$1 AND session.presales_lead_id=$3
+          AND snapshot.safe_context->>'measurement'='presales_provider_attempts'
+          AND jsonb_array_length(snapshot.safe_context->'attempts') > 0`, [presalesOrg, presalesContract, leadId])
       const plans = await rig.sql(`SELECT p.mission_id, p.status,
         (SELECT COUNT(*)::int FROM public.action_plan_steps WHERE plan_id=p.id) AS steps,
         (SELECT COUNT(*)::int FROM public.action_runs WHERE plan_id=p.id AND status IN ('queued','running','succeeded')) AS runs
         FROM public.action_plans p WHERE p.organization_id=$1 AND p.mission_id=ANY($2::uuid[])`, [missionOrg, plannedMissions])
-      return respond(200, { drafts: drafts.rows, presalesTurns, missionTurns, plans: plans.rows, providerCalls: (await rig.providerCalls()).length })
+      return respond(200, { drafts: drafts.rows, presalesTurns, presalesReceipts: receipts.count,
+        missionTurns, plans: plans.rows, providerCalls: (await rig.providerCalls()).length })
     }
     if (req.method === 'GET' && req.url === '/execution') {
       const { rows } = await rig.sql(`SELECT mission.id, mission.status,

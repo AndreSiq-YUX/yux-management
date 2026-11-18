@@ -117,6 +117,10 @@ def test_http_holds_before_transport_settles_completed_stages_and_denies_replay(
     attempts = first.json()["usage"]["providerAttempts"]
     assert [attempt["stage"] for attempt in attempts] == ["finance", "synthesizer"]
     assert all(attempt["tokens"]["reasoning"] == 2 for attempt in attempts)
+    linked = db.execute("SELECT agent_run_id FROM private.strategy_workflow_credit_holds WHERE operation_id=%s", [key]).fetchone()
+    assert str(linked["agent_run_id"]) == first.json()["run"]["id"]
+    assert not db.execute("""SELECT 1 FROM public.agent_context_snapshots
+        WHERE run_id=%s AND safe_context->>'measurement'='presales_provider_attempts'""", [linked["agent_run_id"]]).fetchone()
     assert client.post("/workflows/execute", json=body, headers=auth).status_code == 409
     assert client.post("/workflows/execute", json={**body, "message": "Outra"}, headers=auth).status_code == 409
     assert client.post("/workflows/execute", json={**body, "organization_id": OTHER_ORG}, headers=auth).status_code == 403
@@ -162,6 +166,76 @@ def test_failed_requests_release_known_unused_credits_and_retain_unconfirmed_att
     assert client.post("/workflows/execute", json=payload, headers=auth).status_code == 409
     assert calls == ([True] if attempted else [])
     assert wallet(db, contract) == {"current_balance": 9 if attempted else 10, "monthly_used": 0}
+    assert ledger(db, contract) == []
+
+
+@pytest.mark.parametrize("provider_succeeds", [False, True])
+def test_unbilled_presales_keeps_attempts_when_the_provider_succeeds_or_fails(billing, monkeypatch, provider_succeeds):
+    from yux_agent_runtime.api import create_app
+
+    db, store, contract = billing
+    operation_id = str(uuid4())
+    engine, _ = test_live_workflows.LiveWorkflowTest().make_engine([])
+    engine.store, engine.trace = store, TraceRecorder(store)
+
+    def receipts():
+        return db.execute(
+            """SELECT run.id,run.status,run.input_payload,snapshot.safe_context
+               FROM public.agent_execution_runs run
+               JOIN public.agent_context_snapshots snapshot ON snapshot.run_id=run.id
+               WHERE run.organization_id=%s AND run.contract_id=%s AND run.client_id IS NULL
+                 AND run.input_payload->>'strategy_operation_id'=%s
+                 AND snapshot.safe_context->>'measurement'='presales_provider_attempts'""",
+            [ORG, contract, operation_id],
+        ).fetchall()
+
+    def transport(url, _headers, payload, _method):
+        current, = receipts()
+        attempted = current["safe_context"]["attempts"][-1]
+        assert attempted["model"] == payload["model"]
+        assert attempted["status"] == "started" and attempted["costUsd"] is None
+        if url.endswith("/embeddings"):
+            return {"data": [{"embedding": [0.5]}], "usage": {"prompt_tokens": 4, "total_tokens": 4, "cost": 0.001}}
+        if not provider_succeeds:
+            raise ProviderRequestError("synthetic_provider_timeout")
+        return {"model": "synthetic/presales", "choices": [{"message": {"content": json.dumps({"answer": "Confirme o volume."})}}],
+                "usage": {"cost": 0.012, "prompt_tokens": 10, "completion_tokens": 6, "total_tokens": 16,
+                          "completion_tokens_details": {"reasoning_tokens": 2}}}
+
+    engine.harness.llm_client.transport = transport
+
+    def retrieve(**scope):
+        engine.harness.llm_client.embed_texts([scope["query"]], input_type="search_query", dimensions=1)
+        return {}
+
+    engine.retrieval_service = SimpleNamespace(retrieve_strategy_context=retrieve)
+    monkeypatch.setattr("yux_agent_runtime.api.build_strategy_workflow_engine", lambda *_args, **_kwargs: engine)
+    monkeypatch.setattr("yux_agent_runtime.api.PostgresAgentRuntimeStore", lambda: store)
+    client = TestClient(create_app(), raise_server_exceptions=False)
+    message = "Mensagem sintética privada da oportunidade."
+    request = {"organization_id": ORG, "contract_id": contract, "strategy_operation_id": operation_id,
+               "presales_candidate": True, "message": message,
+               "workflow_spec": {"workflow_key": "proposal_consultative", "subagent_specs": []}}
+    response = client.post("/workflows/execute", json=request, headers={"Authorization": "Bearer test-runtime-token"})
+    assert response.status_code == (200 if provider_succeeds else 500), response.text
+    recorded, = receipts()
+    assert message not in json.dumps(recorded["input_payload"])
+    assert message not in json.dumps(recorded["safe_context"])
+    assert recorded["safe_context"]["audience"] == "internal_operator"
+    retrieval, generation = recorded["safe_context"]["attempts"]
+    assert retrieval["stage"] == "retrieval" and retrieval["costUsd"] == pytest.approx(0.001)
+    assert generation["stage"] == "synthesizer"
+    if provider_succeeds:
+        result = response.json()
+        assert result["credits"] is None and result["run"]["id"] == str(recorded["id"])
+        assert result["usage"]["providerAttempts"] == recorded["safe_context"]["attempts"]
+        assert result["usage"]["reportedProviderCostUsd"] == pytest.approx(0.013)
+        assert generation["model"] == "synthetic/presales" and generation["tokens"]["reasoning"] == 2
+    else:
+        assert recorded["status"] == "failed"
+        assert generation["status"] == "started" and generation["costUsd"] is None
+    assert not db.execute("SELECT 1 FROM private.strategy_workflow_credit_holds WHERE operation_id=%s", [operation_id]).fetchone()
+    assert wallet(db, contract) == {"current_balance": 10, "monthly_used": 0}
     assert ledger(db, contract) == []
 
 
