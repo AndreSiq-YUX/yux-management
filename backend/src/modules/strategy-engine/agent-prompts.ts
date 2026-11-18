@@ -84,6 +84,7 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
     const query = tenantSchema.pick({ organizationId: true }).safeParse(request.query)
     if (!query.success) throw new ApiError(400, 'invalid_agent_prompt_scope')
     const { organizationId } = query.data
+    const pilotEnabled = presalesPilotEnabled(app.config, organizationId)
     const [scope, versions, catalog] = await Promise.all([
       loadAgentPromptScope(app.pg, organizationId),
       listPromptVersions(app.pg, organizationId),
@@ -91,15 +92,15 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
         `SELECT t.id, p.name || ' · ' || t.name AS label, t.presales_sellable AS approved
            FROM public.proposal_templates t JOIN public.organizations o ON o.id = t.organization_id
            JOIN public.packages p ON p.id = t.package_id
-          WHERE t.organization_id = $1 AND t.is_active AND o.kind = 'yux' AND p.key <> 'yux_internal_growth'
+          WHERE t.organization_id = $1 AND t.is_active AND (o.kind = 'yux' OR $2::boolean) AND p.key <> 'yux_internal_growth'
             AND EXISTS (SELECT 1 FROM public.proposal_price_rules r
               WHERE r.organization_id = t.organization_id AND r.package_id = t.package_id AND r.item_key = 'base')
           ORDER BY label, t.id`,
-        [organizationId],
+        [organizationId, pilotEnabled],
       ),
     ])
     reply.header('Cache-Control', 'no-store')
-    return { contracts: scope.contracts, versions, pilotEnabled: presalesPilotEnabled(app.config, organizationId), catalog: catalog.rows }
+    return { contracts: scope.contracts, versions, pilotEnabled, catalog: catalog.rows }
   })
 
   app.get('/agent-prompts/opportunities', async (request, reply) => {
@@ -128,11 +129,11 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
       const result = await app.pg.query(
         `UPDATE public.proposal_templates t SET presales_sellable = $3
          FROM public.packages p, public.organizations o
-         WHERE t.organization_id = $1 AND t.id = $2 AND o.id = t.organization_id AND o.kind = 'yux'
+         WHERE t.organization_id = $1 AND t.id = $2 AND o.id = t.organization_id AND (o.kind = 'yux' OR $4::boolean)
            AND p.id = t.package_id AND p.key <> 'yux_internal_growth' AND t.is_active
            AND EXISTS (SELECT 1 FROM public.proposal_price_rules r
              WHERE r.organization_id = t.organization_id AND r.package_id = t.package_id AND r.item_key = 'base')`,
-        [organizationId, templateId, approved],
+        [organizationId, templateId, approved, presalesPilotEnabled(app.config, organizationId)],
       )
       if (result.rowCount !== 1) throw new ApiError(409, 'presales_template_ineligible')
       return { approved }

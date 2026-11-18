@@ -43,7 +43,6 @@ export async function loadCommercialCatalog(pool: Queryable, organizationId: str
          'minimum', price.minimum_value::text, 'recommended', price.recommended_value::text,
          'maximum', price.maximum_value::text) ORDER BY price.item_key) AS items
      FROM public.proposal_templates template
-     JOIN public.organizations org ON org.id = template.organization_id AND org.kind = 'yux'
      JOIN public.packages pkg ON pkg.id = template.package_id AND pkg.key <> 'yux_internal_growth'
      JOIN public.proposal_price_rules price
        ON price.organization_id = template.organization_id AND price.package_id = template.package_id

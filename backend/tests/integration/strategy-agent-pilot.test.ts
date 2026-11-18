@@ -57,7 +57,7 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     adminCookie = await login(fixtureUsers.yux_admin.email)
     clientCookie = await login(fixtureUsers.client_admin_A.email)
     packageId = (await admin.query("SELECT id FROM public.packages WHERE key = 'maquina_comercial'")).rows[0].id
-    await admin.query("INSERT INTO public.organizations(id,name,slug,kind) VALUES ($1,'Agência de teste',$2,'yux')",
+    await admin.query("INSERT INTO public.organizations(id,name,slug,kind) VALUES ($1,'Subconta de captação de teste',$2,'client')",
       [organizationId, 'agent-qa-' + organizationId])
     await admin.query(
       "INSERT INTO public.leads(id,organization_id,name,email,stage,status) VALUES ($1,$2,'Prospect sintético','lead@simulated.test','NEW','open')",
