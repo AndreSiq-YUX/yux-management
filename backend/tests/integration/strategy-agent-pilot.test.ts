@@ -151,6 +151,7 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
 
   it('promotes by account, retains earlier budget and imports only current prices once', async () => {
     const base = '/api/strategy-engine/agent-prompts'
+    const insufficientEvidence = 'O orçamento mudou e ainda não sabemos se o gargalo é aquisição ou acompanhamento.'
     const received: Array<Record<string, any>> = []
     vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
       expect(url).toMatch(/^http:\/\/127\.0\.0\.1:4109\//)
@@ -162,7 +163,9 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
       return Response.json({ credits: body.client_id ? { reserved: 3, charged: 2, released: 1 } : null,
         usage: { reportedProviderCostUsd: null }, synthesis: {
         answer: 'Escopo de teste.',
-        recommendation: { decision: 'recommend', rationale: 'Há demanda existente e falta acompanhamento.', packageId, itemKeys: ['base'] },
+        recommendation: body.message === insufficientEvidence
+          ? { decision: 'defer', rationale: 'Aguardar diagnóstico.', missingInformation: ['Confirmar o orçamento e a origem do gargalo.'] }
+          : { decision: 'recommend', rationale: 'Há demanda existente e falta acompanhamento.', packageId, itemKeys: ['base'] },
       } })
     }))
     expect((await call('GET', base, undefined, clientCookie)).statusCode).toBe(403)
@@ -228,6 +231,25 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     expect(rows).toEqual([{ final_value: '1500.00', status: 'draft' }])
     await admin.query('UPDATE public.proposal_price_rules SET recommended_value=1750 WHERE id=$1', [priceId])
     expect((await importRequest(prior)).statusCode).toBe(409)
+
+    const deferred = await run(insufficientEvidence, first.session.id)
+    const savedDeferral = await admin.query(
+      'SELECT safe_context FROM public.yux_strategy_chat_messages WHERE id=$1', [deferred.assistantMessage.id],
+    )
+    expect(savedDeferral.rows[0].safe_context).toMatchObject({
+      recommendation: { decision: 'defer', missingInformation: ['Confirmar o orçamento e a origem do gargalo.'] },
+    })
+    const updatedRecommendations = await call('GET', endpoint + leadId + '?organizationId=' + organizationId)
+    expect(updatedRecommendations.statusCode).toBe(200)
+    const eligibleIds = updatedRecommendations.json<Array<{ id: string }>>().map(item => item.id)
+    expect(eligibleIds).not.toContain(deferred.assistantMessage.id)
+    const ineligible = await importRequest({
+      id: deferred.assistantMessage.id, catalogVersion: savedDeferral.rows[0].safe_context.catalogVersion,
+    })
+    expect(ineligible.statusCode).toBe(409)
+    expect(ineligible.json().error).toBe('strategy_recommendation_ineligible')
+    expect((await admin.query('SELECT id FROM public.proposals WHERE organization_id=$1 AND lead_id=$2', [organizationId, leadId])).rows)
+      .toEqual([{ id: draftOne.json().id }])
 
     const restored = await call('POST', base + '/versions', { organizationId, expectedVersion: 1, reason: 'Ensaio de reversão', operation: 'restore', restoreVersion: 0 })
     expect(restored.statusCode, restored.body).toBe(200)

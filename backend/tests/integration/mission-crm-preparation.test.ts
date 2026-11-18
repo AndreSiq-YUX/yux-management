@@ -56,7 +56,31 @@ it('creates and reviews real drafts through conversation without a sender, with 
         retrievalTraceId:randomUUID(),contextHash:'a'.repeat(64),usage:{inputTokens:0,outputTokens:0,totalTokens:0}}
     }}))
     const getChat = () => rig.request('yux_admin','GET',`/api/action-engine/mission-conversations/${conversationId}?organizationId=${org}`)
+    const initialChat = (await getChat()).body
+    const revisedIcp = 'Cozinhas industriais na Grande São Paulo com retirada agendada'
+    const revisionMessage = `Ajuste a prospecção para ${revisedIcp}. Preserve a oferta de massas congeladas.`
+    const revised = await rig.request('yux_admin','POST',`/api/action-engine/mission-conversations/${conversationId}/messages`,{
+      organizationId:org,expectedVersion:initialChat.version,clientMessageId:randomUUID(),message:revisionMessage,
+    })
+    expect(revised.statusCode).toBe(202)
+    await within(() => handleActionEngineProcessMissionConversation(pool as never,env,jobs.shift()!.data,{
+      invokeTurn: async (_env, request, operationId) => {
+        expect(operationId).toBe(revised.body.conversation.messages.at(-1).id)
+        expect(request.user_message).toBe(revisionMessage)
+        expect(request.transcript).toEqual([
+          {role:'user',content:brief.objective},
+          {role:'agent',content:'Confira o plano de preparação, sem envio.'},
+          {role:'user',content:revisionMessage},
+        ])
+        expect(request.currentBrief?.constraints).toMatchObject(brief.constraints)
+        return {schemaVersion:1,kind:'brief_confirmation',reply:'Ajustei o público e mantive a oferta de massas congeladas.',
+          understood:{},questions:[],readiness:{status:'ready_for_brief_confirmation',knownFacts:[],assumptions:[],missing:[]},
+          brief:{...brief,constraints:{...brief.constraints,icp:revisedIcp}},suggestedActions:[],sources:[],
+          retrievalTraceId:randomUUID(),contextHash:'b'.repeat(64),usage:{inputTokens:0,outputTokens:0,totalTokens:0}}
+      },
+    }))
     const chat = (await getChat()).body
+    expect(chat.currentBrief.constraints).toMatchObject({icp:revisedIcp,offer:'Massas congeladas'})
     const confirmation = {organizationId:org,expectedVersion:chat.version,briefHash:chat.briefHash}
     await rig.sql("UPDATE public.crm_instances SET status='paused' WHERE organization_id=$1",[org])
     const unavailable = await rig.request('yux_admin','POST',`/api/action-engine/mission-conversations/${conversationId}/confirm`,confirmation)
@@ -71,7 +95,10 @@ it('creates and reviews real drafts through conversation without a sender, with 
     const planJob = jobs.find(job=>job.name==='action-engine.planMission')!
     const planResult = await within(() => handleActionEnginePlanMission(pool as never,env,planJob.data,queue,{invokePlan:async(_env,input)=>{
       expect(input.allowed_source_ids).toContain(sourceId)
-      return crmPreparationProposal(missionId,sourceId)
+      expect(input.mission.parameters).toMatchObject({icp:revisedIcp,offer:'Massas congeladas'})
+      const proposal = crmPreparationProposal(missionId,sourceId)
+      proposal.plan.resolvedParameters.icp = revisedIcp
+      return proposal
     }}))
     expect(planResult.planId).toBeTruthy()
     const awaiting = (await getChat()).body
