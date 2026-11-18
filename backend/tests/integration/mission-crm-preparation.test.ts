@@ -155,6 +155,24 @@ it.each([false, true])('preserves the CRM preparation journey and private accoun
       const blocked = (await getChat()).body
       expect(blocked.status).toBe('blocked')
       expect(JSON.stringify(blocked)).not.toMatch(/knownCostSubtotalUsd|planningMeasurements|0\.014/)
+      const historyUrl = `/api/strategy-engine/agent-prompts/planning-history?organizationId=${org}&contractId=${rig.ids.contractA}&missionId=${missionId}`
+      const history = await rig.request('yux_admin', 'GET', historyUrl)
+      expect(history.statusCode, JSON.stringify(history.body)).toBe(200)
+      expect(history.body).toEqual({ executions: [{
+        id: expect.any(String), startedAt: expect.any(String), revision: planJob.data.requestedVersion,
+        state: 'cancelled', reservedBrl: '5.000000', reconciledBrl: null, totalUsd: null, knownSubtotalUsd: 0.014,
+        stages: [
+          { name: 'planner', attempts: 1, inputTokens: 100, outputTokens: 50, reasoningTokens: 6, confirmedUsd: 0.014 },
+          { name: 'funnel_nurture.crm_architect', attempts: 1, inputTokens: null, outputTokens: null, reasoningTokens: null, confirmedUsd: null },
+        ],
+      }] })
+      for (const role of ['yux_operator', 'client_admin_A', 'client_member_A'] as const) {
+        const denied = await rig.request(role, 'GET', historyUrl)
+        expect(denied.statusCode).toBe(403)
+        expect(denied.body).not.toHaveProperty('executions')
+      }
+      expect((await rig.request('yux_admin', 'GET', historyUrl.replace(org, rig.ids.organizationB))).statusCode).toBe(404)
+      expect((await rig.request('yux_admin', 'GET', historyUrl.replace(rig.ids.contractA, rig.ids.contractB))).statusCode).toBe(404)
       expect(await rig.providerCalls()).toHaveLength(0)
       return
     }

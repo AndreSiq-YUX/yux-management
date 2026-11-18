@@ -26,6 +26,8 @@ Nos planejamentos do piloto, a primeira entrega da revisão obtém a reserva. Um
 
 Se o runtime confirmar que uma etapa falhou, o registro do ciclo conserva as tentativas, os tokens e o subtotal em USD das etapas com medição. Uma tentativa sem custo informado mantém o total em aberto. Se a resposta inteira do runtime se perder, a reserva continua pendente de conciliação. Na falha, a conversa recebe o estado do planejamento e os detalhes da medição ficam no registro interno.
 
+No Admin YUX, abra **Agentes e prompts**, escolha **Action Engine · planejamento da missão** e selecione a subconta, o contrato quando aplicável e a missão. Use **Consultar execuções** para conferir os dez registros mais recentes. A tela distingue a reserva em reais, o valor informado pelo provedor e a conciliação em reais. **Consumo medido por etapa** detalha tentativas e tokens, inclusive de raciocínio quando informados. Os créditos comerciais da pré-venda aparecem no chat do estrategista.
+
 ## Regras de fontes dos pilotos
 
 Em **Agentes e prompts**, selecione o fluxo, a subconta e o cenário. Na conversa de missão, selecione também o público. Classifique a metodologia publicada, a estratégia da subconta, os documentos da empresa e o portfólio de produtos. **Obrigatória** exige pelo menos um item autorizado no cenário e impede a geração quando falta contexto. **Opcional** usa os itens disponíveis. **Vedada** exclui a categoria do contexto do agente. Briefings confirmados e mensagens fornecidas pelo usuário são entradas da operação.

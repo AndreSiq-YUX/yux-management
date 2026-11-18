@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { apiRequest } from '@/lib/apiClient'
 import type { StrategyOrganization } from '@/types/strategyEngine'
+import { PlanningUsageHistory } from './PlanningUsageHistory'
 
 type Consumer = { key: string; name: string; owner: string; audience: string; state: string; instructions: string }
 type Contract = { id: string; name: string }
@@ -401,6 +402,9 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
           {running ? 'Montando prévia…' : sourceRulesChanged ? 'Simular regras de fontes' : 'Simular sem custo'}
         </button>
       </form>
+
+      {scopeReady && inspectingSupervisor && hasPreviewInput && <PlanningUsageHistory key={`${missionScope}/${missionId}`}
+        organizationId={organizationId} contractId={contractId} missionId={missionId} />}
 
       {preview && (
         <div className={`grid gap-4 ${preview.candidate ? 'lg:grid-cols-2' : ''}`}>

@@ -15,6 +15,7 @@ import { strategyAdminChatRequestSchema } from './admin-chat.js'
 import { changePromptVersion, listPromptVersions, presalesPilotEnabled, promptInstructionSchema, promptSettings,
   stageKeySchema, strategistModeSchema } from './prompt-versions.js'
 import { listPresalesLeads, loadCommercialCatalog } from './presales-context.js'
+import { loadPlanningHistory } from './planning-history.js'
 
 const inventory = [
   { key: 'strategist', name: 'Estrategista, Diagnóstico 48h e proposta consultiva', owner: 'Estratégia YUX', audience: 'Admin', state: 'Prévia disponível', instructions: 'Perfil, instruções globais e especialistas da especificação publicada' },
@@ -380,6 +381,21 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
     )
     reply.header('Cache-Control', 'no-store')
     return { missions: rows }
+  })
+
+  app.get('/agent-prompts/planning-history', async (request, reply) => {
+    requireAdminRole(request)
+    const parsed = tenantSchema.extend({ missionId: z.uuid() }).safeParse(request.query)
+    if (!parsed.success) throw new ApiError(400, 'invalid_mission_planning_history_scope')
+    const { organizationId, contractId, missionId } = parsed.data
+    const mission = await getMission(app.pg, missionId, organizationId)
+    if (!mission || (mission.contractId ?? null) !== (contractId ?? null)) throw new ApiError(404, 'mission_preview_not_found')
+    if (contractId) {
+      const scope = await loadAgentPromptScope(app.pg, organizationId)
+      if (!scope.contracts.some(contract => contract.id === contractId)) throw new ApiError(409, 'agent_prompt_contract_out_of_scope')
+    }
+    reply.header('Cache-Control', 'no-store')
+    return { executions: await loadPlanningHistory(app.pg, parsed.data) }
   })
 
   app.post('/agent-prompts/preview', async (request, reply) => {

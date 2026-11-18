@@ -49,6 +49,13 @@ it('executes a reviewed plan through canonical Radar commands and waits for pers
   const intent=await rig.request('yux_admin','POST','/api/action-engine/missions/intents',{organizationId:org,contractId:rig.ids.contractA,objective:'Pesquisar empresas no Radar Comercial',mode:'assisted',quickStart:'radar_prospecting',allowedModules:['radar'],maxTotalCostBrl:'50',maxHumanHours:'1',deadlineAt:new Date(Date.now()+86400000).toISOString(),radarParameters:parameters},{'idempotency-key':randomUUID()})
   expect(intent.statusCode,JSON.stringify(intent.body)).toBe(201)
   const missionId=intent.body.id
+  const history=`/api/strategy-engine/agent-prompts/planning-history?organizationId=${org}&contractId=${rig.ids.contractA}&missionId=${missionId}`
+  const cycleId=randomUUID()
+  await rig.sql(`INSERT INTO public.action_planning_cycles(id,organization_id,mission_id,plan_revision,context_hash,pack_key,pack_version,budget)
+    VALUES($1,$2,$3,1,repeat('a',64),'radar_prospecting','1.0.0','{}'::jsonb)`,[cycleId,org,missionId])
+  await rig.sql(`INSERT INTO public.action_planning_usage_entries(organization_id,cycle_id,specialist_profile,specialist_version,nature,cost_brl)
+    VALUES($1,$2,'fixture',1,'reservation',987)`,[org,cycleId])
+  expect((await rig.request('yux_admin','GET',history)).body).toEqual({executions:[]})
   const raw={schemaVersion:1,missionId,actionPack:{key:pack.key,version:pack.semanticVersion,templateHash:pack.contentHash},resolvedParameters:parameters,estimatedEconomics:{currency:'BRL',totalExecutionCost:'1'},steps:pack.topologyTemplate.steps.map(step=>({stepKey:step.stepKey,capabilityKey:step.capabilityKey,capabilityVersion:1,dependsOn:step.dependsOn,input:step.defaultParameters,timeoutSeconds:60,maxAttempts:2,approvalRequired:step.approvalRequired,effect:registry.get(step.capabilityKey,1).effect}))}
   const compiled=compileMissionPlan({rawPlan:raw,missionId,pack,registry,maxTotalCostBrl:'50'})
   const packVersion=await ensureRadarProspectingPackVersion(pool,actor.id)
