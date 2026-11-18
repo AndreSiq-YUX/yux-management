@@ -7,6 +7,7 @@ import { createContextAwarePool } from '../../src/db/client.js'
 import { runWithDatabaseRequestContext } from '../../src/db/request-context.js'
 import type { MissionConversationTurnResponseWire } from '../../src/modules/action-engine/generated/mission-wire.js'
 import type { AppEnv } from '../../src/config/env.js'
+import type { EnqueueJobOptions } from '../../src/jobs/queue.js'
 import { handleActionEngineProcessMissionConversation, handleActionEnginePlanMission, handleActionEngineSchedule,
   handleActionEngineExecute, handleActionEngineCollectMetrics, handleActionEngineEvaluation } from '../../src/jobs/handlers/action-engine.js'
 import { crmPreparationProposal } from '../support/crm-preparation-fixture.js'
@@ -15,8 +16,8 @@ import { buildMissionPlanningCatalog, buildMissionPlanningContext } from '../../
 import { getMission, hashCanonical } from '../../src/modules/action-engine/repository.js'
 
 it('creates and reviews real drafts through conversation without a sender, with retries, tenant isolation and activation gates', async () => {
-  const jobs: Array<{name: string; data: Record<string, unknown>}> = []
-  const queue = { async add(name: string, data: Record<string, unknown>) { jobs.push({name,data}); return {id: randomUUID()} }, async close() {} }
+  const jobs: Array<{name: string; data: Record<string, unknown>; options?: EnqueueJobOptions}> = []
+  const queue = { async add(name: string, data: Record<string, unknown>, options?: EnqueueJobOptions) { jobs.push({name,data,options}); return {id: randomUUID()} }, async close() {} }
   const rig = await createIntegrationRig({queueMode: 'stub', missionConversations: true, stubJobQueue: queue})
   const pool = createContextAwarePool(new pg.Pool({connectionString: rig.serviceDatabaseUrl('yux_worker')}), 'worker')
   const org = rig.ids.organizationA
@@ -129,13 +130,31 @@ it('creates and reviews real drafts through conversation without a sender, with 
       expect(input.mission_prompt).toEqual({version:1,instructions:{'funnel_nurture.crm_architect':planningInstruction},source_rules:sourceRules})
       expect(input.allowed_source_ids).toContain(sourceId)
       expect(input).toMatchObject({mission:{parameters:{icp:revisedIcp,offer:'Massas congeladas'}}})
+      const duplicate = await handleActionEnginePlanMission(pool as never, env, planJob.data, queue, {
+        invokePlan: async () => { throw new Error('duplicate reached the planner') },
+      })
+      expect(duplicate).toEqual({ skipped: 'planning_call_in_progress' })
+      const recheck = jobs.filter(job => job.name === 'action-engine.planMission').at(-1)
+      expect(recheck?.options?.jobId).toMatch(/^mission-planning-recheck-/)
+      expect(recheck?.options?.delay).toBeGreaterThan(0)
       const proposal = crmPreparationProposal(missionId,sourceId)
       proposal.plan.resolvedParameters.icp = revisedIcp
-      return proposal
+      return { ...proposal, trace: { planningMeasurements: [
+        { node: 'planner', attemptCount: 2, inputTokens: 200, outputTokens: 100, reportedCostUsd: null },
+        { node: 'crm_architect', attemptCount: 1, inputTokens: 50, outputTokens: 25, reportedCostUsd: 0.01 },
+      ] } }
     }}))
     expect(planResult.planId).toBeTruthy()
+    const receipts = await rig.sql(`SELECT usage.nature,usage.calls,usage.input_tokens,usage.output_tokens,usage.cost_brl::text
+        FROM public.action_planning_usage_entries usage JOIN public.action_planning_cycles cycle ON cycle.id=usage.cycle_id
+        WHERE cycle.mission_id=$1 ORDER BY usage.nature`, [missionId])
+    expect(receipts.rows).toEqual([
+      { nature: 'actual', calls: 3, input_tokens: 250, output_tokens: 125, cost_brl: '5.000000' },
+      { nature: 'reservation', calls: 1, input_tokens: 12_000, output_tokens: 2_500, cost_brl: '5.000000' },
+    ])
     const awaiting = (await getChat()).body
     expect(JSON.stringify(awaiting)).not.toContain(planningInstruction)
+    expect(JSON.stringify(awaiting)).not.toContain('planningMeasurements')
     expect(awaiting.status).toBe('awaiting_plan_approval')
     const reference = awaiting.messages.at(-1).structuredPayload
     expect(reference.decisionSummary.changes.map((item:any)=>item.quantity)).toEqual([1,1,1,1,1])

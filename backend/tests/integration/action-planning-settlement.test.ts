@@ -6,11 +6,11 @@ import { runWithDatabaseRequestContext } from '../../src/db/request-context.js'
 import { reservePlanningCall, settlePlanningCall } from '../../src/modules/action-engine/planning-cycle.js'
 import { createIntegrationRig } from './support/rig.js'
 
-it('settles actual model usage with the worker and rejects a reservation from another cycle or tenant', async () => {
+it.each([false, true])('settles actual usage once and preserves the pilot budget breach when overage is %s', async overage => {
   const rig = await createIntegrationRig({ queueMode: 'stub' })
   const pool = createContextAwarePool(new pg.Pool({ connectionString: rig.serviceDatabaseUrl('yux_worker') }), 'worker')
   const cycleId = randomUUID()
-  const actual = { calls: 1, inputTokens: 100, outputTokens: 50, costBrl: '0.03', latencyMs: 100 }
+  const actual = { calls: overage ? 3 : 1, inputTokens: 100, outputTokens: 50, costBrl: '0.03', latencyMs: 100 }
   try {
     await rig.sql(`INSERT INTO public.action_planning_cycles
       (id,organization_id,mission_id,plan_revision,context_hash,pack_key,pack_version,budget)
@@ -30,18 +30,21 @@ it('settles actual model usage with the worker and rejects a reservation from an
           providerModelId: 'fixture-model', metadata: { profileKey: 'mission_supervisor' } }
         await expect(settlePlanningCall(client, { ...input, cycleId: randomUUID() })).rejects.toThrow('planning_reservation_unavailable')
         await expect(settlePlanningCall(client, { ...input, organizationId: rig.ids.organizationB })).rejects.toThrow('planning_reservation_unavailable')
-        await expect(settlePlanningCall(client, input)).resolves.toEqual(actual)
-        await expect(settlePlanningCall(client, input)).resolves.toEqual(actual)
+        if (overage) await expect(settlePlanningCall(client, input)).rejects.toThrow('planning_actual_budget_exhausted')
+        const settled = { ...input, recordBudgetOverage: overage }
+        await expect(settlePlanningCall(client, settled)).resolves.toEqual({ usage: actual, budgetExceeded: overage })
+        await expect(settlePlanningCall(client, settled)).resolves.toEqual({ usage: actual, budgetExceeded: overage })
         await client.query('COMMIT')
       } catch (error) {
         await client.query('ROLLBACK')
         throw error
       } finally { client.release() }
     })
-    const entries = await rig.sql(`SELECT nature,input_tokens,output_tokens,cost_brl::text,provider_model_id,metadata
+    const entries = await rig.sql(`SELECT nature,calls,input_tokens,output_tokens,cost_brl::text,provider_model_id,metadata
       FROM public.action_planning_usage_entries WHERE cycle_id=$1 AND nature='actual'`, [cycleId])
-    expect(entries.rows).toEqual([{ nature: 'actual', input_tokens: 100, output_tokens: 50,
+    expect(entries.rows).toEqual([{ nature: 'actual', calls: actual.calls, input_tokens: 100, output_tokens: 50,
       cost_brl: '0.030000', provider_model_id: 'fixture-model', metadata: { profileKey: 'mission_supervisor' } }])
-    expect((await rig.sql('SELECT usage FROM public.action_planning_cycles WHERE id=$1', [cycleId])).rows[0].usage).toEqual(actual)
+    expect((await rig.sql('SELECT usage,status,terminal_reason FROM public.action_planning_cycles WHERE id=$1', [cycleId])).rows[0])
+      .toEqual({ usage: actual, status: overage ? 'exhausted' : 'active', terminal_reason: overage ? 'planning_budget_calls_exhausted' : null })
   } finally { await pool.end(); await rig.close() }
 })

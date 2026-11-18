@@ -19,6 +19,22 @@ export type PlanningUsage = {
 
 export type PlanningReservation = PlanningUsage
 
+// The planning worker is allowed to run for 180 seconds. Recheck after that
+// window, without reissuing a request whose outcome is still unknown.
+export const PLANNING_RECHECK_WINDOW_MS = 190_000
+
+/** Read only while holding the cycle lock, until the owner has reserved. */
+export async function getPlanningReservationAge(client: Queryable, cycleId: string, organizationId: string) {
+  const prior = await client.query<{ age_ms: number }>(
+    `SELECT LEAST($3, GREATEST(0, EXTRACT(EPOCH FROM (clock_timestamp() - MIN(created_at))) * 1000))::INT AS age_ms
+       FROM public.action_planning_usage_entries
+      WHERE cycle_id = $1 AND organization_id = $2 AND nature = 'reservation'
+     HAVING COUNT(*) > 0`,
+    [cycleId, organizationId, PLANNING_RECHECK_WINDOW_MS],
+  )
+  return prior.rows[0]?.age_ms ?? null
+}
+
 export function reconcilePlanningCost(value: unknown, reservedBrl: string) {
   const validAmount = (amount: unknown) => typeof amount === 'number' && Number.isFinite(amount) && amount >= 0 ? amount : null
   const validCount = (count: unknown) => typeof count === 'number' && Number.isSafeInteger(count) && count >= 0 ? count : null
@@ -139,7 +155,8 @@ export async function settlePlanningCall(client: Queryable, input: {
   actual: PlanningUsage
   providerModelId?: string
   metadata?: Record<string, unknown>
-}): Promise<PlanningUsage> {
+  recordBudgetOverage?: boolean
+}): Promise<{ usage: PlanningUsage; budgetExceeded: boolean }> {
   const result = await client.query<{
     budget: PlanningCycleBudget; usage: PlanningUsage; status: string;
     calls: number; input_tokens: number; output_tokens: number; cost_brl: string; latency_ms: number;
@@ -161,7 +178,7 @@ export async function settlePlanningCall(client: Queryable, input: {
        AND nature IN ('actual', 'release') LIMIT 1`,
     [input.cycleId, input.organizationId, input.reservationId],
   )
-  if (prior.rows[0]?.nature === 'actual') return row.usage
+  if (prior.rows[0]?.nature === 'actual') return { usage: row.usage, budgetExceeded: row.status === 'exhausted' }
   if (prior.rows.length || row.status !== 'active') throw new Error('planning_reservation_unavailable')
   const reserved: PlanningUsage = {
     calls: Number(row.calls), inputTokens: Number(row.input_tokens), outputTokens: Number(row.output_tokens),
@@ -169,7 +186,7 @@ export async function settlePlanningCall(client: Queryable, input: {
   }
   const base = subtractUsage(row.usage, reserved)
   const decision = evaluatePlanningReservation(row.budget, base, input.actual)
-  if (!decision.allowed) throw new Error('planning_actual_budget_exhausted')
+  if (!decision.allowed && !input.recordBudgetOverage) throw new Error('planning_actual_budget_exhausted')
   await client.query(
     `INSERT INTO public.action_planning_usage_entries (
        organization_id, cycle_id, specialist_profile, specialist_version, nature,
@@ -181,11 +198,13 @@ export async function settlePlanningCall(client: Queryable, input: {
       input.actual.outputTokens, input.actual.costBrl, input.actual.latencyMs, input.providerModelId ?? null, input.metadata ?? {}],
   )
   await client.query(
-    `UPDATE public.action_planning_cycles SET usage = $3::jsonb, updated_at = NOW()
+    `UPDATE public.action_planning_cycles SET usage = $3::jsonb,
+         status = CASE WHEN $4::text IS NULL THEN status ELSE 'exhausted' END,
+         terminal_reason = COALESCE($4, terminal_reason), updated_at = NOW()
      WHERE id = $1 AND organization_id = $2`,
-    [input.cycleId, input.organizationId, decision.projected],
+    [input.cycleId, input.organizationId, decision.projected, decision.allowed ? null : decision.reason],
   )
-  return decision.projected
+  return { usage: decision.projected, budgetExceeded: !decision.allowed }
 }
 
 function parseDecimal(value: string): bigint {

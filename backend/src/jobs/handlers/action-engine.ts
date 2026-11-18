@@ -2,6 +2,7 @@ import type { AppEnv } from '../../config/env.js'
 import { runWithDatabaseRequestContext } from '../../db/request-context.js'
 import { createHash } from 'node:crypto'
 import type { AppJobQueue } from '../../server.js'
+import { createBullMqJobId } from '../queue.js'
 import { createActionEngineCapabilityRegistry } from '../../modules/action-engine/capabilities/index.js'
 import { ensureCrmPreparationPackVersion } from '../../modules/action-engine/packs/crm-preparation-v1.js'
 import { compileSupervisorPlan, diffMissionPlans, requestMissionPlan, type CompiledMissionPlan } from '../../modules/action-engine/planner.js'
@@ -20,7 +21,7 @@ import {
   reconcileUnknownEffect,
 } from '../../modules/action-engine/provider-reconciliation.js'
 import { releaseResourceClaims } from '../../modules/action-engine/resource-claims.js'
-import { reconcilePlanningCost, reservePlanningCall, settlePlanningCall } from '../../modules/action-engine/planning-cycle.js'
+import { getPlanningReservationAge, PLANNING_RECHECK_WINDOW_MS, reconcilePlanningCost, reservePlanningCall, settlePlanningCall } from '../../modules/action-engine/planning-cycle.js'
 import { enforceMissionRetention } from '../../modules/action-engine/retention.js'
 import { processCompletedMissionLearning } from '../../modules/action-engine/learning.js'
 import { redactMissionTelemetry } from '../../modules/action-engine/telemetry-redaction.js'
@@ -548,6 +549,8 @@ export async function handleActionEnginePlanMission(
 
   const catalog = await buildMissionPlanningCatalog(pool, env, mission)
   const { registry, packs, pack } = catalog
+  const governedPlanning = !catalog.radar && missionPromptPilotEnabled(env, organizationId)
+  let cycleForReconciliation: string | undefined
   try {
     const missionPrompt = await pinMissionPromptVersion(pool, env, {
       organizationId, scope: 'mission-planning', operationId: missionId, operationVersion: requestedVersion,
@@ -581,12 +584,30 @@ export async function handleActionEnginePlanMission(
       )
       const cycleId = created.rows[0]?.id
       if (!cycleId) throw new Error('planning_cycle_create_failed')
+      if (governedPlanning) {
+        // The upsert holds the cycle lock through this check and reservation.
+        const age = await getPlanningReservationAge(client, cycleId, organizationId)
+        if (age !== null) return { id: cycleId, recheckAfterMs: PLANNING_RECHECK_WINDOW_MS - age }
+      }
       const reservation = await reservePlanningCall(client, {
         cycleId, organizationId, specialistProfile: 'growth_strategist', specialistVersion: 1,
         reservation: planningEstimate,
       })
-      return { id: cycleId, contextHash, reservationId: reservation.reservationId }
+      return { id: cycleId, reservationId: reservation.reservationId }
     })
+    if (planningCycle.recheckAfterMs !== undefined && planningCycle.recheckAfterMs > 0) {
+      try {
+        await queue?.add('action-engine.planMission', { missionId, organizationId, requestedVersion, replan: isReplan }, {
+          delay: planningCycle.recheckAfterMs + 1000, jobId: createBullMqJobId('mission-planning-recheck', missionId, requestedVersion),
+        })
+      } catch {
+        throw new Error('planning_call_recheck_enqueue_failed')
+      }
+      return { skipped: 'planning_call_in_progress' }
+    }
+    if (governedPlanning) cycleForReconciliation = planningCycle.id
+    const { reservationId } = planningCycle
+    if (!reservationId) throw new Error('planning_attempt_reconciliation_required')
     const payload = await buildMissionPlanRequest(pool, mission, catalog, planningContext, isReplan, limits, {
       snapshotId: contextSnapshot.id, cycleId: planningCycle.id,
     })
@@ -601,36 +622,42 @@ export async function handleActionEnginePlanMission(
       ? rawEnvelope.trace as Record<string, unknown> : {}
     const storedPlan = rawEnvelope.trace ? { ...rawEnvelope, trace: rawTrace } : rawEnvelope
     const cost = reconcilePlanningCost(planningMeasurements, planningEstimate.costBrl)
-    await transaction(pool, async (client) => {
-      await settlePlanningCall(client, {
-        cycleId: planningCycle.id, organizationId, reservationId: planningCycle.reservationId,
-        actual: {
-          calls: 1, inputTokens: Number(rawUsage.inputTokens ?? 0), outputTokens: Number(rawUsage.outputTokens ?? 0),
-          costBrl: cost.budgetCostBrl, latencyMs: planningDurationMs,
-        },
-        providerModelId: typeof rawTrace.resolvedModelId === 'string' ? rawTrace.resolvedModelId : undefined,
-        metadata: {
-          profileKey: rawTrace.profileKey ?? 'mission_supervisor', promptHash: rawTrace.promptHash ?? null,
-          measurements: cost.measurements,
-          ...(typeof missionPromptVersion === 'number' ? { missionPromptVersion } : {}),
-        },
-      })
-      const telemetryKey = env.ACTION_ENGINE_TELEMETRY_REDACTION_KEY ?? env.ACTION_ENGINE_MUTATION_LEASE_SECRET
-      if (telemetryKey) {
-        const payload = redactMissionTelemetry({
-          missionId, durationMs: planningDurationMs,
-          inputTokens: Number(rawUsage.inputTokens ?? 0), outputTokens: Number(rawUsage.outputTokens ?? 0),
-          modelId: rawTrace.resolvedModelId ?? rawTrace.requestedModelId ?? null,
-          promptHash: rawTrace.promptHash ?? null, contextHash: contextSnapshot.contextHash,
-          packVersion: packs.map((item) => `${item.key}@${item.semanticVersion}`).join('+'), status: rawEnvelope.kind ?? 'unknown',
-        }, { missionId, tokenKey: telemetryKey })
-        await client.query(
-          `INSERT INTO public.action_mission_telemetry (organization_id, mission_id, artifact_kind, payload)
-           VALUES ($1,$2,'redacted_model_trace',$3)`,
-          [organizationId, missionId, payload],
-        )
-      }
-    })
+    const { stages } = cost.measurements
+    const aggregateUnits = (units: Array<number | null>, reserved: number) => {
+      const known = units.reduce<number>((total, value) => total + (value ?? 0), 0)
+      return units.length && units.every(value => value !== null) ? known : Math.max(known, reserved)
+    }
+    const actual = {
+      calls: governedPlanning ? aggregateUnits(stages.map(stage => Math.max(1, stage.attemptCount ?? 1)), planningEstimate.calls) : 1,
+      inputTokens: governedPlanning ? aggregateUnits(stages.map(stage => stage.inputTokens), planningEstimate.inputTokens) : Number(rawUsage.inputTokens ?? 0),
+      outputTokens: governedPlanning ? aggregateUnits(stages.map(stage => stage.outputTokens), planningEstimate.outputTokens) : Number(rawUsage.outputTokens ?? 0),
+      costBrl: cost.budgetCostBrl, latencyMs: planningDurationMs,
+    }
+    const settlement = await transaction(pool, client => settlePlanningCall(client, {
+      cycleId: planningCycle.id, organizationId, reservationId,
+      actual, recordBudgetOverage: governedPlanning,
+      providerModelId: typeof rawTrace.resolvedModelId === 'string' ? rawTrace.resolvedModelId : undefined,
+      metadata: {
+        profileKey: rawTrace.profileKey ?? 'mission_supervisor', promptHash: rawTrace.promptHash ?? null,
+        measurements: cost.measurements,
+        ...(typeof missionPromptVersion === 'number' ? { missionPromptVersion } : {}),
+      },
+    }))
+    if (settlement.budgetExceeded) throw new Error('planning_actual_budget_exhausted')
+    const telemetryKey = env.ACTION_ENGINE_TELEMETRY_REDACTION_KEY ?? env.ACTION_ENGINE_MUTATION_LEASE_SECRET
+    if (telemetryKey) {
+      const telemetry = redactMissionTelemetry({
+        missionId, durationMs: planningDurationMs, inputTokens: actual.inputTokens, outputTokens: actual.outputTokens,
+        modelId: rawTrace.resolvedModelId ?? rawTrace.requestedModelId ?? null,
+        promptHash: rawTrace.promptHash ?? null, contextHash: contextSnapshot.contextHash,
+        packVersion: packs.map((item) => `${item.key}@${item.semanticVersion}`).join('+'), status: rawEnvelope.kind ?? 'unknown',
+      }, { missionId, tokenKey: telemetryKey })
+      await pool.query(
+        `INSERT INTO public.action_mission_telemetry (organization_id, mission_id, artifact_kind, payload)
+         VALUES ($1,$2,'redacted_model_trace',$3)`,
+        [organizationId, missionId, telemetry],
+      )
+    }
     const compileResult = compileSupervisorPlan({
       rawProposal: rawPlan, missionId, packCatalog: packs, registry,
       maxTotalCostBrl: String(mission.budget.maxTotalCostBrl ?? mission.autonomyEnvelope.maxTotalCostBrl ?? '0'),
@@ -767,7 +794,15 @@ export async function handleActionEnginePlanMission(
     }
     return planningResult
   } catch (error) {
+    if (error instanceof Error && error.message === 'planning_call_recheck_enqueue_failed') throw error
     await transaction(pool, async (client) => {
+      if (cycleForReconciliation) {
+        await client.query(
+          `UPDATE public.action_planning_cycles SET status = 'cancelled', terminal_reason = $3, updated_at = NOW()
+           WHERE id = $1 AND organization_id = $2 AND status = 'active'`,
+          [cycleForReconciliation, organizationId, safeErrorCode(error)],
+        )
+      }
       const current = await getMission(client, missionId, organizationId)
       if (current?.status === expectedStatus && current.version === requestedVersion) {
         await transitionMission(client, {
