@@ -23,6 +23,14 @@ def _tokens(value: str) -> set[str]:
     return {token for token in re.findall(r"[\w-]+", value.lower(), flags=re.UNICODE) if len(token) >= 3}
 
 
+def _lexical_retry_query(query: str) -> str:
+    if re.search(r'"|\bor\b|(?:^|\s)-\w', query, re.IGNORECASE):
+        return ""
+    distinct_words = dict.fromkeys(re.findall(r"[^\W\d_]{4,40}\b", query.casefold()))
+    terms = list(distinct_words)[:16]
+    return " OR ".join(f'"{term}"' for term in terms) if len(terms) > 1 else ""
+
+
 def _latest(records: list[dict[str, Any]]) -> dict[str, Any] | None:
     if not records:
         return None
@@ -48,6 +56,7 @@ class CustomerContextService:
         audience: str | None = None,
         scoped_workflow_key: str | None = None,
         include_knowledge: bool = True,
+        retry_lexical_query: bool = False,
     ) -> dict[str, Any]:
         if not organization_id:
             return {}
@@ -85,7 +94,7 @@ class CustomerContextService:
         if callable(authorized_search) or not include_knowledge:
             recover = include_knowledge and not contract_required
             query_embedding = self.embedding_service.embed_query(query) if recover and self.embedding_service is not None else None
-            records = authorized_search(
+            search_scope = dict(
                 organization_id=organization_id,
                 contract_id=contract_id,
                 profile_key=profile_key,
@@ -93,12 +102,15 @@ class CustomerContextService:
                 module_key="marketing_studio",
                 workflow_key=scoped_workflow_key,
                 channel=None,
-                query_text=query,
                 match_limit=max(1, min(20, self.max_snippets)),
                 query_embedding=query_embedding,
                 embedding_model=getattr(self.embedding_service, "model", None),
                 namespace="company",
-            ) if recover else []
+            )
+            records = authorized_search(query_text=query, **search_scope) if recover else []
+            if recover and retry_lexical_query and query_embedding is None and not records:
+                if alternative := _lexical_retry_query(query):
+                    records = authorized_search(query_text=alternative, **search_scope)
             context_items = [
                 {
                     "id": f"company:{item.get('id')}",

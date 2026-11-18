@@ -61,6 +61,50 @@ def test_preview_and_real_adapter_share_messages_without_persisting_preview():
     assert estimate_workflow_credits(frozen["workflow_spec"], frozen["mode"], frozen["source"]) == 1
 
 
+def test_presales_retries_lexical_documents_in_the_same_scope_for_preview_and_execution():
+    message = "Quero entender se diagnóstico comercial ajuda na implantação da operação."
+    approved_fact = "A implantação precisa de diagnóstico comercial."
+
+    class AuthorizedStore(InMemoryAgentRuntimeStore):
+        def __init__(self):
+            super().__init__()
+            self.searches = []
+
+        def retrieve_authorized_knowledge(self, **scope):
+            self.searches.append(scope)
+            if scope["query_text"] == message:
+                return []
+            assert scope["query_embedding"] is None
+            assert '"diagnóstico"' in scope["query_text"]
+            return [{"id": "approved-chunk", "document_id": "approved-document", "content": approved_fact}]
+
+    store = AuthorizedStore()
+    engine, calls = test_live_workflows.LiveWorkflowTest().make_engine([
+        json.dumps({"answer": "Confirmar diagnóstico.", "supporting_cards": []}),
+    ])
+    engine.customer_context_service = CustomerContextService(store)
+    frozen = {**execution([]), "organization_id": "org-a", "contract_id": "contract-a", "message": message}
+    preview = preview_workflow(engine, frozen)
+
+    assert not calls
+    assert preview["requests"][0]["coverage"]["knowledge"]["selected"] == 1
+    assert any(approved_fact in item["content"] for item in preview["requests"][0]["providerPayload"]["messages"])
+    engine.execute(**frozen)
+    assert preview["requests"][0]["providerPayload"] == {key: value for key, value in calls[0].items() if key != "session_id"}
+    assert len(store.searches) == 4
+    assert store.searches[0] == store.searches[2]
+    assert store.searches[1] == store.searches[3]
+    scope = {key: value for key, value in store.searches[0].items() if key != "query_text"}
+    assert scope == {key: value for key, value in store.searches[1].items() if key != "query_text"}
+    assert (scope["organization_id"], scope["contract_id"], scope["profile_key"], scope["audience"], scope["namespace"]) == (
+        "org-a", "contract-a", "growth_strategist", "internal_operator", "company",
+    )
+
+    store.searches.clear()
+    preview_workflow(engine, {**frozen, "presales_candidate": False})
+    assert [search["query_text"] for search in store.searches] == [message]
+
+
 def test_named_presales_instruction_changes_one_stage_and_preserves_protected_objective():
     engine, calls = test_live_workflows.LiveWorkflowTest().make_engine([
         json.dumps({"analysis": "Revisar capacidade de entrega.", "recommended_actions": []}),

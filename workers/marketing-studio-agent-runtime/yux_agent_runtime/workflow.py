@@ -396,6 +396,7 @@ class StrategyWorkflowEngine:
                     external=retrieval_audience == "external_contact",
                     audience=retrieval_audience,
                     **({"scoped_workflow_key": workflow_key} if presales_candidate or source == "mission_intake" else {}),
+                    **({"retry_lexical_query": True} if presales_candidate else {}),
                     **({"include_knowledge": False} if source_rules and source_rules["company_documents"] == "forbidden" else {}),
                 )
             supplied = retrieval_context or {}
