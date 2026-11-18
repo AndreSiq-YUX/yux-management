@@ -31,6 +31,7 @@ from .mission_contracts import MissionConversationTurnRequestWire
 from .mission_conversation import MissionConversationWorkflow
 from .mission_diagnostics import mission_failure_diagnostic
 from .workflow import StrategyWorkflowEngine, estimate_workflow_credits, resolve_retrieval_audience
+from .instruction_preview import preview_workflow
 
 
 logger = logging.getLogger(__name__)
@@ -209,9 +210,21 @@ class ExecuteWorkflowRequest(BaseModel):
     workflow_spec: dict[str, Any] | None = None
     retrieval_context: dict[str, Any] | None = None
     autonomy_policies: list[dict[str, Any]] | None = None
+    presales_candidate: bool = False
+    presales_instruction: str | None = Field(default=None, min_length=1, max_length=4_000)
     # Accepted for backward compatibility but ignored: credits are always
     # estimated server-side (see workflow.estimate_workflow_credits).
     estimated_credits: int = Field(default=0, ge=0)
+
+
+class PreviewStrategistRequest(BaseModel):
+    organization_id: str
+    client_id: str | None = None
+    contract_id: str | None = None
+    message: str = Field(min_length=1, max_length=8_000)
+    mode: str | None = None
+    candidate_instruction: str | None = Field(default=None, min_length=1, max_length=4_000)
+    commercial_catalog: dict[str, Any] | None = None
 
 
 class KnowledgeSectionRequest(BaseModel):
@@ -504,7 +517,12 @@ def create_app(
             profile_key=request.profile_key,
             audience=workflow_audience,
         )
-        credits_required = estimate_workflow_credits(request.workflow_spec, request.mode, request.source)
+        selected_engine = workflow_engine(request.model_dump())
+        execution = request.model_dump(exclude={"estimated_credits"})
+        execution["workflow_spec"] = selected_engine.resolve_workflow_spec(
+            request.mode, request.source, request.workflow_spec,
+        )
+        credits_required = estimate_workflow_credits(execution["workflow_spec"], request.mode, request.source)
         try:
             credits = reserve_billable_credits(
                 organization_id=request.organization_id,
@@ -515,8 +533,36 @@ def create_app(
             )
         except RuntimeError as error:
             raise HTTPException(status_code=402, detail=str(error)) from error
-        result = workflow_engine(request.model_dump()).execute(**request.model_dump(exclude={"estimated_credits"}))
+        result = selected_engine.execute(**execution)
         return {**result, "credits": credits}
+
+    @app.post("/instructions/preview/strategist", dependencies=[Depends(require_runtime_token)])
+    def preview_strategist(request: PreviewStrategistRequest) -> dict[str, Any]:
+        validate_tenant(
+            request.organization_id, request.client_id, request.contract_id,
+            profile_key="growth_strategist", audience="internal_operator",
+        )
+        execution = {
+            **request.model_dump(exclude={"candidate_instruction", "commercial_catalog"}),
+            "source": "strategy_admin",
+            "profile_key": "growth_strategist",
+        }
+        selected = build_strategy_workflow_engine(runtime_store, context=execution, offline_preview=True)
+        baseline = preview_workflow(selected, execution)
+        candidate = preview_workflow(selected, {
+            **execution, "presales_candidate": True, "presales_instruction": request.candidate_instruction,
+            "retrieval_context": {"commercial_catalog": request.commercial_catalog},
+        })
+        return {"baseline": baseline, "candidate": candidate}
+
+    @app.post("/instructions/preview/mission-intake", dependencies=[Depends(require_runtime_token)])
+    def preview_mission_intake(request: MissionConversationTurnRequestWire) -> dict[str, Any]:
+        validate_tenant(
+            request.organization_id, request.client_id, request.contract_id,
+            profile_key="growth_strategist", audience=request.audience,
+        )
+        selected = build_strategy_workflow_engine(runtime_store, context=request.model_dump(), offline_preview=True)
+        return {"baseline": preview_workflow(selected, MissionConversationWorkflow.workflow_input(request))}
 
     @app.post("/missions/plan", dependencies=[Depends(require_runtime_token)])
     def create_mission_plan(request: MissionPlanRequest) -> dict[str, Any]:

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Bot, Building2, FileText, Lightbulb, Loader2, Map, MessageSquarePlus, Send, ShieldCheck } from 'lucide-react'
 import { strategyEngineService, waitForStrategyChatCompletion } from '@/services/strategyEngineService'
+import { apiRequest } from '@/lib/apiClient'
 import type { StrategyAdminChatMode, StrategyChatMessage, StrategyChatSession, StrategyLlmProvider, StrategyModelRoute, StrategyOrganization } from '@/types/strategyEngine'
 
 const promptPresets: Array<{ mode: StrategyAdminChatMode; label: string; icon: typeof Lightbulb; prompt: string }> = [
@@ -42,6 +43,12 @@ const promptPresets: Array<{ mode: StrategyAdminChatMode; label: string; icon: t
   },
 ]
 
+type CommercialScope = {
+  enabled: boolean
+  contracts: Array<{ id: string; name: string }>
+  leads: Array<{ id: string; name: string; company: string | null; stage: string }>
+}
+
 export function StrategyAdminChatPanel({
   organizations,
   sessions,
@@ -58,6 +65,11 @@ export function StrategyAdminChatPanel({
   const [selectedSessionId, setSelectedSessionId] = useState(sessions[0]?.id || '')
   const selectedSession = useMemo(() => sessions.find(session => session.id === selectedSessionId), [sessions, selectedSessionId])
   const [organizationId, setOrganizationId] = useState(selectedSession?.organizationId || organizations[0]?.id || '')
+  const [contractId, setContractId] = useState(selectedSession?.contractId || '')
+  const [leadId, setLeadId] = useState(selectedSession?.leadId || '')
+  const [loadedCommercialScope, setCommercialScope] = useState<(CommercialScope & { key: string }) | null>(null)
+  const scopeKey = `${organizationId}/${contractId}`
+  const commercialScope = loadedCommercialScope?.key === scopeKey ? loadedCommercialScope : null
   const [mode, setMode] = useState<StrategyAdminChatMode>(selectedSession?.mode || 'initial_analysis')
   const [messages, setMessages] = useState<StrategyChatMessage[]>([])
   const [input, setInput] = useState(promptPresets[0].prompt)
@@ -69,14 +81,23 @@ export function StrategyAdminChatPanel({
   const activeProvider = growthRoute ? providers.find(provider => (provider.provider_key || provider.providerKey) === growthRoute.provider && provider.status === 'active') : null
 
   useEffect(() => {
-    if (!selectedSessionId && sessions[0]?.id) setSelectedSessionId(sessions[0].id)
-  }, [selectedSessionId, sessions])
-
-  useEffect(() => {
     if (!selectedSession) return
     setOrganizationId(selectedSession.organizationId || '')
+    setContractId(selectedSession.contractId || '')
+    setLeadId(selectedSession.leadId || '')
     setMode(selectedSession.mode)
   }, [selectedSession])
+
+  useEffect(() => {
+    if (!organizationId) return
+    const controller = new AbortController()
+    const params = new URLSearchParams({ organizationId })
+    if (contractId) params.set('contractId', contractId)
+    apiRequest<CommercialScope>(`/strategy-engine/agent-prompts/opportunities?${params}`, { signal: controller.signal })
+      .then(data => { if (!controller.signal.aborted) setCommercialScope({ ...data, key: scopeKey }) })
+      .catch(() => { if (!controller.signal.aborted) setCommercialScope(null) })
+    return () => controller.abort()
+  }, [organizationId, contractId, scopeKey])
 
   useEffect(() => {
     let active = true
@@ -106,6 +127,8 @@ export function StrategyAdminChatPanel({
     setMessages([])
     setMode('initial_analysis')
     setOrganizationId(organizations[0]?.id || '')
+    setContractId('')
+    setLeadId('')
     setInput(promptPresets[0].prompt)
     setError(null)
   }
@@ -130,6 +153,8 @@ export function StrategyAdminChatPanel({
         message: trimmed,
         mode,
         organizationId: organizationId || undefined,
+        contractId: contractId || undefined,
+        leadId: leadId || undefined,
       })
       setSelectedSessionId(response.session.id)
       setMessages(current => [...current, response.userMessage, response.assistantMessage])
@@ -161,6 +186,7 @@ export function StrategyAdminChatPanel({
         <div className="border-b p-4">
           <button
             type="button"
+            disabled={sending}
             onClick={startNewSession}
             className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-yux-600 px-3 py-2 text-sm font-semibold text-white hover:bg-yux-700"
           >
@@ -172,11 +198,37 @@ export function StrategyAdminChatPanel({
         <div className="space-y-3 border-b p-4">
           <label className="space-y-1 text-sm">
             <span className="font-medium text-gray-700">Cliente/prospect</span>
-            <select value={organizationId} onChange={event => setOrganizationId(event.target.value)} className="w-full rounded-md border border-gray-300 bg-white px-3 py-2">
+            <select disabled={sending} value={organizationId} onChange={event => {
+              startNewSession()
+              setOrganizationId(event.target.value)
+            }} className="w-full rounded-md border border-gray-300 bg-white px-3 py-2">
               <option value="">Sem cliente selecionado</option>
               {organizations.map(org => <option key={org.id} value={org.id}>{org.name}</option>)}
             </select>
           </label>
+          {(commercialScope?.enabled || selectedSession?.leadId) && (
+            <div className="space-y-3">
+              <label className="block space-y-1 text-sm">
+                <span className="font-medium text-gray-700">Contrato</span>
+                <select value={contractId} disabled={sending || Boolean(selectedSessionId)} onChange={event => {
+                  setContractId(event.target.value)
+                  setLeadId('')
+                }} className="w-full rounded-md border border-gray-300 bg-white px-3 py-2">
+                  <option value="">Escopo da organização</option>
+                  {commercialScope?.contracts.map(contract => <option key={contract.id} value={contract.id}>{contract.name}</option>)}
+                  {contractId && !commercialScope?.contracts.some(contract => contract.id === contractId) && <option value={contractId}>Contrato da sessão</option>}
+                </select>
+              </label>
+              <label className="block space-y-1 text-sm">
+                <span className="font-medium text-gray-700">Oportunidade do CRM</span>
+                <select value={leadId} disabled={sending || Boolean(selectedSessionId)} onChange={event => setLeadId(event.target.value)} className="w-full rounded-md border border-gray-300 bg-white px-3 py-2">
+                  <option value="">Sem oportunidade selecionada</option>
+                  {commercialScope?.leads.map(lead => <option key={lead.id} value={lead.id}>{lead.company || lead.name} · {lead.stage}</option>)}
+                  {leadId && !commercialScope?.leads.some(lead => lead.id === leadId) && <option value={leadId}>Oportunidade da sessão</option>}
+                </select>
+              </label>
+            </div>
+          )}
           <div className="rounded-md border border-yux-100 bg-yux-50 p-3 text-xs text-yux-900">
             <div className="flex items-center gap-2 font-semibold">
               <Bot className="h-4 w-4" aria-hidden="true" />
@@ -202,6 +254,7 @@ export function StrategyAdminChatPanel({
               <button
                 key={session.id}
                 type="button"
+                disabled={sending}
                 onClick={() => setSelectedSessionId(session.id)}
                 className={`w-full rounded-md border px-3 py-2 text-left text-sm ${session.id === selectedSessionId ? 'border-yux-600 bg-yux-50' : 'border-gray-200 hover:bg-gray-50'}`}
               >
@@ -271,6 +324,9 @@ export function StrategyAdminChatPanel({
                   <p className="whitespace-pre-wrap text-sm leading-relaxed">
                     {message.status === 'failed' ? message.errorMessage || message.content : message.content}
                   </p>
+                  {Boolean(message.safeContext.generationUsage) && (
+                    <GenerationUsage context={message.safeContext} />
+                  )}
                 </div>
               </article>
             ))}
@@ -300,5 +356,19 @@ export function StrategyAdminChatPanel({
         </form>
       </section>
     </div>
+  )
+}
+
+function GenerationUsage({ context }: { context: Record<string, unknown> }) {
+  const usage = context.generationUsage as { reportedGenerationCostUsd?: number | null }
+  const cost = usage.reportedGenerationCostUsd
+  const credits = context.commercialCredits
+  return (
+    <p className="mt-2 border-t pt-2 text-xs text-gray-600">
+      Geração {typeof cost === 'number' ? new Intl.NumberFormat('pt-BR', {
+        style: 'currency', currency: 'USD', maximumFractionDigits: 6,
+      }).format(cost) : 'com custo indisponível'}
+      {' · '}Créditos comerciais {typeof credits === 'number' ? credits.toLocaleString('pt-BR') : 'sem lançamento'}
+    </p>
   )
 }

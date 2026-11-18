@@ -1,6 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto'
 import type pg from 'pg'
 import type { AuthUser } from '../../auth/routes.js'
+import { ApiError } from '../../http/errors.js'
+import { loadCommercialCatalog } from '../strategy-engine/presales-context.js'
 
 type ProposalItemInput = {
   itemKey: string
@@ -61,6 +63,7 @@ type ProposalRow = {
   converted_client_id: string | null
   contract_id: string | null
   project_id: string | null
+  strategy_catalog_version?: string | null
   proposal_items?: ProposalItemRow[]
 }
 
@@ -434,6 +437,16 @@ export async function generateDraft(pool: pg.Pool, user: AuthUser, proposalId: s
 
 export async function sendProposal(pool: pg.Pool, user: AuthUser, proposalId: string, publicBaseUrl: string) {
   const proposal = await getProposalForAccess(pool, user, proposalId, true)
+  if (proposal.strategy_catalog_version) {
+    const catalog = await loadCommercialCatalog(pool, proposal.organization_id)
+    const offer = catalog.offers.find(item => item.packageId === proposal.package_id)
+    const items = proposal.proposal_items ?? []
+    if (catalog.version !== proposal.strategy_catalog_version || !offer
+      || !items.some(item => item.item_key === 'base')
+      || items.some(item => !offer.items.some(price => price.key === item.item_key))) {
+      throw new ApiError(409, 'strategy_recommendation_catalog_changed')
+    }
+  }
   const rules = await getPriceRuleRows(pool, proposal.organization_id, proposal.package_id)
   const outsideRange = (proposal.proposal_items ?? []).some((item) => {
     const rule = rules.find((candidate) => candidate.item_key === item.item_key)
@@ -487,10 +500,13 @@ export async function sendProposal(pool: pg.Pool, user: AuthUser, proposalId: st
 
 export async function getPublicReview(pool: pg.Pool, token: string) {
   const access = await getActiveAccessToken(pool, token)
+  const snapshot = { ...access.snapshot }
+  delete snapshot.strategy_recommendation_message_id
+  delete snapshot.strategy_catalog_version
   return {
     versionId: access.id,
     versionNumber: access.version_number,
-    snapshot: access.snapshot,
+    snapshot,
     status: access.status,
     expiresAt: access.expires_at,
   }

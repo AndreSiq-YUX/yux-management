@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { Activity, Bot, BrainCircuit, Database, GitBranch, MessageCircle, MessageSquare, PackageCheck, Route, Workflow } from 'lucide-react'
 import { AgentHandoffPanel } from '@/components/strategy-engine/AgentHandoffPanel'
 import { AgentRecommendationPanel } from '@/components/strategy-engine/AgentRecommendationPanel'
+import { AgentPromptsPanel } from '@/components/strategy-engine/AgentPromptsPanel'
 import { StrategyAdminChatPanel } from '@/components/strategy-engine/StrategyAdminChatPanel'
 import { StrategyConversationAgentsPanel } from '@/components/strategy-engine/StrategyConversationAgentsPanel'
 import { StrategyHarnessPanel } from '@/components/strategy-engine/StrategyHarnessPanel'
@@ -104,6 +105,7 @@ const emptyData: StrategyAdminData = {
 
 const tabs = [
   { key: 'strategist', label: 'Estrategista YUX', icon: MessageCircle },
+  { key: 'agent-prompts', label: 'Agentes e prompts', icon: Workflow },
   { key: 'overview', label: 'Visao Geral', icon: Activity },
   { key: 'packs', label: 'Strategy Packs', icon: PackageCheck },
   { key: 'knowledge', label: 'Ingestao/RAG', icon: Database },
@@ -302,6 +304,8 @@ export function StrategyEnginePage() {
           onRefreshSessions={refreshChatSessions}
         />
       )}
+
+      {!loading && !error && activeTab === 'agent-prompts' && <AgentPromptsPanel organizations={data.organizations} />}
 
       {!loading && !error && activeTab === 'overview' && (
         <StrategyOverviewPanel

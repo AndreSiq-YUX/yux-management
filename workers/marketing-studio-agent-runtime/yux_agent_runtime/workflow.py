@@ -82,6 +82,30 @@ def _as_list(value: Any) -> list[Any]:
     return []
 
 
+def _verified_ids(value: Any, eligible: set[str]) -> list[str]:
+    return list(dict.fromkeys(item for item in _as_list(value) if isinstance(item, str) and item in eligible))
+
+
+def _generation_receipt(stage: str, provider: dict[str, Any]) -> dict[str, Any]:
+    attempts = _as_list(provider.get("attempts"))
+    cost = provider.get("cost_usd")
+    return {
+        "stage": stage, "model": provider["model"], "provider": provider["provider"],
+        "tokens": provider.get("model_usage"),
+        "reportedCostUsd": cost if all(attempt.get("cost_usd") is not None for attempt in attempts) else None,
+        "attempts": attempts,
+    }
+
+
+def _presales_context(retrieval_context: dict[str, Any] | None) -> dict[str, Any]:
+    context = retrieval_context or {}
+    return {
+        key: context[key]
+        for key in ("conversation_history", "opportunity", "commercial_catalog", "specialist_analyses")
+        if context.get(key)
+    }
+
+
 def choose_workflow_key(mode: str | None, source: str) -> str:
     if source == "whatsapp":
         return "whatsapp_conversation_turn"
@@ -102,12 +126,9 @@ def estimate_workflow_credits(
     for how much a workflow run debits from the client wallet.
     """
     workflow_key = (workflow_spec or {}).get("workflow_key") or choose_workflow_key(mode, source)
-    if workflow_key == "whatsapp_conversation_turn":
+    if workflow_key in ("whatsapp_conversation_turn", "mission_intake_conversation") and workflow_spec is None:
         return CREDITS_BASE_PER_RUN
-    configured = _as_list((workflow_spec or {}).get("subagent_specs"))
-    subagents = configured or DEFAULT_SUBAGENTS
-    limit = int((workflow_spec or {}).get("max_subagents") or len(subagents))
-    return CREDITS_BASE_PER_RUN + len(subagents[: max(0, limit)])
+    return CREDITS_BASE_PER_RUN + len(build_workflow_plan(workflow_spec, {})["subagents"])
 
 
 def classify_intent_and_stage(message: str, source: str = "strategy_admin") -> dict[str, Any]:
@@ -134,8 +155,8 @@ def classify_intent_and_stage(message: str, source: str = "strategy_admin") -> d
 def build_workflow_plan(workflow_spec: dict[str, Any] | None, classification: dict[str, Any], max_subagents: int | None = None) -> dict[str, Any]:
     configured = _as_list((workflow_spec or {}).get("subagent_specs"))
     subagents = configured if workflow_spec is not None and "subagent_specs" in workflow_spec else DEFAULT_SUBAGENTS
-    limit = max_subagents if max_subagents is not None else int((workflow_spec or {}).get("max_subagents") or len(subagents))
-    selected = [dict(item) for item in subagents[: max(0, limit)]]
+    limit = max_subagents if max_subagents is not None else (workflow_spec or {}).get("max_subagents")
+    selected = [dict(item) for item in subagents[: max(0, int(limit)) if limit is not None else len(subagents)]]
     return {
         "workflow_key": (workflow_spec or {}).get("workflow_key") or "diagnostic_48h",
         "classification": classification,
@@ -244,6 +265,19 @@ class StrategyWorkflowEngine:
     def __post_init__(self) -> None:
         self.trace = TraceRecorder(self.store)
 
+    def resolve_workflow_spec(
+        self, mode: str | None, source: str, supplied: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        key = (supplied or {}).get("workflow_key") or choose_workflow_key(mode, source)
+        configured = supplied if supplied is not None else self.workflow_specs.get(key)
+        if configured:
+            return {**configured, "workflow_key": key}
+        if key == "commercial_radar_local_niche":
+            return build_radar_workflow_spec()
+        if key in ("whatsapp_conversation_turn", "mission_intake_conversation"):
+            return {"workflow_key": key, "subagent_specs": [], "max_subagents": 0, "max_retries_per_node": 0}
+        return {"workflow_key": key}
+
     def execute(
         self,
         *,
@@ -259,11 +293,12 @@ class StrategyWorkflowEngine:
         workflow_spec: dict[str, Any] | None = None,
         retrieval_context: dict[str, Any] | None = None,
         autonomy_policies: list[dict[str, Any]] | None = None,
+        presales_candidate: bool = False,
+        presales_instruction: str | None = None,
     ) -> dict[str, Any]:
-        requested_workflow_key = (workflow_spec or {}).get("workflow_key") or choose_workflow_key(mode, source)
-        if workflow_spec is None:
-            workflow_spec = self.workflow_specs.get(requested_workflow_key)
-        workflow_key = (workflow_spec or {}).get("workflow_key") or requested_workflow_key
+        workflow_spec = self.resolve_workflow_spec(mode, source, workflow_spec)
+        workflow_key = workflow_spec["workflow_key"]
+        presales_candidate = presales_candidate and source == "strategy_admin"
         run = self.trace.start_run(
             {
                 "organization_id": organization_id,
@@ -275,12 +310,13 @@ class StrategyWorkflowEngine:
                 "profile_key": profile_key,
                 "assistant_id": assistant_id,
                 "workflow_key": workflow_key,
-                "input_payload": {"message": message, "mode": mode},
+                "input_payload": {"mode": mode, **({"message_hash": stable_hash(message)} if presales_candidate else {"message": message})},
             }
         )
         run_id = run["id"]
         try:
-            with self.trace.step(run_id, "classify", "classify", {"message": message}) as step:
+            trace_query = {"message_hash": stable_hash(message)} if presales_candidate else {"message": message}
+            with self.trace.step(run_id, "classify", "classify", trace_query) as step:
                 classification = classify_intent_and_stage(message, source)
                 step.succeed(classification, classification)
 
@@ -318,6 +354,7 @@ class StrategyWorkflowEngine:
                     assistant_id=assistant_id,
                     external=retrieval_audience == "external_contact",
                     audience=retrieval_audience,
+                    **({"scoped_workflow_key": workflow_key} if presales_candidate or source == "mission_intake" else {}),
                 )
             supplied = retrieval_context or {}
             if retrieved or company_context or supplied:
@@ -337,51 +374,44 @@ class StrategyWorkflowEngine:
                 }
 
             if retrieval_context:
-                with self.trace.step(run_id, "retrieval", "retrieval", {"query": message}) as step:
+                with self.trace.step(run_id, "retrieval", "retrieval", trace_query if presales_candidate else {"query": message}) as step:
                     step_record = step.succeed({"result_ids": (retrieval_context.get("retrieval_log") or {}).get("result_ids", [])})
                     self.trace.record_context(
                         run_id=run_id,
                         step_id=step_record["id"],
                         profile_key=profile_key,
                         context_kind="rag",
-                        safe_context=retrieval_context,
+                        safe_context={"source_ids": sorted(evidence_ids(retrieval_context))} if presales_candidate else retrieval_context,
                         card_ids=[item.get("id") for item in _as_list(retrieval_context.get("cards")) if isinstance(item, dict) and item.get("id")],
                         chunk_ids=[item.get("id") for item in _as_list(retrieval_context.get("chunks")) if isinstance(item, dict) and item.get("id")],
                     )
 
-            effective_workflow_spec = workflow_spec
-            if workflow_key == "commercial_radar_local_niche" and not workflow_spec:
-                effective_workflow_spec = build_radar_workflow_spec()
-            elif workflow_key == "whatsapp_conversation_turn" and not workflow_spec:
-                effective_workflow_spec = {
-                    "workflow_key": "whatsapp_conversation_turn",
-                    "subagent_specs": [],
-                    "max_subagents": 0,
-                    "max_retries_per_node": 0,
-                }
-            elif workflow_key == "mission_intake_conversation" and not workflow_spec:
-                effective_workflow_spec = {
-                    "workflow_key": "mission_intake_conversation",
-                    "subagent_specs": [],
-                    "max_subagents": 0,
-                    "max_retries_per_node": 0,
-                }
-
             with self.trace.step(run_id, "planner", "planner", {"workflow_key": workflow_key}) as step:
-                plan = build_workflow_plan(effective_workflow_spec, classification)
+                plan = build_workflow_plan(workflow_spec, classification)
                 step.succeed(plan, {"subagent_count": len(plan["subagents"])})
 
             subagent_outputs = []
+            generation_receipts = []
             for subagent in plan["subagents"]:
+                specialist_profile = _string(subagent.get("profile_key")) or "growth_strategist"
+                # Recovered sources were authorized specifically for the root profile.
+                # Shared pilot facts are the contract-checked CRM inputs.
+                specialist_context = (
+                    _presales_context(retrieval_context)
+                    if presales_candidate and specialist_profile != profile_key else retrieval_context
+                )
                 subagent_output = self._execute_subagent(
                     run_id,
                     subagent,
                     message,
-                    retrieval_context,
+                    specialist_context,
                     organization_id=organization_id,
                     client_id=client_id,
                     contract_id=contract_id,
+                    presales_candidate=presales_candidate,
                 )
+                if presales_candidate and (receipt := subagent_output.pop("_generation_receipt", None)):
+                    generation_receipts.append(receipt)
                 subagent_outputs.append(subagent_output)
 
             with self.trace.step(run_id, "synthesizer", "synthesizer", {"subagent_count": len(subagent_outputs)}) as step:
@@ -398,11 +428,15 @@ class StrategyWorkflowEngine:
                         organization_id=organization_id,
                         client_id=client_id,
                         contract_id=contract_id,
+                        presales_candidate=presales_candidate,
+                        presales_instruction=presales_instruction,
                     )
                 elif plan["workflow_key"] == "commercial_radar_local_niche":
                     synthesis = synthesize_radar_workflow_result(message, plan, subagent_outputs, retrieval_context)
                 else:
                     synthesis = synthesize_workflow_result(message, plan, subagent_outputs, retrieval_context)
+                if presales_candidate and (receipt := synthesis.pop("_generation_receipt", None)):
+                    generation_receipts.append(receipt)
                 step.succeed(synthesis, {"supporting_cards": synthesis.get("supporting_cards", [])})
 
             action_key = "send_external_message" if source == "whatsapp" else "client_visible_recommendation"
@@ -434,7 +468,11 @@ class StrategyWorkflowEngine:
                     target_id=workflow_key,
                     signal_score=0.7,
                     confidence=float(classification["confidence"]),
-                    evidence={"classification": classification, "supporting_cards": synthesis.get("supporting_cards", [])},
+                    evidence={
+                        "classification": classification,
+                        "supporting_cards": synthesis.get("supporting_cards", []),
+                        "evaluation_origin": "runtime_estimate",
+                    },
                 )
                 step.succeed({"learning_signal_id": signal["id"]})
 
@@ -450,7 +488,14 @@ class StrategyWorkflowEngine:
                     "decision_summary": decision.reason,
                 },
             )
-            return {"run": completed, "synthesis": synthesis, "policy": decision.to_dict(), "subagents": subagent_outputs}
+            result = {"run": completed, "synthesis": synthesis, "policy": decision.to_dict(), "subagents": subagent_outputs}
+            if generation_receipts:
+                costs = [receipt["reportedCostUsd"] for receipt in generation_receipts]
+                result["usage"] = {
+                    "stages": generation_receipts,
+                    "reportedGenerationCostUsd": sum(costs) if all(cost is not None for cost in costs) else None,
+                }
+            return result
         except Exception as error:
             self.trace.complete_run(run_id, "failed", {"error_message": str(error), "output_payload": {"error": str(error)}})
             raise
@@ -465,6 +510,7 @@ class StrategyWorkflowEngine:
         organization_id: str | None = None,
         client_id: str | None = None,
         contract_id: str | None = None,
+        presales_candidate: bool = False,
     ) -> dict[str, Any]:
         key = _string(subagent.get("key") or subagent.get("subagent_key"))
         profile_key = _string(subagent.get("profile_key")) or "growth_strategist"
@@ -474,17 +520,31 @@ class StrategyWorkflowEngine:
                 provider = self._execute_harness_agent(
                     run_id=run_id,
                     profile_key=profile_key,
+                    stage_key=key,
                     objective=(
                         f"{objective}\nResponda somente JSON com as chaves analysis (string) e "
                         "recommended_actions (array de strings)."
+                        + (
+                            " Inclua facts, assumptions, constraints, options e pending_questions como listas "
+                            "de textos curtos e evidence_ids com os IDs de fontes que de fato sustentam sua análise."
+                            if presales_candidate else ""
+                        )
                     ),
                     message=message,
                     retrieval_context=retrieval_context,
                     organization_id=organization_id,
                     client_id=client_id,
                     contract_id=contract_id,
+                    presales_candidate=presales_candidate,
                 )
-                parsed = validate_subagent_output(parse_json_object(provider["content"]))
+                raw = parse_json_object(provider["content"])
+                parsed = validate_subagent_output(raw)
+                if presales_candidate:
+                    for field_name in ("facts", "assumptions", "constraints", "options", "pending_questions"):
+                        parsed[field_name] = [
+                            item.strip() for item in _as_list(raw.get(field_name)) if isinstance(item, str) and item.strip()
+                        ][:12]
+                    parsed["evidence_ids"] = _verified_ids(raw.get("evidence_ids"), evidence_ids(retrieval_context))
                 output = {
                     "subagent_key": key,
                     "profile_key": profile_key,
@@ -504,7 +564,17 @@ class StrategyWorkflowEngine:
                     "retrieval_used": bool(retrieval_context),
                 }
             step_record = step.succeed(output, {"objective": objective})
-        verification = verify_output(output, {"minimum_score": 0.5}, _as_list(subagent.get("required_terms")))
+        terms = _as_list(subagent.get("required_terms"))
+        verification = verify_output(
+            {"analysis": output["analysis"], "recommended_actions": output["recommended_actions"]} if presales_candidate else output,
+            {"minimum_score": 0.5}, terms,
+        )
+        if presales_candidate and not terms:
+            verification = {
+                "status": "skipped", "score": 0.0,
+                "findings": [{"message": "Sem critério avaliável."}],
+                "retry_recommended": False, "follow_up_prompt": "",
+            }
         verification_record = self.trace.record_verification(
             run_id=run_id,
             step_id=step_record["id"],
@@ -523,15 +593,19 @@ class StrategyWorkflowEngine:
                 "subagent_key": key,
                 "profile_key": profile_key,
                 "objective": objective,
-                "context_summary": str(sanitize_trace_payload(retrieval_context or {}))[:600],
+                "context_summary": str(sorted(evidence_ids(retrieval_context)))[:600] if presales_candidate else str(sanitize_trace_payload(retrieval_context or {}))[:600],
                 "allowed_tools": _as_list(subagent.get("allowed_tools")),
                 "rubric": {"required_terms": _as_list(subagent.get("required_terms"))},
-                "status": "succeeded" if verification["status"] == "passed" else "failed",
+                "status": "failed" if verification["status"] == "failed" else "succeeded",
                 "output_payload": sanitize_trace_payload(output),
                 "verification_result_id": verification_record["id"],
             },
         )
-        return {**output, "verification": verification}
+        return {
+            **output,
+            "verification": verification,
+            **({"_generation_receipt": _generation_receipt(key, provider)} if presales_candidate and self.harness else {}),
+        }
 
     def _execute_synthesizer(
         self,
@@ -547,6 +621,8 @@ class StrategyWorkflowEngine:
         client_id: str | None,
         contract_id: str | None,
         mode: str | None = None,
+        presales_candidate: bool = False,
+        presales_instruction: str | None = None,
     ) -> dict[str, Any]:
         if plan["workflow_key"] == "mission_intake_conversation":
             source_catalog = []
@@ -660,20 +736,38 @@ class StrategyWorkflowEngine:
                 "Responda somente JSON com summary, answer, recommended_actions[] e supporting_cards[]."
             )
 
+        task_contract = "Siga o contrato de saída da conversa." if plan["workflow_key"] == "mission_intake_conversation" else contract
+        stage_objective = f"Sintetize o workflow {plan['workflow_key']} usando as analises verificadas. {task_contract}"
+        context = retrieval_context
+        if presales_candidate:
+            stage_objective += (
+                " Diferencie a YUX vendedora do prospect. Compare somente serviços elegíveis no catálogo comercial "
+                "fornecido, respeitando restrições e orçamento confirmados. Sem catálogo ou dado decisivo, "
+                "faça a pergunta necessária e adie a recomendação. Não invente preços, escopo ou evidências. "
+                "Use supporting_cards apenas para IDs de cartões realmente usados. "
+                "Acrescente recommendation com decision ('recommend' ou 'defer'), rationale e missingInformation "
+                "(lista de perguntas ou dados a confirmar). Para recomendar, informe packageId do catálogo, "
+                "itemKeys com base e os itens necessários, e alternativePackageIds com alternativas elegíveis. "
+                "Deixe valores finais e a formalização para o CRM. Use fatos confirmados do histórico e do diagnóstico."
+            )
+            context = {
+                **(retrieval_context or {}),
+                "specialist_analyses": subagent_outputs,
+            }
+        else:
+            stage_objective += f"\nAnalises: {sanitize_trace_payload(subagent_outputs)}"
         provider = self._execute_harness_agent(
             run_id=run_id,
             profile_key=profile_key,
-            objective=(
-                f"Sintetize o workflow {plan['workflow_key']} usando as analises verificadas. "
-                + ("Siga o contrato de saída da conversa.\n" if plan["workflow_key"] == "mission_intake_conversation" else f"{contract}\n")
-                +
-                f"Analises: {sanitize_trace_payload(subagent_outputs)}"
-            ),
+            stage_key="synthesizer",
+            objective=stage_objective,
             message=message,
-            retrieval_context=retrieval_context,
+            retrieval_context=context,
             organization_id=organization_id,
             client_id=client_id,
             contract_id=contract_id,
+            presales_candidate=presales_candidate,
+            presales_instruction=presales_instruction,
             model_route_key=(
                 "action_engine_strategist"
                 if plan["workflow_key"] == "mission_intake_conversation"
@@ -705,13 +799,25 @@ class StrategyWorkflowEngine:
         else:
             synthesis = parsed
         synthesis["workflow_key"] = plan["workflow_key"]
-        synthesis["supporting_cards"] = [
+        card_ids = [
             item.get("id") for item in _as_list((retrieval_context or {}).get("cards"))
             if isinstance(item, dict) and item.get("id")
         ]
+        synthesis["supporting_cards"] = (
+            _verified_ids(synthesis.get("supporting_cards"), set(card_ids)) if presales_candidate else card_ids
+        )
+        if presales_candidate and synthesis["supporting_cards"]:
+            from .mission_conversation import build_mission_source_catalog
+            supported = set(synthesis["supporting_cards"])
+            synthesis["supporting_sources"] = [
+                item.model_dump() for item in build_mission_source_catalog(retrieval_context, "internal_operator")
+                if item.kind == "strategy_card" and item.id in supported
+            ]
         synthesis["input_hash"] = stable_hash({"message": message, "plan": plan})
         synthesis["model"] = provider["model"]
         synthesis["provider"] = provider["provider"]
+        if presales_candidate:
+            synthesis["_generation_receipt"] = _generation_receipt("synthesizer", provider)
         return synthesis
 
     def _execute_harness_agent(
@@ -720,6 +826,7 @@ class StrategyWorkflowEngine:
         run_id: str,
         profile_key: str,
         objective: str,
+        stage_key: str,
         message: str,
         retrieval_context: dict[str, Any] | None,
         organization_id: str | None = None,
@@ -728,6 +835,8 @@ class StrategyWorkflowEngine:
         model_route_key: str | None = None,
         output_contract: str | None = None,
         mission_source_catalog: list[dict[str, Any]] | None = None,
+        presales_candidate: bool = False,
+        presales_instruction: str | None = None,
     ) -> dict[str, Any]:
         if self.harness is None:
             raise RuntimeError("agent_harness_not_configured")
@@ -742,6 +851,10 @@ class StrategyWorkflowEngine:
             'Essas decisões não substituem as permissões e a configuração verificadas da conta.'
         )
         agent = {**configured, "base_prompt": objective + strategy_direction}
+        approved_layers = []
+        if presales_candidate:
+            approved_layers = [_string(presales_instruction or configured.get("base_prompt")), objective + strategy_direction]
+            agent["base_prompt"] = "Analise os dados desta solicitação conforme as instruções aprovadas."
         strategy_context = {
             "profile_key": profile_key,
             "concept_cards": _as_list((retrieval_context or {}).get("cards")),
@@ -755,8 +868,10 @@ class StrategyWorkflowEngine:
         }
         result = self.harness.execute_agent({
             "agent": agent,
+            "stage_key": stage_key,
+            "record_workflow_attempts": presales_candidate,
             "context": {
-                "objective": objective,
+                "objective": None if presales_candidate else objective,
                 "strategy_context": strategy_context,
                 "brand_summary": (retrieval_context or {}).get("brand_summary"),
                 "brand_rules": (retrieval_context or {}).get("brand_rules") or {},
@@ -767,6 +882,8 @@ class StrategyWorkflowEngine:
                 "knowledge_snippets": _as_list((retrieval_context or {}).get("knowledge_snippets")),
                 "mission_context": (retrieval_context or {}).get("mission_context"),
                 **({"mission_source_catalog": mission_source_catalog} if mission_source_catalog is not None else {}),
+                "approved_instruction_layers": [layer for layer in approved_layers if layer],
+                "presales_context": _presales_context(retrieval_context) if presales_candidate else None,
                 "context_coverage": (retrieval_context or {}).get("context_coverage") or {},
             },
             "user_input": message,
@@ -782,6 +899,22 @@ class StrategyWorkflowEngine:
         output = result["agent_runs"][-1]["output_payload"]
         if model_route_key == "action_engine_strategist" and output.get("finish_reason") == "length":
             raise AgentContractError("mission_conversation_output_truncated")
+        run = result["agent_runs"][-1]
+        trace = run.get("model_request_hash")
+        if trace and presales_candidate:
+            self.trace.record_context(
+                run_id=run_id, step_id=None, profile_key=profile_key, context_kind="runtime",
+                safe_context={
+                    "request_fingerprint": trace,
+                    "provider_request_fingerprint": output.get("provider_request_fingerprint"),
+                    "prompt_versions": run["prompt_versions"],
+                    "stage": stage_key,
+                    "source_ids": sorted(evidence_ids(retrieval_context)),
+                    "model_usage": output.get("model_usage"),
+                    "provider_cost_usd": output.get("cost_usd"),
+                    "attempts": output.get("attempts"),
+                },
+            )
         if output.get("dry_run") or not output.get("content"):
             raise RuntimeError("agent_provider_output_required")
         return output

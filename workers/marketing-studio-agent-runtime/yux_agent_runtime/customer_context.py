@@ -46,6 +46,7 @@ class CustomerContextService:
         assistant_id: str | None = None,
         external: bool = False,
         audience: str | None = None,
+        scoped_workflow_key: str | None = None,
     ) -> dict[str, Any]:
         if not organization_id:
             return {}
@@ -54,11 +55,27 @@ class CustomerContextService:
             raise ValueError("invalid_customer_context_audience")
         strategy = CompanyStrategyContextService(self.store).retrieve(organization_id=organization_id, contract_id=contract_id, profile_key=profile_key, audience=retrieval_audience, query=query)
         portfolio=CompanyPortfolioContextService(self.store).retrieve(organization_id=organization_id,contract_id=contract_id,profile_key=profile_key,audience=retrieval_audience,query=query,represented_business_ids=strategy.get('portfolio_selection',{}).get('representedBusinessIds',[]))
+        if scoped_workflow_key and contract_id is None:
+            # Products in the CRM portfolio belong to a contract. Without a
+            # contract, only organization-level represented businesses apply.
+            portfolio = {
+                **portfolio,
+                "items": [],
+                "total": 0,
+                "coverage": {"selected": 0, "hasMore": False, "contractRequired": True},
+            }
+            from .company_strategy_context import canonical_hash
+            portfolio = {key: value for key, value in portfolio.items() if key != "contextHash"}
+            portfolio["contextHash"] = canonical_hash(portfolio)
         strategy_fields = {'company_strategy_context': strategy['strategy_context'], 'company_strategy_sources': strategy['sources'],'portfolio_context':portfolio}
 
         company = _latest(self.store.list("organization_company_profiles", {"organization_id": organization_id}, limit=2))
         brands = self.store.list("marketing_brand_profiles", {"organization_id": organization_id}, limit=20)
-        active_brands = [item for item in brands if item.get("status") == "active"]
+        def in_scope(record: dict[str, Any]) -> bool:
+            record_contract = str(record.get("contract_id") or "") or None
+            return not scoped_workflow_key or record_contract is None or record_contract == contract_id
+
+        active_brands = [item for item in brands if item.get("status") == "active" and in_scope(item)]
         contract_brands = [item for item in active_brands if contract_id and str(item.get("contract_id")) == contract_id]
         brand = _latest(contract_brands) or _latest(active_brands)
         products=[{**item,'value_proposition':item.get('valueProposition'),'target_audience':item.get('targetAudience'),'proof_points':item.get('proofPoints',[]),'objections':item.get('objections',[]),'cta':item.get('cta')} for item in portfolio['items']]
@@ -71,7 +88,7 @@ class CustomerContextService:
                 profile_key=profile_key,
                 audience=retrieval_audience,
                 module_key="marketing_studio",
-                workflow_key=None,
+                workflow_key=scoped_workflow_key,
                 channel=None,
                 query_text=query,
                 match_limit=max(1, min(20, self.max_snippets)),
@@ -118,7 +135,7 @@ class CustomerContextService:
             }
         sources = [
             item for item in self.store.list("knowledge_sources", {"organization_id": organization_id})
-            if item.get("status") == "published" and self._source_allowed(item, profile_key, external)
+            if item.get("status") == "published" and in_scope(item) and self._source_allowed(item, profile_key, external)
         ]
         source_by_id = {str(item.get("id")): item for item in sources if item.get("id")}
         entries = [
@@ -127,7 +144,7 @@ class CustomerContextService:
         ]
         documents = [
             item for item in self.store.list("marketing_knowledge_documents", {"organization_id": organization_id})
-            if item.get("status") == "published" and str(item.get("source_id")) in source_by_id
+            if item.get("status") == "published" and in_scope(item) and str(item.get("source_id")) in source_by_id
         ]
         documents_by_id = {str(item.get("id")): item for item in documents if item.get("id")}
         curated_chunks = [

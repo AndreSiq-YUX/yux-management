@@ -3,6 +3,10 @@ import { z } from 'zod'
 import type { AppEnv } from '../../config/env.js'
 import { ApiError } from '../../http/errors.js'
 import { invokeAgentRuntime } from '../../lib/agent-runtime-client.js'
+import type { MissionSourceRefWire } from '../action-engine/generated/mission-wire.js'
+import { verifyMissionKnowledgeContext } from '../action-engine/mission-source-verifier.js'
+import { listPromptVersions, presalesPilotEnabled } from './prompt-versions.js'
+import { loadCommercialCatalog, loadPresalesLead, validateRecommendation } from './presales-context.js'
 
 type Queryable = Pick<pg.Pool, 'query'>
 type ChatRow = Record<string, unknown>
@@ -24,9 +28,16 @@ export const strategyAdminChatRequestSchema = z.object({
   organizationId: z.string().uuid().optional(),
   clientId: z.string().uuid().optional(),
   contractId: z.string().uuid().optional(),
+  leadId: z.uuid().optional(),
 })
 
 export type StrategyAdminChatRequest = z.infer<typeof strategyAdminChatRequestSchema>
+
+export const presalesJobSchema = z.object({
+  version: z.number().int().positive(),
+  instruction: z.string().trim().min(1).max(4000),
+  userMessageId: z.uuid(),
+})
 
 const modeLabels: Record<StrategyAdminChatRequest['mode'], string> = {
   general: 'Conversa estrategica geral',
@@ -46,6 +57,7 @@ export type PreparedStrategyAdminChat = {
     sessionId: string
     assistantMessageId: string
     actorUserId: string
+    presales?: z.infer<typeof presalesJobSchema>
   }
 }
 
@@ -53,7 +65,9 @@ export async function prepareStrategyAdminChat(
   pool: Queryable,
   actorUserId: string,
   request: StrategyAdminChatRequest,
+  pilotEnv?: AppEnv,
 ): Promise<PreparedStrategyAdminChat> {
+  const isPilot = (id: unknown) => typeof id === 'string' && pilotEnv && presalesPilotEnabled(pilotEnv, id)
   const profile = await pool.query<{ id: string }>(
     `SELECT id
       FROM public.yux_strategy_agent_profiles
@@ -63,6 +77,7 @@ export async function prepareStrategyAdminChat(
   if (!profile.rows[0]) throw new ApiError(409, 'growth_strategist_not_active')
 
   let session: ChatRow
+  let version: Awaited<ReturnType<typeof listPromptVersions>>[number] | undefined
   if (request.sessionId) {
     const existing = await pool.query<ChatRow>(
       `SELECT *
@@ -73,11 +88,38 @@ export async function prepareStrategyAdminChat(
     )
     if (!existing.rows[0]) throw new ApiError(404, 'strategy_chat_session_not_found')
     session = existing.rows[0]
+    const suppliedScope = [
+      [request.organizationId, session.organization_id],
+      [request.clientId, session.client_id],
+      [request.contractId, session.contract_id],
+      [request.leadId, session.presales_lead_id],
+    ]
+    if (suppliedScope.some(([requested, stored]) => requested !== undefined && requested !== stored)) {
+      throw new ApiError(409, 'strategy_chat_session_scope_mismatch')
+    }
+    if (isPilot(session.organization_id)) {
+      version = (await listPromptVersions(pool, String(session.organization_id), 1))[0]
+      if (version?.instruction && session.presales_lead_id) {
+        await loadPresalesLead(pool, String(session.organization_id), String(session.presales_lead_id), optionalString(session.contract_id))
+      }
+    }
   } else {
+    if (isPilot(request.organizationId)) {
+      version = (await listPromptVersions(pool, request.organizationId!, 1))[0]
+    }
+    if (request.leadId && (!request.organizationId || !version?.instruction)) {
+      throw new ApiError(409, 'strategy_presales_pilot_inactive')
+    }
+    if (request.organizationId && (request.clientId || request.contractId || version?.instruction)) {
+      await assertScope(pool, request.organizationId, request.clientId, request.contractId)
+    }
+    if (request.organizationId && request.leadId) {
+      await loadPresalesLead(pool, request.organizationId, request.leadId, request.contractId)
+    }
     const inserted = await pool.query<ChatRow>(
       `INSERT INTO public.yux_strategy_chat_sessions (
-         actor_user_id,organization_id,client_id,contract_id,profile_id,profile_key,mode,title
-       ) VALUES ($1,$2,$3,$4,$5,'growth_strategist',$6,$7)
+         actor_user_id,organization_id,client_id,contract_id,profile_id,profile_key,mode,title${request.leadId ? ',presales_lead_id' : ''}
+       ) VALUES ($1,$2,$3,$4,$5,'growth_strategist',$6,$7${request.leadId ? ',$8' : ''})
        RETURNING *`,
       [
         actorUserId,
@@ -87,6 +129,7 @@ export async function prepareStrategyAdminChat(
         profile.rows[0].id,
         request.mode,
         modeLabels[request.mode],
+        ...(request.leadId ? [request.leadId] : []),
       ],
     )
     session = inserted.rows[0]
@@ -146,6 +189,10 @@ export async function prepareStrategyAdminChat(
       sessionId,
       assistantMessageId: String(assistantMessage.id),
       actorUserId,
+      leadId: optionalString(session.presales_lead_id),
+      ...(version?.instruction ? {
+        presales: { version: version.version, instruction: version.instruction, userMessageId: String(userMessage.id) },
+      } : {}),
     },
   }
 }
@@ -155,6 +202,7 @@ type RuntimeStrategyResult = {
   synthesis?: Record<string, unknown>
   policy?: Record<string, unknown>
   credits?: Record<string, unknown>
+  usage?: { stages?: unknown; reportedGenerationCostUsd?: number | null }
 }
 
 export async function processStrategyAdminChat(
@@ -162,14 +210,25 @@ export async function processStrategyAdminChat(
   env: AppEnv,
   request: PreparedStrategyAdminChat['jobBody'],
 ) {
-  await pool.query(
+  const claimed = await pool.query(
     `UPDATE public.yux_strategy_chat_messages
         SET status='running',error_message=NULL
-      WHERE id=$1 AND session_id=$2 AND role='assistant'`,
+      WHERE id=$1 AND session_id=$2 AND role='assistant'${request.presales ? " AND status='queued'" : ''}`,
     [request.assistantMessageId, request.sessionId],
   )
+  if (request.presales && claimed.rowCount !== 1) return { skipped: true }
 
   try {
+    const presales = request.presales && request.organizationId ? request.presales : null
+    if (presales && request.organizationId) {
+      await assertScope(pool, request.organizationId, request.clientId, request.contractId)
+    }
+    const organizationId = request.organizationId
+    const [catalog, prospect, history] = presales && organizationId ? await Promise.all([
+      loadCommercialCatalog(pool, organizationId),
+      request.leadId ? loadPresalesLead(pool, organizationId, request.leadId, request.contractId) : null,
+      loadUserHistory(pool, request.sessionId, presales.userMessageId),
+    ]) : [null, null, []] as const
     const runtime = await invokeAgentRuntime<RuntimeStrategyResult>(env, '/workflows/execute', {
       message: request.message,
       profile_key: 'growth_strategist',
@@ -178,16 +237,49 @@ export async function processStrategyAdminChat(
       client_id: request.clientId ?? null,
       contract_id: request.contractId ?? null,
       mode: request.mode,
+      ...(presales ? {
+        presales_candidate: true,
+        presales_instruction: presales.instruction,
+        retrieval_context: {
+          conversation_history: history,
+          opportunity: prospect,
+          commercial_catalog: catalog,
+        },
+      } : {}),
     }, { timeoutMs: 170_000 })
     const synthesis = runtime.synthesis ?? {}
     const answer = String(synthesis.answer ?? synthesis.summary ?? '').trim()
     if (!answer) throw new Error('strategy_admin_chat_empty_answer')
+    const supportingCards = Array.isArray(synthesis.supporting_cards) ? synthesis.supporting_cards : []
+    if (presales && organizationId && supportingCards.length) {
+      const sources = Array.isArray(synthesis.supporting_sources) ? synthesis.supporting_sources as MissionSourceRefWire[] : []
+      if (!supportingCards.every(id => sources.some(source => source.id === id))) {
+        throw new Error('strategy_presales_references_unverifiable')
+      }
+      await verifyMissionKnowledgeContext(pool, {
+        organizationId, audience: 'internal_operator', sourceRefs: sources,
+        contractId: request.contractId, workflowKey: typeof synthesis.workflow_key === 'string' ? synthesis.workflow_key : undefined,
+      })
+    }
+    const recommendation = catalog ? validateRecommendation(synthesis.recommendation, catalog) : null
+    const content = recommendation
+      ? [recommendation.rationale, ...recommendation.missingInformation.map(item => `• ${item}`)].join('\n')
+      : answer
 
     const safeContext = {
       runId: runtime.run?.id ?? null,
       workflowKey: synthesis.workflow_key ?? null,
-      supportingCards: Array.isArray(synthesis.supporting_cards) ? synthesis.supporting_cards : [],
+      supportingCards,
       policy: runtime.policy ?? {},
+      ...(presales && catalog ? {
+        promptVersion: presales.version,
+        catalogVersion: catalog.version,
+        leadId: request.leadId ?? null,
+        opportunityVersion: prospect?.version ?? null,
+        recommendation,
+        generationUsage: runtime.usage ?? null,
+        commercialCredits: runtime.credits?.reserved ?? null,
+      } : {}),
     }
     const completed = (await pool.query<ChatRow>(
       `UPDATE public.yux_strategy_chat_messages
@@ -198,7 +290,7 @@ export async function processStrategyAdminChat(
       [
         request.assistantMessageId,
         request.sessionId,
-        answer,
+        content,
         String(synthesis.provider ?? 'openrouter'),
         String(synthesis.model ?? 'yux-agent-harness-runtime'),
         JSON.stringify(safeContext),
@@ -227,6 +319,30 @@ export async function processStrategyAdminChat(
     )
     throw error
   }
+}
+
+async function assertScope(pool: Queryable, organizationId: string, clientId?: string, contractId?: string) {
+  const result = await pool.query(
+    `SELECT 1 FROM public.organizations org WHERE org.id = $1
+      AND ($2::uuid IS NULL OR org.client_id = $2)
+      AND ($3::uuid IS NULL OR EXISTS (SELECT 1 FROM public.contracts c
+        WHERE c.id = $3 AND c.client_id = org.client_id AND c.status = 'active'))`,
+    [organizationId, clientId ?? null, contractId ?? null],
+  )
+  if (!result.rows.length) throw new ApiError(409, 'strategy_chat_scope_invalid')
+}
+
+async function loadUserHistory(pool: Queryable, sessionId: string, currentMessageId: string) {
+  const { rows } = await pool.query<{ content: string; created_at: string }>(
+    `SELECT left(previous.content, 1800) AS content, previous.created_at
+     FROM public.yux_strategy_chat_messages previous
+     JOIN public.yux_strategy_chat_messages current ON current.id = $2 AND current.session_id = previous.session_id
+     WHERE previous.session_id = $1 AND previous.role = 'user' AND previous.status = 'completed'
+       AND (previous.created_at, previous.id) < (current.created_at, current.id)
+     ORDER BY previous.created_at DESC, previous.id DESC LIMIT 8`,
+    [sessionId, currentMessageId],
+  )
+  return rows.reverse()
 }
 
 export async function markStrategyAdminChatQueueFailure(

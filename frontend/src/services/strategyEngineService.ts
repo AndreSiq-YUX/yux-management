@@ -121,6 +121,7 @@ export function mapStrategyChatSession(row: DbRow): StrategyChatSession {
     organizationId: stringValue(row.organization_id) || undefined,
     clientId: stringValue(row.client_id) || undefined,
     contractId: stringValue(row.contract_id) || undefined,
+    leadId: stringValue(row.presales_lead_id) || undefined,
     profileKey: stringValue(row.profile_key, 'growth_strategist'),
     title: stringValue(row.title, 'Nova conversa estrategica'),
     mode: stringValue(row.mode, 'general') as StrategyChatSession['mode'],

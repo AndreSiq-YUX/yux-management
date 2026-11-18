@@ -138,7 +138,7 @@ export async function registerFunctionRoutes(app: FastifyInstance) {
     if (params.data.name === 'run-strategy-admin-chat') {
       const chatRequest = strategyAdminChatRequestSchema.safeParse(body)
       if (!chatRequest.success) return reply.code(400).send({ error: 'invalid_strategy_chat_request' })
-      const prepared = await prepareStrategyAdminChat(app.pg, ctx.userId, chatRequest.data)
+      const prepared = await prepareStrategyAdminChat(app.pg, ctx.userId, chatRequest.data, ctx.role === 'yux_admin' ? app.config : undefined)
       try {
         const job = await app.jobQueue.add('strategy.adminChat', {
           requestedBy: ctx.userId,

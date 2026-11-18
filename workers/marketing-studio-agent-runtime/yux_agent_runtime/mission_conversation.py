@@ -509,11 +509,8 @@ def normalize_mission_conversation_response(
 class MissionConversationWorkflow:
     workflow_engine: "StrategyWorkflowEngine"
 
-    def respond(
-        self,
-        request: dict[str, Any] | MissionConversationTurnRequestWire,
-    ) -> MissionConversationTurnResponseWire:
-        typed = request if isinstance(request, MissionConversationTurnRequestWire) else MissionConversationTurnRequestWire.model_validate(request)
+    @staticmethod
+    def workflow_input(typed: MissionConversationTurnRequestWire) -> dict[str, Any]:
         mission_context = {
             "audience": typed.audience,
             "rollingSummary": typed.rollingSummary,
@@ -523,23 +520,28 @@ class MissionConversationWorkflow:
             "allowedActionPacks": [item.model_dump() for item in typed.allowedActionPacks],
             "allowedCapabilityKeys": typed.allowedCapabilityKeys,
         }
-        # Includes retrieval and every configured fallback. The caller allows
-        # 150 seconds and its queue job 180; other workflows keep 45 seconds.
+        return dict(
+            message=typed.user_message,
+            profile_key="growth_strategist",
+            source="mission_intake",
+            organization_id=typed.organization_id,
+            client_id=typed.client_id,
+            contract_id=typed.contract_id,
+            conversation_id=typed.conversation_id,
+            mode="mission_intake",
+            workflow_spec=MISSION_INTAKE_WORKFLOW_SPEC,
+            retrieval_context={
+                "audience": typed.audience,
+                "mission_request": typed.model_dump(),
+                "mission_context": mission_context,
+            },
+        )
+
+    def respond(
+        self,
+        request: dict[str, Any] | MissionConversationTurnRequestWire,
+    ) -> MissionConversationTurnResponseWire:
+        typed = request if isinstance(request, MissionConversationTurnRequestWire) else MissionConversationTurnRequestWire.model_validate(request)
         with provider_request_budget(120):
-            result = self.workflow_engine.execute(
-                message=typed.user_message,
-                profile_key="growth_strategist",
-                source="mission_intake",
-                organization_id=typed.organization_id,
-                client_id=typed.client_id,
-                contract_id=typed.contract_id,
-                conversation_id=typed.conversation_id,
-                mode="mission_intake",
-                workflow_spec=MISSION_INTAKE_WORKFLOW_SPEC,
-                retrieval_context={
-                    "audience": typed.audience,
-                    "mission_request": typed.model_dump(),
-                    "mission_context": mission_context,
-                },
-            )
+            result = self.workflow_engine.execute(**self.workflow_input(typed))
         return validate_mission_conversation_response(result["synthesis"], typed)

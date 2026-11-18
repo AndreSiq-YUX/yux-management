@@ -1,6 +1,6 @@
 import type pg from 'pg'
 import type { AppEnv } from '../../config/env.js'
-import { processStrategyAdminChat, strategyAdminChatRequestSchema } from '../../modules/strategy-engine/admin-chat.js'
+import { presalesJobSchema, processStrategyAdminChat, strategyAdminChatRequestSchema } from '../../modules/strategy-engine/admin-chat.js'
 
 export async function handleStrategyAdminChat(pool: Pick<pg.Pool, 'query'>, env: AppEnv, data: Record<string, unknown>) {
   const body = data.body as Record<string, unknown> | undefined
@@ -8,6 +8,7 @@ export async function handleStrategyAdminChat(pool: Pick<pg.Pool, 'query'>, env:
     sessionId: strategyAdminChatRequestSchema.shape.sessionId.unwrap(),
     assistantMessageId: strategyAdminChatRequestSchema.shape.sessionId.unwrap(),
     actorUserId: strategyAdminChatRequestSchema.shape.sessionId.unwrap(),
+    presales: presalesJobSchema.optional(),
   }).parse(body)
   return processStrategyAdminChat(pool, env, request)
 }

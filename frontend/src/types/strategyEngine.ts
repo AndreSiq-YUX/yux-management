@@ -517,6 +517,7 @@ export interface StrategyChatSession {
   organizationId?: string
   clientId?: string
   contractId?: string
+  leadId?: string
   profileKey: string
   title: string
   mode: StrategyAdminChatMode
@@ -551,6 +552,7 @@ export interface StrategyAdminChatRequest {
   organizationId?: string
   clientId?: string
   contractId?: string
+  leadId?: string
 }
 
 export interface StrategyAdminChatResponse {

@@ -95,12 +95,20 @@ export function AdminAiPage() {
             Governanca central de provedores LLM, modelos, consumo, overrides por cliente, custos e falhas.
           </p>
         </div>
-        <Link
-          to="/admin/integrations"
-          className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-        >
-          Ver integracoes
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            to="/admin/strategy-engine?tab=agent-prompts"
+            className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Agentes e prompts
+          </Link>
+          <Link
+            to="/admin/integrations"
+            className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Ver integracoes
+          </Link>
+        </div>
       </div>
 
       <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">

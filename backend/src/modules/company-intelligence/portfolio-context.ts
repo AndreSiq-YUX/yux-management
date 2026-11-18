@@ -1,9 +1,14 @@
 import {hashCanonical,type Queryable} from '../action-engine/repository.js'
 export type CompanyPortfolioContext={items:Array<Record<string,unknown>>;total:number;representedBusinesses:Array<Record<string,unknown>>;coverage:Record<string,unknown>;[key:string]:unknown}
-export async function getCompanyPortfolioContext(db:Queryable,input:{organizationId:string;contractId?:string|null;profileKey:string;audience:'internal_operator'|'client_user'|'external_contact';query:string;representedBusinessIds?:string[];offset?:number;limit?:number}){
+export async function getCompanyPortfolioContext(db:Queryable,input:{organizationId:string;contractId?:string|null;profileKey:string;audience:'internal_operator'|'client_user'|'external_contact';query:string;representedBusinessIds?:string[];offset?:number;limit?:number;requireProductContract?:boolean}){
  const result=await db.query<{context:CompanyPortfolioContext}>('SELECT private.get_company_portfolio_context_v1($1,$2,$3,$4,$5,$6::uuid[],$7,$8) AS context',[input.organizationId,input.contractId??null,input.profileKey,input.audience,input.query,input.representedBusinessIds??[],input.offset??0,input.limit??20])
  const context=result.rows[0]?.context
  if(!context)throw new Error('company_portfolio_context_unavailable')
+ if(input.requireProductContract && !input.contractId){
+  context.items=[]
+  context.total=0
+  context.coverage={contractRequired:true}
+ }
  context.coverage.omittedForBudget=0
  context.coverage.omittedBrandsForBudget=0
  context.coverage.omittedProductsForBudget=0

@@ -43,6 +43,7 @@ export async function buildMissionOperationalContext(client: Queryable, input: {
   packKeys?: string[]
   platformToolCatalog?: PlatformToolCatalog
   accountAvailability?: MissionAccountAvailability
+  restrictMemoryToContract?: boolean
 }): Promise<BuiltMissionOperationalContext> {
   if (input.accountAvailability && input.accountAvailability.organizationId !== input.organizationId) throw new Error('mission_account_context_scope_mismatch')
   const [entitlements, learningMemory, channels, advertising, platformEmail, crm] = await Promise.all([
@@ -58,12 +59,18 @@ export async function buildMissionOperationalContext(client: Queryable, input: {
       )
       : Promise.resolve({ rows: input.requestedModules.map((module_key) => ({ module_key })) }),
     client.query<{ id: string; pack_key: string; pack_version: string; outcome_hash: string; summary: Record<string, unknown> }>(
-      `SELECT id, pack_key, pack_version, outcome_hash, summary
-       FROM public.action_mission_memory_summaries
-       WHERE organization_id = $1 AND review_status = 'approved'
-         AND (CARDINALITY($2::TEXT[]) = 0 OR pack_key = ANY($2::TEXT[]))
-       ORDER BY reviewed_at DESC, id LIMIT 10`,
-      [input.organizationId, [...new Set(input.packKeys ?? [])].sort()],
+      `SELECT memory.id, memory.pack_key, memory.pack_version, memory.outcome_hash, memory.summary
+       FROM public.action_mission_memory_summaries memory
+       WHERE memory.organization_id = $1 AND memory.review_status = 'approved'
+         AND (CARDINALITY($2::TEXT[]) = 0 OR memory.pack_key = ANY($2::TEXT[]))
+         ${input.restrictMemoryToContract ? `AND EXISTS (
+           SELECT 1 FROM public.action_missions mission
+           WHERE mission.id = memory.mission_id AND mission.organization_id = memory.organization_id
+             AND mission.contract_id IS NOT DISTINCT FROM $3::uuid
+         )` : ''}
+       ORDER BY memory.reviewed_at DESC, memory.id LIMIT 10`,
+      [input.organizationId, [...new Set(input.packKeys ?? [])].sort(),
+        ...(input.restrictMemoryToContract ? [input.contractId ?? null] : [])],
     ),
     safeRows(() => client.query<{ channel: string; is_active: boolean }>(
       `SELECT channel, TRUE AS is_active FROM (${ACTIVE_MISSION_CHANNELS_SQL}) active_channels ORDER BY channel`,

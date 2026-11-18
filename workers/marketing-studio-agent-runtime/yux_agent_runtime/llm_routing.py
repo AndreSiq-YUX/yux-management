@@ -149,6 +149,8 @@ class RoutedLlmClient:
     def _execute(self, method: str, *args, **kwargs) -> dict[str, Any]:
         route, clients = kwargs.pop("_configuration", None) or self.configuration()
         last_error = None
+        capture_workflow_usage = method == "chat_completion" and self.context.get("record_workflow_attempts")
+        attempts = []
         kwargs.pop("fallback_models", None)
         for attempt in route["attempts"]:
             provider_request_timeout()
@@ -170,6 +172,9 @@ class RoutedLlmClient:
                     result = getattr(client, method)(*args, **options)
                 if recorder:
                     recorder.received({**result, 'provider': attempt['provider'], 'model': result.get('model') or attempt['modelName']})
+                if capture_workflow_usage:
+                    attempts.append({**attempt, "status": "completed", "cost_usd": result.get("cost_usd")})
+                    result = {**result, "attempts": attempts}
                 return {**result, "provider": attempt["provider"], "model": result.get("model") or attempt["modelName"]}
             except ProviderAuthorizationError as error:
                 if recorder:
@@ -182,6 +187,8 @@ class RoutedLlmClient:
             except ProviderRequestError as error:
                 if recorder and recorder.failed(error) == 'uncertain':
                     raise
+                if capture_workflow_usage:
+                    attempts.append({**attempt, "status": "failed", "cost_usd": None})
                 last_error = error
         raise last_error or ProviderRequestError("llm_route_unavailable")
 

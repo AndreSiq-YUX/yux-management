@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { ClosingChecklistPanel } from '@/components/crm/ClosingChecklistPanel'
 import { LeadProposalLauncher } from '@/components/crm/LeadProposalLauncher'
 import { ProposalEventTimeline } from '@/components/crm/ProposalEventTimeline'
+import { StrategyRecommendationImport } from '@/components/proposals/StrategyRecommendationImport'
 import { ProposalRecommendationPanel } from '@/components/crm/ProposalRecommendationPanel'
 import { crmClosingService } from '@/services/crmClosingService'
 import { usePlatformStore } from '@/stores/platformStore'
@@ -156,6 +157,9 @@ export function LeadCommercialPanel({ lead }: { lead: CrmLead }) {
             recommendations={recommendations}
             packages={packages}
           />
+      {role === 'admin' && lead.organizationId && (
+        <StrategyRecommendationImport key={lead.id} organizationId={lead.organizationId} leadId={lead.id} />
+      )}
           <ClosingChecklistPanel
             proposals={proposals}
             checklists={checklists}

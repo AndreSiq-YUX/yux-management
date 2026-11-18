@@ -9,9 +9,7 @@ import { createActionEngineCapabilityRegistry } from '../../modules/action-engin
 import { REVENUE_RECOVERY_PACK_V0 } from '../../modules/action-engine/packs/revenue-recovery-v0.js'
 import { CAMPAIGN_LAUNCH_PACK_V1 } from '../../modules/action-engine/packs/campaign-launch-v1.js'
 import { CAMPAIGN_OPTIMIZATION_PACK_V1 } from '../../modules/action-engine/packs/campaign-optimization-v1.js'
-import { FUNNEL_NURTURE_PACK_V1 } from '../../modules/action-engine/packs/funnel-nurture-v1.js'
 import { CRM_PREPARATION_PACK_V1, ensureCrmPreparationPackVersion } from '../../modules/action-engine/packs/crm-preparation-v1.js'
-import { conversationPackAvailable } from '../../modules/action-engine/conversation-pack-availability.js'
 import { compileSupervisorPlan, diffMissionPlans, requestMissionPlan, type CompiledMissionPlan } from '../../modules/action-engine/planner.js'
 import type { ActionPackVersion } from '../../modules/action-engine/action-pack.js'
 import {
@@ -39,6 +37,7 @@ import { deliverDecisionNotification, enqueuePendingDecisionNotifications, persi
 import { decideCampaignOptimization } from '../../modules/action-engine/capabilities/campaign-optimization.js'
 import { invokeMissionConversationTurn } from '../../lib/agent-runtime-client.js'
 import { buildMissionOperationalContext } from '../../modules/action-engine/context-builder.js'
+import { buildMissionTurnRequest } from '../../modules/action-engine/mission-turn-request.js'
 import { buildMissionAccountAvailability, resolveMissionAccountAccess } from '../../modules/action-engine/mission-account-availability.js'
 import {
   completeAgentConversationTurn,
@@ -55,7 +54,6 @@ import { getCompanyStrategyRevisionForEditing, canConfigureCompanyStrategy, list
 import { validateMissionStrategyProposal } from '../../modules/company-strategy/proposals.js'
 import type { MissionSourceRefWire } from '../../modules/action-engine/generated/mission-wire.js'
 import type { MissionConversationTurnRequestWire, MissionConversationTurnResponseWire } from '../../modules/action-engine/generated/mission-wire.js'
-import type { MissionConversationMessage } from '../../modules/action-engine/types.js'
 
 type Pool = {
   query: Queryable['query']
@@ -88,63 +86,13 @@ export async function handleActionEngineProcessMissionConversation(
   if (!userMessage) throw new Error('mission_conversation_user_message_missing')
   const startedAt = Date.now()
   try {
-    const registry = createActionEngineCapabilityRegistry()
-    const [access, radar] = await Promise.all([
-      resolveMissionAccountAccess(pool, env, { organizationId, actorId: conversation.createdBy, contractId: conversation.contractId }),
-      resolveRadarMissionAvailability(pool, env, organizationId, conversation.createdBy),
-    ])
-    const availability = buildMissionAccountAvailability(registry, access, radar)
-    // Definition publication has no operational effect and is idempotent. It
-    // happens under the worker's existing service permissions, never from LLM data.
-    if (availability.capabilities.some(item => item.key === 'crm.pipeline.create_draft')
-      && access.enabledModules.includes('automations')) await ensureCrmPreparationPackVersion(pool, conversation.createdBy)
-    const metadata = availability.capabilities
-    const manifest = createCapabilityManifest(registry, metadata.map((item) => ({ key: item.key, version: item.version })))
-    const operational = await buildMissionOperationalContext(pool, {
-      organizationId,
-      ...(conversation.contractId ? { contractId: conversation.contractId } : {}),
-      query: userMessage.content,
-      requestedModules: access.enabledModules,
-      capabilityManifest: manifest.entries,
-      platformToolCatalog: availability.catalog,
-      accountAvailability: availability.snapshot,
-      packKeys: stringArray(conversation.currentBrief.packKeys),
+    const { request, access } = await buildMissionTurnRequest(pool, env, {
+      organizationId, contractId: conversation.contractId, actorId: conversation.createdBy,
+      conversationId: conversation.id, audience, message: userMessage.content,
+      currentBrief: conversation.currentBrief, messages: conversation.messages,
     })
-    const tenant = await pool.query<{ client_id: string | null }>(
-      `SELECT client_id FROM public.organizations WHERE id = $1 LIMIT 1`, [organizationId],
-    )
-    const bounded = boundTranscript(conversation.messages)
-    const allowedKeys = new Set(manifest.entries.map(item => item.key))
-    const packs = [CRM_PREPARATION_PACK_V1, REVENUE_RECOVERY_PACK_V0, FUNNEL_NURTURE_PACK_V1, CAMPAIGN_LAUNCH_PACK_V1, CAMPAIGN_OPTIMIZATION_PACK_V1, RADAR_PROSPECTING_PACK_V1]
-      .filter(pack => conversationPackAvailable(pack, allowedKeys, operational.accountAvailability!))
-    const request: MissionConversationTurnRequestWire = {
-      schemaVersion: 1,
-      organization_id: organizationId,
-      client_id: tenant.rows[0]?.client_id ?? undefined,
-      contract_id: conversation.contractId,
-      conversation_id: conversation.id,
-      audience,
-      user_message: userMessage.content,
-      transcript: bounded.transcript as MissionConversationTurnRequestWire['transcript'],
-      rollingSummary: bounded.rollingSummary,
-      currentBrief: conversation.currentBrief,
-      operationalContext: operational,
-      allowedActionPacks: packs.map((pack) => ({
-        key: pack.key, version: pack.semanticVersion, contentHash: pack.contentHash,
-      })) as MissionConversationTurnRequestWire['allowedActionPacks'],
-      allowedCapabilityKeys: manifest.entries.map((item) => item.key),
-    }
-    const conversationOperational=request.operationalContext!
-    conversationOperational.companyStrategyAccess={canPropose:canConfigureCompanyStrategy(access.role)}
-    if(canConfigureCompanyStrategy(access.role)) {
-      const strategies=await listCompanyStrategies(pool as never,{organizationId,actorId:conversation.createdBy,role:access.role})
-      conversationOperational.companyStrategyRecords=strategies.filter(strategy=>!strategy.archivedAt).map(strategy=>({strategyId:strategy.id,version:strategy.version,title:(strategy.publishedRevision??strategy.draftRevision)?.content.title,revisionId:(strategy.draftRevision??strategy.publishedRevision)?.id,hasDraft:Boolean(strategy.draftRevision)}))
-    }
-    const review=conversation.currentBrief.companyStrategyReview as {strategyId:string;revisionId:string;expectedVersion:number}|undefined
-    if(review && canConfigureCompanyStrategy(access.role)) {
-      const revision=await getCompanyStrategyRevisionForEditing(pool,{organizationId,actorId:conversation.createdBy,role:access.role},review.strategyId,review.revisionId)
-      conversationOperational.companyStrategyReview={...review,workingDraft:revision.content}
-    }
+    if (request.allowedCapabilityKeys?.includes('crm.pipeline.create_draft')
+      && access.enabledModules.includes('automations')) await ensureCrmPreparationPackVersion(pool, conversation.createdBy)
     const response = await (dependencies.invokeTurn ?? invokeMissionConversationTurn)(env, request)
     await verifyMissionKnowledgeContext(pool, {
       organizationId, audience, sourceRefs: response.sources ?? [], agentProfileKey: 'growth_strategist',
@@ -188,22 +136,6 @@ export async function handleActionEngineProcessMissionConversation(
   }
 }
 
-function boundTranscript(messages: MissionConversationMessage[]) {
-  const recent = messages.slice(-20)
-  let remaining = 20_000
-  const transcript = recent.map((message) => {
-    const content = message.content.slice(0, Math.max(0, remaining))
-    remaining -= content.length
-    return { role: message.actorType === 'user' ? 'user' as const : 'agent' as const, content }
-  }).filter((message) => message.content.length > 0)
-  const older = messages.slice(0, Math.max(0, messages.length - 20))
-  const rollingSummary = older.map((message) => `${message.actorType}: ${message.content}`).join('\n').slice(-8_000)
-  return { transcript, rollingSummary }
-}
-
-function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
-}
 
 function safeConversationError(error: unknown): string {
   const message = error instanceof Error ? error.message : 'unknown'

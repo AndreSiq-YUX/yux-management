@@ -165,6 +165,7 @@ class RuntimeStrategyKnowledgeStore:
     embedding_model: str | None = None
     embedding_dimensions: int | None = None
     embedding_service: QueryEmbeddingService | None = None
+    log_queries: bool = True
 
     @staticmethod
     def _normalize_profile_access(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -241,7 +242,7 @@ class RuntimeStrategyKnowledgeStore:
         )
 
     def log_retrieval_query(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self.store.insert("yux_strategy_retrieval_queries", payload)
+        return self.store.insert("yux_strategy_retrieval_queries", payload) if self.log_queries else {}
 
     def search_authorized(self, **kwargs: Any) -> list[dict[str, Any]] | None:
         searcher = getattr(self.store, "retrieve_authorized_knowledge", None)
@@ -315,6 +316,8 @@ def build_strategy_workflow_engine(
     store: AgentRuntimeStore,
     llm_client: OpenRouterClient | None = None,
     context: dict[str, Any] | None = None,
+    *,
+    offline_preview: bool = False,
 ) -> StrategyWorkflowEngine:
     profiles = _active(store.list("yux_strategy_agent_profiles", limit=200))
     agents = _build_agents(profiles)
@@ -336,13 +339,16 @@ def build_strategy_workflow_engine(
         routed_client_factory=lambda key, state: build_routed_client(store, key, context={**(context or {}), **state, "agent_id": state.get("agent", {}).get("id")}, tier=state.get("routing_tier", "default"), llm_client=llm_client),
         route_loader=lambda: store.list("model_routing_rules", limit=None),
     )
-    embedding_service = QueryEmbeddingService(build_routed_client(store, "knowledge_embeddings", context=context, kind="embedding"))
+    embedding_service = None if offline_preview else QueryEmbeddingService(
+        build_routed_client(store, "knowledge_embeddings", context=context, kind="embedding")
+    )
     retrieval = StrategyRetrievalService(
         RuntimeStrategyKnowledgeStore(
             store,
-            embedding_model=embedding_service.model,
-            embedding_dimensions=embedding_service.dimensions,
+            embedding_model=embedding_service.model if embedding_service else None,
+            embedding_dimensions=embedding_service.dimensions if embedding_service else None,
             embedding_service=embedding_service,
+            log_queries=not offline_preview,
         ),
         embedding_service=embedding_service,
     )

@@ -16,6 +16,7 @@ import {
 } from "./ingestion.js";
 import { createBullMqJobId } from "../../jobs/queue.js";
 import { reviewStrategyProposal } from "./curation.js";
+import { registerAgentPromptRoutes } from "./agent-prompts.js";
 
 const packParams = z.object({ packId: z.string().uuid() });
 const releaseParams = z.object({ releaseId: z.string().uuid() });
@@ -111,6 +112,7 @@ async function getAuthenticatedUser(
 }
 
 export async function registerStrategyEngineRoutes(app: FastifyInstance) {
+  await registerAgentPromptRoutes(app);
   const ingestionMaxBytes = effectiveStrategyIngestionLimit(
     app.config.STRATEGY_INGESTION_MAX_MB,
   );
@@ -344,6 +346,10 @@ export async function registerStrategyEngineRoutes(app: FastifyInstance) {
     if (parsed.data.table === 'model_routing_rules' && parsed.data.operation !== 'select') requireAdminRole(request);
     if (['yux_strategy_packs', 'yux_strategy_pack_items', 'yux_strategy_pack_bindings'].includes(parsed.data.table)
       && parsed.data.operation !== 'select') requireAdminRole(request);
+    if (['yux_strategy_chat_sessions', 'yux_strategy_chat_messages'].includes(parsed.data.table)
+      && parsed.data.operation !== 'select') {
+      return reply.code(403).send({ error: "strategy_chat_write_requires_workflow" });
+    }
 
     return runWithDatabaseRequestContext(
       {

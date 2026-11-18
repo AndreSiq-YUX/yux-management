@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
+import { requireAdminRole } from '../../http/guards.js'
+import { importStrategyRecommendation, listStrategyRecommendations } from './strategy-import.js'
 import {
   createDraft,
   generateDraft,
@@ -129,6 +131,25 @@ function publicBaseUrl(app: FastifyInstance) {
 }
 
 export async function registerProposalRoutes(app: FastifyInstance) {
+  app.get('/strategy-recommendations/:id', async (request, reply) => {
+    requireAdminRole(request)
+    const params = idParams.safeParse(request.params)
+    const query = z.object({ organizationId: z.uuid() }).safeParse(request.query)
+    if (!params.success || !query.success) return reply.code(400).send({ error: 'invalid_strategy_recommendation_scope' })
+    reply.header('Cache-Control', 'no-store')
+    return listStrategyRecommendations(app.pg, { organizationId: query.data.organizationId, leadId: params.data.id })
+  })
+
+  app.post('/strategy-recommendations/:id/import', async (request, reply) => {
+    const actor = requireAdminRole(request)
+    const params = idParams.safeParse(request.params)
+    const body = z.object({
+      organizationId: z.uuid(), leadId: z.uuid(), expectedCatalogVersion: z.string().regex(/^[0-9a-f]{64}$/),
+    }).safeParse(request.body)
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_strategy_recommendation_import' })
+    return importStrategyRecommendation(app.pg, { ...body.data, messageId: params.data.id, approvedBy: actor.userId })
+  })
+
   app.get('/', async (request, reply) => {
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply

@@ -13,6 +13,7 @@ from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request
 
+from .trace import stable_hash
 from .provider_http_deadline import HttpDeadlineExceeded, open_url as urlopen, run_with_deadline
 
 
@@ -209,11 +210,19 @@ class OpenRouterClient:
             "reasoning_tokens": reasoning_tokens,
             "visible_output_tokens": max(0, output_tokens - reasoning_tokens),
             "total_tokens": int(usage.get("total_tokens") or 0),
+            "model_usage": {
+                "input_tokens": usage.get("prompt_tokens"),
+                "output_tokens": usage.get("completion_tokens"),
+                "total_tokens": usage.get("total_tokens"),
+                "reasoning_tokens": (usage["completion_tokens_details"] or {}).get("reasoning_tokens")
+                if isinstance(usage.get("completion_tokens_details"), dict) else None,
+            } if usage else None,
             "cost_usd": float(usage["cost"]) if isinstance(usage.get("cost"), (int, float)) else None,
             "raw_response_id": response.get("id"),
             "request_parameters": {"temperature": temperature, "max_tokens": max_tokens,
                                    **({"reasoning": reasoning} if self.provider_name == "openrouter" and reasoning is not None else {})},
             "prompt_hash": sha256(json.dumps(messages, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest(),
+            "provider_request_fingerprint": stable_hash({key: value for key, value in payload.items() if key != "session_id"}),
         }
 
     def embed_texts(
