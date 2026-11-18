@@ -136,6 +136,9 @@ MISSION_SIMULATION_REPORTS_ENABLED=true
 MISSION_DECISION_FEEDBACK_ENABLED=true
 MISSION_CONVERSATIONS_ENABLED=true
 MISSION_CONVERSATIONS_TENANT_ALLOWLIST=<uuid-da-organizacao-yux-piloto>
+STRATEGY_PRESALES_PILOT_ORGANIZATION_IDS=
+ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS=
+STRATEGY_PRESALES_BILLABLE_CONTRACT_IDS=
 PROVIDER_SECRET_ENCRYPTION_KEY_B64=<resultado-de-openssl-rand-base64-32>
 OPENROUTER_API_KEY=<valor-se-usar>
 JINA_API_KEY=<valor-se-usar>
@@ -166,6 +169,13 @@ O bloco acima habilita o fluxo conversacional completo de missões. Substitua
 `<uuid-da-organizacao-yux-piloto>` pelo UUID real do workspace autorizado; não
 deixe a allowlist vazia durante o piloto, pois uma lista vazia libera todos os
 tenants quando `MISSION_CONVERSATIONS_ENABLED=true`.
+
+As três listas do piloto de agentes começam vazias. A lista da pré-venda é lida
+pela API. A do Action Engine é lida pela API e pelos trabalhadores. A lista de
+contratos faturáveis da pré-venda é lida pelos trabalhadores. Antes de reaplicar
+o Compose, confira os valores salvos no projeto do Dokploy. O Compose encaminha
+qualquer valor já preenchido. Use os escopos aprovados para cada finalidade. Consulte o
+[runbook dos pilotos de agentes](docs/runbooks/strategy-agents-pilot.md).
 
 Regras importantes:
 

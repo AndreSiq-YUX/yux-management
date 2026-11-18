@@ -41,6 +41,17 @@ describe('Dokploy deployment contract', () => {
     expect(api).not.toContain('MIGRATOR_DATABASE_URL')
   })
 
+  it('forwards optional pilot settings to the services that apply them', () => {
+    const api = serviceBlock('yux-backend-api', 'yux-backend-worker')
+    const worker = serviceBlock('yux-backend-worker', 'yux-backend-worker-ingestion')
+    const missionPilot = 'ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS: ${ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS:-}'
+    expect(api).toContain(missionPilot)
+    expect(worker).toContain(missionPilot)
+    expect(api).toContain('STRATEGY_PRESALES_PILOT_ORGANIZATION_IDS: ${STRATEGY_PRESALES_PILOT_ORGANIZATION_IDS:-}')
+    expect(worker).toContain('STRATEGY_PRESALES_BILLABLE_CONTRACT_IDS: ${STRATEGY_PRESALES_BILLABLE_CONTRACT_IDS:-}')
+    expect(api).not.toContain('STRATEGY_PRESALES_BILLABLE_CONTRACT_IDS')
+  })
+
   it('prepares every application-owned persistent volume for uid 1000', () => {
     const initializer = serviceBlock('yux-volume-permissions', 'yux-backend-api')
     expect(initializer).toContain('user: "0:0"')
