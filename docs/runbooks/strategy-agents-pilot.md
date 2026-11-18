@@ -52,6 +52,8 @@ Um reenvio com a mesma entrada pode recuperar a resposta concluída sem repetir 
 
 Nas subcontas habilitadas para o piloto, a medição cobre também a versão herdada e os turnos sem carteira. Nesses turnos, consulte `agent_context_snapshots` pelo identificador da execução e pelo campo `measurement` com valor `mission_turn_provider_attempts`. A primeira gravação antecede a chamada. Uma tentativa com `status` igual a `started` indica que falta uma resposta confirmada do provedor. A ausência do registro deixa o custo sem medição.
 
+Aplique a migração 0270 antes de disponibilizar a consulta de turnos. No Admin YUX, em **Agentes e prompts**, escolha **Action Engine · conversa da missão**, subconta, contrato quando aplicável, público e conversa. Use **Consultar turnos** para ver os dez registros mais recentes do escopo escolhido. O custo informado em USD e os créditos comerciais aparecem em blocos separados. Uma reserva incerta mantém o débito e a liberação pendentes. A consulta é restrita ao Admin YUX.
+
 Aplique as migrações antes de iniciar os serviços atualizados em homologação. Deixe concluir os turnos em processamento na versão anterior antes de habilitar a execução do piloto. A prévia administrativa usa o caminho de simulação.
 
 ## Revogação de fontes em conversas de missão

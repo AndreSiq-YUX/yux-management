@@ -241,7 +241,7 @@ def test_unbilled_inherited_pilot_turn_measures_provider_without_a_wallet_hold(b
 
     def read_attempts():
         return db.execute(
-            """SELECT snapshot.safe_context->'attempts' AS attempts, run.id, run.status
+            """SELECT snapshot.safe_context->'attempts' AS attempts, snapshot.safe_context->>'audience' AS audience, run.id, run.status
                FROM public.agent_execution_runs run
                JOIN public.agent_context_snapshots snapshot ON snapshot.run_id=run.id
                WHERE run.mission_conversation_id=%s AND snapshot.safe_context->>'measurement'='mission_turn_provider_attempts'""",
@@ -280,6 +280,7 @@ def test_unbilled_inherited_pilot_turn_measures_provider_without_a_wallet_hold(b
         assert response.status_code == (200 if provider_succeeds else 503), response.text
         assert '"costUsd"' not in response.text and '"attempts"' not in response.text
         receipt = read_attempts()
+        assert receipt["audience"] == body["audience"]
         retrieval, attempt = receipt["attempts"]
         assert retrieval["kind"] == "retrieval" and retrieval["costUsd"] == pytest.approx(0.001)
         assert body["user_message"] not in json.dumps(receipt["attempts"])

@@ -350,15 +350,15 @@ class StrategyWorkflowEngine:
         run_id = run["id"]
         usage_scope = ExitStack()
         try:
+            retrieval_audience = resolve_retrieval_audience(source, (retrieval_context or {}).get("audience"))
             if mission_trace:
-                usage_scope.enter_context(measure_without_credit_hold(self.trace.mission_usage_reporter(run_id, profile_key)))
+                recorder = self.trace.mission_usage_reporter(run_id, profile_key, retrieval_audience)
+                usage_scope.enter_context(measure_without_credit_hold(recorder))
             with self.trace.step(run_id, "classify", "classify", trace_query) as step:
                 classification = classify_intent_and_stage(message, source)
                 step.succeed(classification, classification)
 
             supplied_channel = str((retrieval_context or {}).get("delivery_channel") or "").lower() or None
-            requested_audience = (retrieval_context or {}).get("audience")
-            retrieval_audience = resolve_retrieval_audience(source, requested_audience)
             retrieved: dict[str, Any] = {}
             if self.retrieval_service is not None and (not source_rules or source_rules["methodology"] != "forbidden"):
                 agent = self.agent_profiles.get(profile_key) or {}

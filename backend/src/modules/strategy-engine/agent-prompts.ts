@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { requireAdminRole } from '../../http/guards.js'
+import { runWithDatabaseRequestContext } from '../../db/request-context.js'
 import { ApiError } from '../../http/errors.js'
 import { invokeAgentRuntime } from '../../lib/agent-runtime-client.js'
 import { buildMissionTurnRequest } from '../action-engine/mission-turn-request.js'
@@ -16,6 +17,7 @@ import { changePromptVersion, listPromptVersions, presalesPilotEnabled, promptIn
   stageKeySchema, strategistModeSchema } from './prompt-versions.js'
 import { listPresalesLeads, loadCommercialCatalog } from './presales-context.js'
 import { loadPlanningHistory } from './planning-history.js'
+import { listMissionUsageConversations, loadMissionTurnHistory } from './mission-turn-history.js'
 
 const inventory = [
   { key: 'strategist', name: 'Estrategista, Diagnóstico 48h e proposta consultiva', owner: 'Estratégia YUX', audience: 'Admin', state: 'Prévia disponível', instructions: 'Perfil, instruções globais e especialistas da especificação publicada' },
@@ -396,6 +398,38 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
     }
     reply.header('Cache-Control', 'no-store')
     return { executions: await loadPlanningHistory(app.pg, parsed.data) }
+  })
+
+  app.get('/agent-prompts/conversations', async (request, reply) => {
+    requireAdminRole(request)
+    const parsed = tenantSchema.safeParse(request.query)
+    if (!parsed.success) throw new ApiError(400, 'invalid_mission_turn_history_scope')
+    const { organizationId, contractId } = parsed.data
+    const scope = await loadAgentPromptScope(app.pg, organizationId)
+    if (contractId && !scope.contracts.some(contract => contract.id === contractId)) throw new ApiError(409, 'agent_prompt_contract_out_of_scope')
+    reply.header('Cache-Control', 'no-store')
+    return { conversations: await listMissionUsageConversations(app.pg, parsed.data) }
+  })
+
+  app.get('/agent-prompts/mission-turn-history', async (request, reply) => {
+    const actor = requireAdminRole(request)
+    const parsed = tenantSchema.extend({ conversationId: z.uuid(), audience: z.enum(['internal_operator', 'client_user']) }).safeParse(request.query)
+    if (!parsed.success) throw new ApiError(400, 'invalid_mission_turn_history_scope')
+    const { organizationId, contractId, conversationId } = parsed.data
+    const selected = await app.pg.query(
+      `SELECT 1 FROM public.action_mission_conversations
+       WHERE organization_id = $1 AND contract_id IS NOT DISTINCT FROM $2::uuid AND id = $3`,
+      [organizationId, contractId ?? null, conversationId],
+    )
+    if (!selected.rows.length) throw new ApiError(404, 'mission_conversation_not_found')
+    if (contractId) {
+      const scope = await loadAgentPromptScope(app.pg, organizationId)
+      if (!scope.contracts.some(contract => contract.id === contractId)) throw new ApiError(409, 'agent_prompt_contract_out_of_scope')
+    }
+    reply.header('Cache-Control', 'no-store')
+    const turns = await runWithDatabaseRequestContext({ role: actor.role, organizationIds: [organizationId], serviceRole: 'api' },
+      () => loadMissionTurnHistory(app.pg, parsed.data))
+    return { turns }
   })
 
   app.post('/agent-prompts/preview', async (request, reply) => {

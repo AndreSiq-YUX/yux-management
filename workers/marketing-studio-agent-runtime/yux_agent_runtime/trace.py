@@ -144,12 +144,12 @@ class TraceRecorder:
             },
         )
 
-    def mission_usage_reporter(self, run_id: str, profile_key: str):
+    def mission_usage_reporter(self, run_id: str, profile_key: str, audience: str):
         context_id = None
 
         def record(attempts: list[dict[str, Any]]) -> None:
             nonlocal context_id
-            context = {"measurement": "mission_turn_provider_attempts", "attempts": [
+            context = {"measurement": "mission_turn_provider_attempts", "audience": audience, "attempts": [
                 {
                     **sanitize_trace_payload({key: attempt[key] for key in ("stage", "kind", "provider", "status", "costUsd", "tokens")}),
                     "model": sanitize_trace_payload(attempt["model"], "effective_model"),
