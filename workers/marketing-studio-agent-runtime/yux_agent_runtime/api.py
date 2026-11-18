@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 import json
 import logging
 import os
@@ -25,12 +26,12 @@ from .radar_discovery_extraction import extract_radar_businesses, validate_radar
 from .radar_receipts import execute_radar_receipt, revalidate_radar_receipt
 from .radar_decisions import decide_radar_action, validate_saved_decision, TASKS as DECISION_TASKS
 from .perplexity_research import run_radar_deep_research,normalize_research_response,REMOTE_FINANCIAL_CEILING_SUPPORTED
-from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore, CreditReservationError, StrategyCreditConflict
+from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore, CreditReservationError, WorkflowCreditConflict
 from .strategy_usage import StrategyUsage
 from .trace import stable_hash
 from .mission import MissionPlanRequest, plan_mission
 from .mission_supervisor import MissionSupervisor, MissionSupervisorError
-from .mission_contracts import MissionConversationTurnRequestWire
+from .mission_contracts import MissionConversationTurnRequestWire, validate_mission_conversation_response
 from .mission_conversation import MissionConversationWorkflow
 from .mission_diagnostics import mission_failure_diagnostic
 from .workflow import CREDITS_BASE_PER_RUN, StrategyWorkflowEngine, estimate_workflow_credits, resolve_retrieval_audience
@@ -549,33 +550,12 @@ def create_app(
         if request.client_id and request.contract_id:
             if request.strategy_operation_id is None:
                 raise HTTPException(status_code=422, detail="strategy_credit_operation_required")
-            key = (request.organization_id, request.contract_id, str(request.strategy_operation_id))
-            owner = str(uuid4())
-            try:
-                runtime_store.hold_strategy_credits(
-                    key, client_id=request.client_id, input_hash=stable_hash(execution),
-                    owner_token=owner, credits=credits_required,
-                )
-            except CreditReservationError as error:
-                raise HTTPException(status_code=402, detail=str(error)) from error
-            except StrategyCreditConflict as error:
-                raise HTTPException(status_code=409, detail=str(error)) from error
-
-            def settle(charged):
-                return runtime_store.settle_strategy_credits(
-                    key, client_id=request.client_id, owner_token=owner, charged_credits=charged,
-                )
-
-            meter.record = lambda attempts: runtime_store.record_strategy_credit_attempts(
-                key, owner_token=owner, attempts=attempts,
+            meter, settle, _ = begin_workflow_credits(
+                request, request.strategy_operation_id, execution, credits_required,
+                action="agent_runtime_workflow", audience="internal_operator",
             )
-        try:
-            with meter.activate():
-                result = selected_engine.execute(**execution)
-        except Exception:
-            if settle is not None:
-                settle(None)
-            raise
+        with measured_workflow(meter, settle):
+            result = selected_engine.execute(**execution)
         if settle is not None:
             completed_specialists = sum(
                 output["verification"]["status"] != "failed" for output in result["subagents"]
@@ -587,6 +567,42 @@ def create_app(
             "reportedProviderCostUsd": meter.total_cost_usd(),
         }
         return {**result, "usage": usage, "credits": credits}
+
+    def begin_workflow_credits(request, operation_id, execution, credits_required, *, action, audience, conversation_id=None):
+        key = (request.organization_id, request.contract_id, str(operation_id))
+        owner = str(uuid4())
+        try:
+            replay = runtime_store.hold_workflow_credits(
+                key, client_id=request.client_id, input_hash=stable_hash(execution), owner_token=owner,
+                credits=credits_required, action=action, audience=audience, conversation_id=conversation_id,
+            )
+        except CreditReservationError as error:
+            raise HTTPException(status_code=402, detail=str(error)) from error
+        except WorkflowCreditConflict as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+
+        def settle(charged, agent_run_id=None):
+            return runtime_store.settle_workflow_credits(
+                key, client_id=request.client_id, owner_token=owner,
+                charged_credits=charged, agent_run_id=agent_run_id,
+            )
+
+        meter = StrategyUsage(record=lambda attempts: runtime_store.record_workflow_credit_attempts(
+            key, owner_token=owner, attempts=attempts,
+        ))
+        return meter, settle, replay
+
+    @contextmanager
+    def measured_workflow(meter, settle):
+        try:
+            with meter.activate():
+                yield
+        except WorkflowCreditConflict as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except Exception:
+            if settle is not None:
+                settle(None)
+            raise
 
     @app.post("/instructions/preview/strategist", dependencies=[Depends(require_runtime_token)])
     def preview_strategist(request: PreviewStrategistRequest) -> dict[str, Any]:
@@ -645,7 +661,10 @@ def create_app(
             raise HTTPException(status_code=status_code, detail=str(error)) from error
 
     @app.post("/missions/conversations/turn", dependencies=[Depends(require_runtime_token)])
-    def mission_conversation_turn(request: MissionConversationTurnRequestWire) -> dict[str, Any]:
+    def mission_conversation_turn(
+        request: MissionConversationTurnRequestWire,
+        operation_id: UUID | None = Header(default=None, alias="X-YUX-Mission-Turn-Operation"),
+    ) -> dict[str, Any]:
         try:
             validate_tenant(request.organization_id, request.client_id, request.contract_id, profile_key="growth_strategist", audience=request.audience)
         except HTTPException as error:
@@ -654,18 +673,34 @@ def create_app(
             )))
             raise
         try:
-            reserve_billable_credits(
-                organization_id=request.organization_id,
-                client_id=request.client_id,
-                contract_id=request.contract_id,
-                credits=1,
-                action="agent_runtime_mission_conversation_turn",
-            )
-        except RuntimeError as error:
-            raise HTTPException(status_code=402, detail=str(error)) from error
-        try:
+            if operation_id and request.client_id and request.contract_id:
+                workflow = conversation_workflow(request.model_dump())
+                execution = workflow.prepare_turn(request)
+                credits = estimate_workflow_credits(execution["workflow_spec"], execution["mode"], execution["source"])
+                meter, settle, replay = begin_workflow_credits(
+                    request, operation_id, execution, credits, action="agent_runtime_mission_conversation_turn",
+                    audience=request.audience, conversation_id=request.conversation_id,
+                )
+                if replay is not None:
+                    return validate_mission_conversation_response(replay, request).model_dump()
+                with measured_workflow(meter, settle):
+                    response = workflow.respond(request, execution=execution)
+                settle(credits, agent_run_id=response.retrievalTraceId)
+                return response.model_dump()
+            try:
+                reserve_billable_credits(
+                    organization_id=request.organization_id,
+                    client_id=request.client_id,
+                    contract_id=request.contract_id,
+                    credits=1,
+                    action="agent_runtime_mission_conversation_turn",
+                )
+            except RuntimeError as error:
+                raise HTTPException(status_code=402, detail=str(error)) from error
             response = conversation_workflow(request.model_dump()).respond(request)
             return response.model_dump()
+        except HTTPException:
+            raise
         except (ValidationError, ValueError, json.JSONDecodeError) as error:
             logger.error("%s", json.dumps(mission_failure_diagnostic(
                 error, stage="processing", status=422, context=request.model_dump(),

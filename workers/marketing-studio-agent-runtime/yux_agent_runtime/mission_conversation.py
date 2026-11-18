@@ -537,11 +537,20 @@ class MissionConversationWorkflow:
             },
         )
 
+    def prepare_turn(self, request: MissionConversationTurnRequestWire) -> dict[str, Any]:
+        execution = self.workflow_input(request)
+        execution["workflow_spec"] = self.workflow_engine.resolve_workflow_spec(
+            execution["mode"], execution["source"], execution["workflow_spec"],
+        )
+        return execution
+
     def respond(
         self,
         request: dict[str, Any] | MissionConversationTurnRequestWire,
+        *,
+        execution: dict[str, Any] | None = None,
     ) -> MissionConversationTurnResponseWire:
         typed = request if isinstance(request, MissionConversationTurnRequestWire) else MissionConversationTurnRequestWire.model_validate(request)
         with provider_request_budget(120):
-            result = self.workflow_engine.execute(**self.workflow_input(typed))
+            result = self.workflow_engine.execute(**(execution if execution is not None else self.workflow_input(typed)))
         return validate_mission_conversation_response(result["synthesis"], typed)

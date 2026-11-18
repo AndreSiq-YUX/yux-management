@@ -41,7 +41,6 @@ import {
 import { verifyMissionKnowledgeContext } from '../../modules/action-engine/mission-source-verifier.js'
 import { getCompanyStrategyRevisionForEditing, canConfigureCompanyStrategy, listCompanyStrategies } from '../../modules/company-strategy/repository.js'
 import { validateMissionStrategyProposal } from '../../modules/company-strategy/proposals.js'
-import type { MissionConversationTurnRequestWire, MissionConversationTurnResponseWire } from '../../modules/action-engine/generated/mission-wire.js'
 
 type Pool = {
   query: Queryable['query']
@@ -53,7 +52,7 @@ export async function handleActionEngineProcessMissionConversation(
   env: AppEnv,
   data: Record<string, unknown>,
   dependencies: {
-    invokeTurn?: (env: AppEnv, request: MissionConversationTurnRequestWire) => Promise<MissionConversationTurnResponseWire>
+    invokeTurn?: typeof invokeMissionConversationTurn
   } = {},
 ) {
   const conversationId = typeof data.conversationId === 'string' ? data.conversationId : ''
@@ -81,7 +80,8 @@ export async function handleActionEngineProcessMissionConversation(
     })
     if (request.allowedCapabilityKeys?.includes('crm.pipeline.create_draft')
       && access.enabledModules.includes('automations')) await ensureCrmPreparationPackVersion(pool, conversation.createdBy)
-    const response = await (dependencies.invokeTurn ?? invokeMissionConversationTurn)(env, request)
+    const operationId = request.client_id && request.contract_id ? userMessage.id : undefined
+    const response = await (dependencies.invokeTurn ?? invokeMissionConversationTurn)(env, request, operationId)
     await verifyMissionKnowledgeContext(pool, {
       organizationId, audience, sourceRefs: response.sources ?? [], agentProfileKey: 'growth_strategist',
       contractId: conversation.contractId, moduleKey: 'marketing_studio', workflowKey: 'mission_intake_conversation',
@@ -115,6 +115,9 @@ export async function handleActionEngineProcessMissionConversation(
     })
     return { skipped: false, conversation: updated }
   } catch (error) {
+    if (error instanceof Error && error.message === 'mission_conversation_turn_in_progress') {
+      return { skipped: true, reason: 'mission_conversation_turn_in_progress' }
+    }
     const errorCode = safeConversationError(error)
     await recordMissionConversationProcessingError(pool, {
       organizationId, conversationId, expectedVersion: requestedVersion,

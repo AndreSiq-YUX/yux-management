@@ -20,7 +20,7 @@ class CreditReservationError(RuntimeError):
         self.reason = reason
 
 
-class StrategyCreditConflict(RuntimeError):
+class WorkflowCreditConflict(RuntimeError):
     pass
 
 
@@ -559,7 +559,10 @@ class PostgresAgentRuntimeStore:
             row = cursor.fetchone()
             return bool(row and row[0])
 
-    def hold_strategy_credits(self, key, *, client_id, input_hash, owner_token, credits):
+    def hold_workflow_credits(
+        self, key, *, client_id, input_hash, owner_token, credits,
+        action="agent_runtime_workflow", audience="internal_operator", conversation_id=None,
+    ):
         with self._connection() as connection, connection.cursor(row_factory=self._row_factory()) as cursor:
             cursor.execute(
                 """SELECT id, is_unlimited FROM public.ai_credit_wallets
@@ -572,11 +575,11 @@ class PostgresAgentRuntimeStore:
             cursor.execute(
                 """INSERT INTO private.strategy_workflow_credit_holds
                      (organization_id, contract_id, operation_id, wallet_id, input_hash,
-                      owner_token, reserved_credits, unlimited)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                      owner_token, reserved_credits, unlimited, action, audience)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                    ON CONFLICT (organization_id, contract_id, operation_id) DO NOTHING
                    RETURNING wallet_id""",
-                [*key, wallet["id"], input_hash, owner_token, credits, wallet["is_unlimited"]],
+                [*key, wallet["id"], input_hash, owner_token, credits, wallet["is_unlimited"], action, audience],
             )
             if not cursor.fetchone():
                 # A crashed preflight can be reclaimed. Its old owner cannot cross
@@ -586,13 +589,21 @@ class PostgresAgentRuntimeStore:
                          SET owner_token=%s, updated_at=NOW()
                        WHERE organization_id=%s AND contract_id=%s AND operation_id=%s
                          AND wallet_id=%s AND input_hash=%s AND state='held'
+                         AND action=%s AND audience=%s
                          AND updated_at < NOW() - INTERVAL '5 minutes'
                        RETURNING wallet_id""",
-                    [owner_token, *key, wallet["id"], input_hash],
+                    [owner_token, *key, wallet["id"], input_hash, action, audience],
                 )
                 if cursor.fetchone():
                     return
-                raise StrategyCreditConflict("strategy_credit_operation_conflict")
+                if conversation_id is None:
+                    raise WorkflowCreditConflict("strategy_credit_operation_conflict")
+                replay = self._resume_mission_credit_operation(
+                    cursor, key, client_id=client_id, wallet=wallet, input_hash=input_hash,
+                    owner_token=owner_token, conversation_id=conversation_id, audience=audience,
+                )
+                if replay is not None:
+                    return replay
             cursor.execute(
                 """UPDATE public.ai_credit_wallets
                       SET current_balance=current_balance - CASE WHEN is_unlimited THEN 0 ELSE %s END,
@@ -611,7 +622,49 @@ class PostgresAgentRuntimeStore:
                     [reserved["is_unlimited"], *key],
                 )
 
-    def record_strategy_credit_attempts(self, key, *, owner_token, attempts):
+    @staticmethod
+    def _resume_mission_credit_operation(cursor, key, *, client_id, wallet, input_hash, owner_token, conversation_id, audience):
+        cursor.execute(
+            """SELECT state, attempts, agent_run_id, input_hash, updated_at >= NOW() - INTERVAL '5 minutes' AS recent
+               FROM private.strategy_workflow_credit_holds
+               WHERE organization_id=%s AND contract_id=%s AND operation_id=%s
+                 AND wallet_id=%s AND audience=%s
+                 AND action='agent_runtime_mission_conversation_turn'
+               FOR UPDATE""",
+            [*key, wallet["id"], audience],
+        )
+        hold = cursor.fetchone()
+        if not hold:
+            raise WorkflowCreditConflict("mission_credit_turn_changed")
+        if hold["state"] in ("held", "executing") and hold["recent"]:
+            raise WorkflowCreditConflict("mission_credit_turn_in_progress")
+        if hold["input_hash"] != input_hash:
+            raise WorkflowCreditConflict("mission_credit_turn_changed")
+        if hold["state"] == "settled":
+            cursor.execute(
+                """SELECT run.output_payload->'synthesis' AS response
+                   FROM public.agent_execution_runs run
+                   WHERE run.id=%s
+                     AND run.organization_id=%s AND run.contract_id=%s AND run.client_id=%s
+                     AND run.mission_conversation_id=%s AND run.run_source='mission_intake'""",
+                [hold["agent_run_id"], *key[:2], client_id, conversation_id],
+            )
+            result = cursor.fetchone()
+            if result and isinstance(result["response"], dict):
+                return result["response"]
+        if hold["state"] != "released" or hold["attempts"]:
+            raise WorkflowCreditConflict("mission_credit_turn_review_required")
+
+        # A failed preflight with no provider attempts can reserve again.
+        cursor.execute(
+            """UPDATE private.strategy_workflow_credit_holds
+                 SET owner_token=%s, unlimited=%s, state='held', charged_credits=NULL, updated_at=NOW()
+               WHERE organization_id=%s AND contract_id=%s AND operation_id=%s""",
+            [owner_token, wallet["is_unlimited"], *key],
+        )
+        return None
+
+    def record_workflow_credit_attempts(self, key, *, owner_token, attempts):
         with self._connection() as connection, connection.cursor() as cursor:
             cursor.execute(
                 """UPDATE private.strategy_workflow_credit_holds
@@ -622,12 +675,12 @@ class PostgresAgentRuntimeStore:
                 [json.dumps(attempts), *key, owner_token],
             )
             if not cursor.fetchone():
-                raise StrategyCreditConflict("strategy_credit_operation_conflict")
+                raise WorkflowCreditConflict("workflow_credit_ownership_lost")
 
-    def settle_strategy_credits(self, key, *, owner_token, client_id, charged_credits):
+    def settle_workflow_credits(self, key, *, owner_token, client_id, charged_credits, agent_run_id=None):
         with self._connection() as connection, connection.cursor(row_factory=self._row_factory()) as cursor:
             cursor.execute(
-                """SELECT wallet_id, reserved_credits, unlimited, state, charged_credits, attempts
+                """SELECT wallet_id, reserved_credits, unlimited, state, charged_credits, attempts, action
                    FROM private.strategy_workflow_credit_holds
                    WHERE organization_id=%s AND contract_id=%s AND operation_id=%s AND owner_token=%s
                    FOR UPDATE""",
@@ -635,9 +688,9 @@ class PostgresAgentRuntimeStore:
             )
             hold = cursor.fetchone()
             if not hold:
-                raise StrategyCreditConflict("strategy_credit_operation_conflict")
+                raise WorkflowCreditConflict("workflow_credit_ownership_lost")
             if hold["state"] in ("released", "settled", "uncertain"):
-                return self._strategy_credit_summary(hold)
+                return self._workflow_credit_summary(hold)
 
             ledger_id = None
             if charged_credits is None and any(attempt["status"] == "started" for attempt in hold["attempts"]):
@@ -645,7 +698,7 @@ class PostgresAgentRuntimeStore:
             else:
                 charged_credits = charged_credits or 0
                 if not 0 <= charged_credits <= hold["reserved_credits"]:
-                    raise ValueError("invalid_strategy_credit_settlement")
+                    raise ValueError("invalid_workflow_credit_settlement")
                 state = "settled" if charged_credits else "released"
                 released = 0 if hold["unlimited"] else hold["reserved_credits"] - charged_credits
                 cursor.execute(
@@ -663,22 +716,22 @@ class PostgresAgentRuntimeStore:
                         """INSERT INTO public.ai_usage_ledger
                              (organization_id, client_id, contract_id, wallet_id,
                               action, credits_charged, status, metadata)
-                           VALUES (%s,%s,%s,%s,'agent_runtime_workflow',%s,'succeeded',%s::jsonb)
+                           VALUES (%s,%s,%s,%s,%s,%s,'succeeded',%s::jsonb)
                            RETURNING id""",
-                        [key[0], client_id, key[1], hold["wallet_id"], charged_credits,
+                        [key[0], client_id, key[1], hold["wallet_id"], hold["action"], charged_credits,
                          json.dumps({"source": "agent_runtime", "unlimited": hold["unlimited"]})],
                     )
                     ledger_id = cursor.fetchone()["id"]
             cursor.execute(
                 """UPDATE private.strategy_workflow_credit_holds
-                     SET state=%s, charged_credits=%s, ledger_id=%s, updated_at=NOW()
+                     SET state=%s, charged_credits=%s, ledger_id=%s, agent_run_id=%s, updated_at=NOW()
                    WHERE organization_id=%s AND contract_id=%s AND operation_id=%s""",
-                [state, charged_credits, ledger_id, *key],
+                [state, charged_credits, ledger_id, agent_run_id, *key],
             )
-            return self._strategy_credit_summary({**hold, "charged_credits": charged_credits})
+            return self._workflow_credit_summary({**hold, "charged_credits": charged_credits})
 
     @staticmethod
-    def _strategy_credit_summary(hold):
+    def _workflow_credit_summary(hold):
         charged = hold["charged_credits"]
         return {
             "reserved": hold["reserved_credits"],

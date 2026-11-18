@@ -143,4 +143,15 @@ describe('Mission conversation job handler', () => {
     expect(pool.status).toBe('blocked')
     expect(pool.calls.some(sql => sql.includes("jsonb_build_object('processingError', $4::TEXT)"))).toBe(true)
   })
+
+  it('leaves the conversation open for the worker that owns a concurrent turn', async () => {
+    const pool = new Pool()
+    const result = await handleActionEngineProcessMissionConversation(pool as never, { MISSION_CONVERSATIONS_ENABLED: true } as AppEnv, {
+      conversationId, organizationId, requestedVersion: 2, audience: 'client_user',
+    }, { invokeTurn: async () => { throw new Error('mission_conversation_turn_in_progress') } })
+    expect(result).toEqual({ skipped: true, reason: 'mission_conversation_turn_in_progress' })
+    expect(pool.messages).toHaveLength(1)
+    expect(pool.status).toBe('collecting_context')
+    expect(pool.calls.some(sql => sql.includes('UPDATE public.action_mission_conversations'))).toBe(false)
+  })
 })

@@ -39,11 +39,19 @@ describe('Mission conversation runtime client', () => {
   it('uses the typed endpoint, bearer token and exactly one HTTP call', async () => {
     const fetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify(valid), { status: 200 }))
     vi.stubGlobal('fetch', fetch)
-    const response = await invokeMissionConversationTurn(env, request)
+    const operationId = '00000000-0000-4000-8000-000000000001'
+    const response = await invokeMissionConversationTurn(env, request, operationId)
     expect(response.retrievalTraceId).toBe('trace-1')
     expect(fetch).toHaveBeenCalledTimes(1)
     expect(fetch.mock.calls[0]?.[0]).toBe('https://runtime.example/missions/conversations/turn')
-    expect((fetch.mock.calls[0]?.[1] as RequestInit).headers).toMatchObject({ Authorization: 'Bearer secret-token' })
+    const sent = fetch.mock.calls[0]?.[1] as RequestInit
+    expect(sent.headers).toMatchObject({ Authorization: 'Bearer secret-token', 'X-YUX-Mission-Turn-Operation': operationId })
+    expect(JSON.parse(String(sent.body))).toEqual(request)
+  })
+
+  it('allows the active worker to finish when the same turn is submitted concurrently', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ detail: 'mission_credit_turn_in_progress' }, { status: 409 })))
+    await expect(invokeMissionConversationTurn(env, request)).rejects.toThrow('mission_conversation_turn_in_progress')
   })
 
   it('runtime-validates the response and redacts unsafe provider detail', async () => {

@@ -43,8 +43,9 @@ it('starts from an unrestricted conversation, persists a simulated Harness reply
         semanticVersion: REVENUE_RECOVERY_PACK_V0.semanticVersion, outcomeType: REVENUE_RECOVERY_PACK_V0.outcomeType,
         definition, contentHash: REVENUE_RECOVERY_PACK_V0.contentHash, createdBy: fixtureUsers.yux_admin.id })
       const result = await handleActionEngineProcessMissionConversation(pool as never, { MISSION_CONVERSATIONS_ENABLED: true } as AppEnv, jobs[0].data, {
-        invokeTurn: async (_env, request) => {
+        invokeTurn: async (_env, request, operationId) => {
           expect(request.user_message).toBe(message)
+          expect(operationId).toBe(accepted.body.conversation.messages[0].id)
           expect(request.organization_id).toBe(rig.ids.organizationA)
           expect(request.currentBrief?.packKeys).toBeUndefined()
           expect(request.operationalContext?.accountAvailability).toBeDefined()

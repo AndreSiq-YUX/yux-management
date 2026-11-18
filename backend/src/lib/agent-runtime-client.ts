@@ -10,7 +10,7 @@ export async function invokeAgentRuntime<T>(
   env: AppEnv,
   path: string,
   body: Record<string, unknown>,
-  options: { timeoutMs?: number } = {},
+  options: { timeoutMs?: number; headers?: Record<string, string> } = {},
 ): Promise<T> {
   if (!env.YUX_AGENT_RUNTIME_URL || !env.YUX_AGENT_RUNTIME_TOKEN) throw new Error('agent_runtime_not_configured')
   const controller = new AbortController()
@@ -18,7 +18,7 @@ export async function invokeAgentRuntime<T>(
   try {
     const response = await fetch(`${env.YUX_AGENT_RUNTIME_URL.replace(/\/$/, '')}${path}`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${env.YUX_AGENT_RUNTIME_TOKEN}`, 'Content-Type': 'application/json' },
+      headers: { ...options.headers, Authorization: `Bearer ${env.YUX_AGENT_RUNTIME_TOKEN}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body), signal: controller.signal,
     })
     if (!response.ok) {
@@ -32,11 +32,15 @@ export async function invokeAgentRuntime<T>(
 export async function invokeMissionConversationTurn(
   env: AppEnv,
   body: MissionConversationTurnRequestWire,
+  operationId?: string,
 ): Promise<MissionConversationTurnResponseWire> {
   try {
     const response = await invokeAgentRuntime<unknown>(
       env, '/missions/conversations/turn', body as unknown as Record<string, unknown>,
-      { timeoutMs: MISSION_CONVERSATION_TIMEOUT_MS },
+      {
+        timeoutMs: MISSION_CONVERSATION_TIMEOUT_MS,
+        ...(operationId ? { headers: { 'X-YUX-Mission-Turn-Operation': operationId } } : {}),
+      },
     )
     const validated = validateMissionConversationTurnResponseWire(response)
     if (!validated.usage
@@ -48,6 +52,9 @@ export async function invokeMissionConversationTurn(
     const message = error instanceof Error ? error.message : ''
     const status = /^agent_runtime_(\d{3})/.exec(message)?.[1]
     if (message === 'agent_runtime_422:mission_conversation_output_truncated') throw new Error('mission_conversation_output_truncated')
+    if (message === 'agent_runtime_409:mission_credit_turn_in_progress' || message === 'agent_runtime_409:workflow_credit_ownership_lost') {
+      throw new Error('mission_conversation_turn_in_progress')
+    }
     if (status) throw new Error(`mission_conversation_runtime_${status}`)
     throw error
   }
