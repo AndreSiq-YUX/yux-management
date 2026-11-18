@@ -532,9 +532,10 @@ class MissionConversationWorkflow:
             workflow_spec=MISSION_INTAKE_WORKFLOW_SPEC,
             retrieval_context={
                 "audience": typed.audience,
-                "mission_request": typed.model_dump(),
+                "mission_request": typed.model_dump(exclude={"mission_prompt"}),
                 "mission_context": mission_context,
             },
+            **({"mission_prompt": typed.mission_prompt.model_dump()} if typed.mission_prompt else {}),
         )
 
     def prepare_turn(self, request: MissionConversationTurnRequestWire) -> dict[str, Any]:

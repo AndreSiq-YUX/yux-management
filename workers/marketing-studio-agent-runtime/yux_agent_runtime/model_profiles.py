@@ -50,6 +50,7 @@ def measure_generation(node: str, response: dict[str, Any]) -> dict[str, Any]:
         "outputTokens": usage.get("output_tokens"),
         "reasoningTokens": usage.get("reasoning_tokens"),
         "reportedCostUsd": cost if type(cost) in (int, float) and isfinite(cost) and cost >= 0 else None,
+        **({"requestFingerprint": response["provider_request_fingerprint"]} if response.get("provider_request_fingerprint") else {}),
     }
 
 

@@ -16,6 +16,7 @@ from .contracts import (
     parse_json_object,
 )
 from .model_profiles import ModelProfile, measure_generation
+from .mission_prompt import apply_stage_adjustment
 from .providers import OpenRouterClient, ProviderRequestError
 
 
@@ -128,7 +129,7 @@ class FunnelNurtureSpecialistWorkflow:
             "allowedSourceIds": value.get("allowed_source_ids") or [],
             "capabilitySchemas": value.get("capabilities") or [],
         }
-        return [
+        return apply_stage_adjustment([
             {
                 "role": "system",
                 "content": (
@@ -143,7 +144,7 @@ class FunnelNurtureSpecialistWorkflow:
                 ),
             },
             {"role": "user", "content": json.dumps(envelope, ensure_ascii=False, sort_keys=True, separators=(",", ":"))},
-        ]
+        ], value, f"funnel_nurture.{node}")
 
     def prepare_request(self, node: str, value: dict[str, Any]) -> dict[str, Any]:
         return {

@@ -114,13 +114,19 @@ def test_supervisor_preview_reuses_exact_payload_without_calling_original_transp
 
     supervisor.client.transport = capture
     value = _request()
+    value["mission_prompt"] = {"version": 3, "instructions": {"planner": "Priorize a confirmação de logística."}}
     preview = preview_mission_supervisor(supervisor, value)
     assert not sent
     stage = preview["requests"][0]
     assert stage["selectedPacks"] == ["crm_funnel"]
     assert stage["sources"][0]["id"] == "source-1"
 
-    supervisor.propose(value)
+    assert stage["stageInstructionApplied"]
+    assert stage["versions"]["organization"] == 3
+    assert "Priorize a confirmação de logística." in stage["request"]["messages"][0]["content"]
+    assert "Priorize a confirmação de logística." not in stage["request"]["messages"][1]["content"]
+    result = supervisor.propose(value)
+    assert result["trace"]["missionPromptVersion"] == 3
     assert len(sent) == 1
     assert stage["providerPayload"] == {
         key: item for key, item in sent[0].items() if key != "session_id"
@@ -144,6 +150,9 @@ def test_specialist_preview_reuses_live_requests_without_generating_artifacts(pa
     else:
         supervisor.funnel_nurture = specialist
 
+    baseline = preview_mission_supervisor(supervisor, value)
+    target = baseline["requests"][1]["stage"]
+    value["mission_prompt"] = {"version": 4, "instructions": {target: "Priorize as condições comerciais confirmadas."}}
     preview = preview_mission_supervisor(supervisor, value)
     assert client.calls == []
     assert specialist.traces == []
@@ -151,12 +160,27 @@ def test_specialist_preview_reuses_live_requests_without_generating_artifacts(pa
     stages = preview["requests"][1:]
     assert len(stages) == len(specialist.NODES)
     assert all(stage["conditional"] and stage["policyTools"] == [] for stage in stages)
+    altered = [stage["stage"] for stage, earlier in zip(preview["requests"], baseline["requests"], strict=True)
+               if stage["providerFingerprint"] != earlier["providerFingerprint"]]
+    assert altered == [target]
     specialist.generate(value)
     for stage, call in zip(stages, client.calls, strict=True):
         assert stage["request"] == {key: item for key, item in call.items() if key != "session_id"}
         assert stage["providerPayload"]["messages"] == call["messages"]
         assert stage["sources"][0]["id"] == "source-1"
 
+
+def test_planning_adjustments_do_not_change_radar_requests():
+    value = {**_request(), "pack_catalog": [{"key": "radar_prospecting"}]}
+    value["mission"]["objective"] = "Pesquisar empresas no Radar Comercial"
+    supervisor = _supervisor({})
+    baseline = preview_mission_supervisor(supervisor, value)["requests"][0]
+    value["mission_prompt"] = {"version": 3, "instructions": {"planner": "Ajuste exclusivo do piloto."}}
+    stage = preview_mission_supervisor(supervisor, value)["requests"][0]
+    assert stage["selectedPacks"] == ["radar_prospecting"]
+    assert not stage["editable"]
+    assert not stage["stageInstructionApplied"]
+    assert stage["providerFingerprint"] == baseline["providerFingerprint"]
 
 def test_supervisor_preview_preserves_planner_when_specialist_needs_input_or_route():
     value = test_campaign_launch_mission.request()

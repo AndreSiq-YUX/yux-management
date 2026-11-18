@@ -239,6 +239,7 @@ export type Audience = 'internal_operator' | 'client_user'
 export type ClientId = string | null
 export type ContractId = string | null
 export type ConversationId = string
+export type Version1 = number
 export type OrganizationId = string
 export type Rollingsummary = string
 export type Schemaversion = 1
@@ -843,7 +844,7 @@ export type Publicationid = string | null
 export type Ref = string
 export type Title1 = string
 export type Usemode = ('internal_reasoning' | 'quotable') | null
-export type Version1 = string
+export type Version2 = string
 export type Visibility = 'internal_only' | 'client_safe' | 'internal' | 'external' | 'both'
 /**
  * @maxItems 100
@@ -954,7 +955,7 @@ export type AskedQuestionKeys = string[]
 export type Definitionhash = string | null
 export type Effect = 'none' | 'draft' | 'internal' | 'external' | 'destructive'
 export type Key7 = string
-export type Version2 = number
+export type Version3 = number
 export type Capabilities = CapabilityWire[]
 export type ClarificationRound = number
 export type ClientId1 = string | null
@@ -1003,7 +1004,7 @@ export type Usage = {
 export type Kind5 = 'plan'
 export type Key9 = string
 export type Templatehash = string
-export type Version3 = string
+export type Version4 = string
 export type Assumptions1 = string[]
 export type Extensionpoint = string
 export type Rationale = string
@@ -1062,6 +1063,7 @@ export interface MissionConversationTurnRequestWire {
   contract_id?: ContractId
   conversation_id: ConversationId
   currentBrief?: Currentbrief
+  mission_prompt?: MissionPromptConfigurationWire | null
   operationalContext?: Operationalcontext
   organization_id: OrganizationId
   rollingSummary?: Rollingsummary
@@ -1076,6 +1078,13 @@ export interface SelectedPackWire {
 }
 export interface Currentbrief {
   [k: string]: unknown
+}
+export interface MissionPromptConfigurationWire {
+  instructions: Instructions
+  version: Version1
+}
+export interface Instructions {
+  [k: string]: string
 }
 export interface Operationalcontext {
   [k: string]: unknown
@@ -1167,7 +1176,7 @@ export interface MissionSourceRefWire {
   ref: Ref
   title: Title1
   useMode?: Usemode
-  version: Version1
+  version: Version2
   visibility: Visibility
 }
 export interface MissionStrategyProposalWire {
@@ -1229,6 +1238,7 @@ export interface MissionPlanRequestWire {
   contract_id?: ContractId1
   limits?: Limits
   mission: Mission
+  mission_prompt?: MissionPromptConfigurationWire | null
   observations?: Observations
   organization_id: OrganizationId1
   pack_catalog?: PackCatalog
@@ -1255,7 +1265,7 @@ export interface CapabilityWire {
   definitionHash?: Definitionhash
   effect: Effect
   key: Key7
-  version: Version2
+  version: Version3
 }
 export interface Limits {
   [k: string]: unknown
@@ -1319,7 +1329,7 @@ export interface PlanWire {
 export interface ActionPackReferenceWire {
   key: Key9
   templateHash: Templatehash
-  version: Version3
+  version: Version4
 }
 export interface PlanDeviationWire {
   extensionPoint: Extensionpoint

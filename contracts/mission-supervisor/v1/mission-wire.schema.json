@@ -893,6 +893,17 @@
           "title": "Currentbrief",
           "type": "object"
         },
+        "mission_prompt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MissionPromptConfigurationWire"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "operationalContext": {
           "additionalProperties": true,
           "title": "Operationalcontext",
@@ -1121,6 +1132,17 @@
           "title": "Mission",
           "type": "object"
         },
+        "mission_prompt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MissionPromptConfigurationWire"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "observations": {
           "items": {
             "additionalProperties": true,
@@ -1214,6 +1236,47 @@
         }
       ],
       "title": "MissionPlanResponseWire",
+      "type": "object"
+    },
+    "MissionPromptConfigurationWire": {
+      "additionalProperties": false,
+      "properties": {
+        "instructions": {
+          "additionalProperties": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxProperties": 10,
+          "minProperties": 1,
+          "propertyNames": {
+            "enum": [
+              "synthesizer",
+              "planner",
+              "funnel_nurture.crm_architect",
+              "funnel_nurture.copywriter",
+              "funnel_nurture.automation_architect",
+              "funnel_nurture.brand_compliance_guardian",
+              "campaign_launch.campaign_strategist",
+              "campaign_launch.copywriter",
+              "campaign_launch.brand_compliance_guardian",
+              "campaign_launch.measurement_analyst"
+            ]
+          },
+          "title": "Instructions",
+          "type": "object"
+        },
+        "version": {
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "instructions"
+      ],
+      "title": "MissionPromptConfigurationWire",
       "type": "object"
     },
     "MissionSourceRefWire": {

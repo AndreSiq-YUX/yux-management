@@ -30,6 +30,7 @@ import { decideCampaignOptimization } from '../../modules/action-engine/capabili
 import { invokeMissionConversationTurn } from '../../lib/agent-runtime-client.js'
 import { buildMissionPlanningCatalog, buildMissionPlanningContext, buildMissionPlanRequest, getMissionPlanningLimits } from '../../modules/action-engine/mission-plan-request.js'
 import { buildMissionTurnRequest } from '../../modules/action-engine/mission-turn-request.js'
+import { intakePromptScope, pinMissionPromptVersion } from '../../modules/action-engine/mission-prompt-versions.js'
 import {
   completeAgentConversationTurn,
   getMissionConversation,
@@ -80,6 +81,10 @@ export async function handleActionEngineProcessMissionConversation(
     })
     if (request.allowedCapabilityKeys?.includes('crm.pipeline.create_draft')
       && access.enabledModules.includes('automations')) await ensureCrmPreparationPackVersion(pool, conversation.createdBy)
+    const missionPrompt = await pinMissionPromptVersion(pool, env, {
+      organizationId, scope: intakePromptScope(audience), operationId: userMessage.id, operationVersion: requestedVersion,
+    })
+    if (missionPrompt) request.mission_prompt = missionPrompt
     const operationId = request.client_id && request.contract_id ? userMessage.id : undefined
     const response = await (dependencies.invokeTurn ?? invokeMissionConversationTurn)(env, request, operationId)
     await verifyMissionKnowledgeContext(pool, {
@@ -530,6 +535,9 @@ export async function handleActionEnginePlanMission(
   const catalog = await buildMissionPlanningCatalog(pool, env, mission)
   const { registry, packs, pack } = catalog
   try {
+    const missionPrompt = await pinMissionPromptVersion(pool, env, {
+      organizationId, scope: 'mission-planning', operationId: missionId, operationVersion: requestedVersion,
+    })
     const { planningContext, groundingMetadata, linkedConversation } = await buildMissionPlanningContext(pool, mission, catalog)
     const contextSnapshot = await transaction(pool, (client) => insertMissionContextSnapshot(client, {
       organizationId, missionId, query: planningContext.query, companyContext: planningContext.companyContext,
@@ -565,13 +573,14 @@ export async function handleActionEnginePlanMission(
     const payload = await buildMissionPlanRequest(pool, mission, catalog, planningContext, isReplan, limits, {
       snapshotId: contextSnapshot.id, cycleId: planningCycle.id,
     })
+    if (missionPrompt) payload.mission_prompt = missionPrompt
     const previousCompiled = payload.previous_revision as Record<string, unknown> | undefined
     const planningStartedAt = Date.now()
     const rawPlan = await (dependencies.invokePlan ?? requestMissionPlan)(env, payload)
     const planningDurationMs = Math.max(0, Date.now() - planningStartedAt)
     const rawEnvelope = rawPlan && typeof rawPlan === 'object' ? rawPlan as Record<string, unknown> : {}
     const rawUsage = rawEnvelope.usage && typeof rawEnvelope.usage === 'object' ? rawEnvelope.usage as Record<string, unknown> : {}
-    const { planningMeasurements, ...rawTrace } = rawEnvelope.trace && typeof rawEnvelope.trace === 'object'
+    const { planningMeasurements, missionPromptVersion, ...rawTrace } = rawEnvelope.trace && typeof rawEnvelope.trace === 'object'
       ? rawEnvelope.trace as Record<string, unknown> : {}
     const storedPlan = rawEnvelope.trace ? { ...rawEnvelope, trace: rawTrace } : rawEnvelope
     const cost = reconcilePlanningCost(planningMeasurements, planningEstimate.costBrl)
@@ -586,6 +595,7 @@ export async function handleActionEnginePlanMission(
         metadata: {
           profileKey: rawTrace.profileKey ?? 'mission_supervisor', promptHash: rawTrace.promptHash ?? null,
           measurements: cost.measurements,
+          ...(typeof missionPromptVersion === 'number' ? { missionPromptVersion } : {}),
         },
       })
       const telemetryKey = env.ACTION_ENGINE_TELEMETRY_REDACTION_KEY ?? env.ACTION_ENGINE_MUTATION_LEASE_SECRET

@@ -11,6 +11,7 @@ from .contracts import (
     parse_json_object,
 )
 from .model_profiles import ModelProfile, measure_generation
+from .mission_prompt import apply_stage_adjustment
 from .providers import OpenRouterClient, ProviderRequestError
 
 
@@ -122,7 +123,7 @@ class CampaignLaunchSpecialistWorkflow:
             "retrievedKnowledge": value.get("strategy_context") or {},
             "allowedSourceIds": value.get("allowed_source_ids") or [],
         }
-        return [
+        return apply_stage_adjustment([
             {"role": "system", "content": (
                 f"You are the bounded YUX {node}. Return exactly one JSON object matching your specialist schema. "
                 "You have NO TOOLS and cannot call ad providers, publish, upload audiences, activate spend, add capabilities or invent sources. "
@@ -131,7 +132,7 @@ class CampaignLaunchSpecialistWorkflow:
                 "Never make unsupported claims. The measurement analyst must include UTM source, medium, campaign and conversion event."
             )},
             {"role": "user", "content": json.dumps(envelope, ensure_ascii=False, sort_keys=True, separators=(",", ":"))},
-        ]
+        ], value, f"campaign_launch.{node}")
 
     def prepare_request(self, node: str, value: dict[str, Any]) -> dict[str, Any]:
         return {

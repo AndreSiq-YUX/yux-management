@@ -2,6 +2,8 @@ import json
 
 from yux_agent_runtime.customer_context import CustomerContextService
 from yux_agent_runtime.instruction_preview import preview_workflow
+from yux_agent_runtime.mission_contracts import MissionConversationTurnRequestWire
+from yux_agent_runtime.mission_conversation import MissionConversationWorkflow
 from yux_agent_runtime.runtime_store import InMemoryAgentRuntimeStore
 from yux_agent_runtime.trace import stable_hash
 from yux_agent_runtime.workflow import estimate_workflow_credits
@@ -80,6 +82,31 @@ def test_named_presales_instruction_changes_one_stage_and_preserves_protected_ob
     traces = [item["safe_context"] for item in engine.store.list("agent_context_snapshots") if item["context_kind"] == "runtime"]
     assert {trace["stage"]: trace["stage_instruction_applied"] for trace in traces} == {"finance": True, "synthesizer": False}
     assert all(trace["organization_prompt_version"] == 7 for trace in traces)
+
+
+def test_mission_conversation_adjustment_stays_in_protected_system_context():
+    engine, calls = test_live_workflows.LiveWorkflowTest().make_engine([
+        json.dumps({"kind": "message", "reply": "Vamos conferir o contexto.", "readiness": {"status": "needs_information"}}),
+    ])
+    workflow = MissionConversationWorkflow(engine)
+    instruction = "Priorize a pergunta sobre as regiões atendidas."
+    turn = MissionConversationTurnRequestWire.model_validate({
+        "schemaVersion": 1, "organization_id": "empresa-a", "conversation_id": "fixture",
+        "audience": "client_user", "user_message": "Quero preparar a prospecção.",
+        "mission_prompt": {"version": 2, "instructions": {"synthesizer": instruction}},
+    })
+    execution = workflow.prepare_turn(turn)
+    assert "mission_prompt" not in execution["retrieval_context"]["mission_request"]
+    stage = preview_workflow(engine, execution)["requests"][0]
+    assert not calls
+    assert stage["stageInstructionApplied"]
+    assert stage["versions"]["organization"] == 2
+    system, context = stage["request"]["messages"]
+    assert system["content"].index("Contrato de saída") < system["content"].index(instruction)
+    assert instruction not in context["content"]
+    response = workflow.respond(turn, execution=execution).model_dump()
+    assert "mission_prompt" not in response
+    assert stage["providerPayload"] == {key: value for key, value in calls[0].items() if key != "session_id"}
 
 
 def test_mission_portfolio_excludes_other_contracts_and_accounts():

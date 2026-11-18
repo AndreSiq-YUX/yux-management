@@ -14,6 +14,7 @@ from .contracts import (
     validate_subagent_output,
 )
 from .harness import Harness
+from .mission_prompt import format_stage_adjustment
 from .radar import RadarCompanyInput, build_radar_workflow_spec, synthesize_radar_output
 from .runtime_store import AgentRuntimeStore
 from .strategy_usage import strategy_usage_stage
@@ -298,6 +299,7 @@ class StrategyWorkflowEngine:
         presales_instruction: str | None = None,
         presales_stage_instructions: dict[str, str] | None = None,
         presales_prompt_version: int | None = None,
+        mission_prompt: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         workflow_spec = self.resolve_workflow_spec(mode, source, workflow_spec)
         workflow_key = workflow_spec["workflow_key"]
@@ -306,6 +308,10 @@ class StrategyWorkflowEngine:
             presales_candidate and profile_key == "growth_strategist"
             and workflow_key in ("diagnostic_48h", "proposal_consultative")
         ) else {}
+        organization_prompt_version = presales_prompt_version
+        if source == "mission_intake" and workflow_key == "mission_intake_conversation" and mission_prompt:
+            stage_instructions = mission_prompt["instructions"]
+            organization_prompt_version = mission_prompt["version"]
         run = self.trace.start_run(
             {
                 "organization_id": organization_id,
@@ -417,7 +423,7 @@ class StrategyWorkflowEngine:
                     contract_id=contract_id,
                     presales_candidate=presales_candidate,
                     stage_instruction=stage_instructions.get(_string(subagent.get("key") or subagent.get("subagent_key"))),
-                    presales_prompt_version=presales_prompt_version,
+                    organization_prompt_version=organization_prompt_version,
                 )
                 if presales_candidate and (receipt := subagent_output.pop("_generation_receipt", None)):
                     generation_receipts.append(receipt)
@@ -440,7 +446,7 @@ class StrategyWorkflowEngine:
                         presales_candidate=presales_candidate,
                         presales_instruction=presales_instruction,
                         stage_instruction=stage_instructions.get("synthesizer"),
-                        presales_prompt_version=presales_prompt_version,
+                        organization_prompt_version=organization_prompt_version,
                     )
                 elif plan["workflow_key"] == "commercial_radar_local_niche":
                     synthesis = synthesize_radar_workflow_result(message, plan, subagent_outputs, retrieval_context)
@@ -523,7 +529,7 @@ class StrategyWorkflowEngine:
         contract_id: str | None = None,
         presales_candidate: bool = False,
         stage_instruction: str | None = None,
-        presales_prompt_version: int | None = None,
+        organization_prompt_version: int | None = None,
     ) -> dict[str, Any]:
         key = _string(subagent.get("key") or subagent.get("subagent_key"))
         profile_key = _string(subagent.get("profile_key")) or "growth_strategist"
@@ -550,7 +556,7 @@ class StrategyWorkflowEngine:
                     contract_id=contract_id,
                     presales_candidate=presales_candidate,
                     stage_instruction=stage_instruction,
-                    presales_prompt_version=presales_prompt_version,
+                    organization_prompt_version=organization_prompt_version,
                 )
                 raw = parse_json_object(provider["content"])
                 parsed = validate_subagent_output(raw)
@@ -639,7 +645,7 @@ class StrategyWorkflowEngine:
         presales_candidate: bool = False,
         presales_instruction: str | None = None,
         stage_instruction: str | None = None,
-        presales_prompt_version: int | None = None,
+        organization_prompt_version: int | None = None,
     ) -> dict[str, Any]:
         if plan["workflow_key"] == "mission_intake_conversation":
             source_catalog = []
@@ -786,7 +792,7 @@ class StrategyWorkflowEngine:
             presales_candidate=presales_candidate,
             presales_instruction=presales_instruction,
             stage_instruction=stage_instruction,
-            presales_prompt_version=presales_prompt_version,
+            organization_prompt_version=organization_prompt_version,
             model_route_key=(
                 "action_engine_strategist"
                 if plan["workflow_key"] == "mission_intake_conversation"
@@ -857,7 +863,7 @@ class StrategyWorkflowEngine:
         presales_candidate: bool = False,
         presales_instruction: str | None = None,
         stage_instruction: str | None = None,
-        presales_prompt_version: int | None = None,
+        organization_prompt_version: int | None = None,
     ) -> dict[str, Any]:
         if self.harness is None:
             raise RuntimeError("agent_harness_not_configured")
@@ -878,6 +884,10 @@ class StrategyWorkflowEngine:
             if stage_instruction:
                 approved_layers.append(f"Ajuste aprovado desta subconta para esta etapa:\n{stage_instruction}")
             agent["base_prompt"] = "Analise os dados desta solicitação conforme as instruções aprovadas."
+        elif stage_instruction and model_route_key == "action_engine_strategist":
+            approved_layers = [_string(configured.get("base_prompt")), objective + strategy_direction,
+                               format_stage_adjustment(stage_instruction)]
+            agent["base_prompt"] = "Analise o contexto operacional conforme o contrato da conversa."
         strategy_context = {
             "profile_key": profile_key,
             "concept_cards": _as_list((retrieval_context or {}).get("cards")),
@@ -892,8 +902,8 @@ class StrategyWorkflowEngine:
         agent_state = {
             "agent": agent,
             "stage_key": stage_key,
-            "stage_instruction_applied": bool(presales_candidate and stage_instruction),
-            "organization_prompt_version": presales_prompt_version if presales_candidate else None,
+            "stage_instruction_applied": bool(stage_instruction),
+            "organization_prompt_version": organization_prompt_version if presales_candidate or stage_instruction else None,
             "record_workflow_attempts": presales_candidate,
             "context": {
                 "objective": None if presales_candidate else objective,
@@ -928,14 +938,14 @@ class StrategyWorkflowEngine:
             raise AgentContractError("mission_conversation_output_truncated")
         run = result["agent_runs"][-1]
         trace = run.get("model_request_hash")
-        if trace and presales_candidate:
+        if trace and (presales_candidate or stage_instruction):
             self.trace.record_context(
                 run_id=run_id, step_id=None, profile_key=profile_key, context_kind="runtime",
                 safe_context={
                     "request_fingerprint": trace,
                     "provider_request_fingerprint": output.get("provider_request_fingerprint"),
                     "prompt_versions": run["prompt_versions"],
-                    "organization_prompt_version": presales_prompt_version,
+                    "organization_prompt_version": organization_prompt_version,
                     "stage_instruction_applied": bool(stage_instruction),
                     "stage": stage_key,
                     "source_ids": sorted(evidence_ids(retrieval_context)),

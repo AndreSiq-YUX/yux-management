@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
+from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator, model_validator
+
+from .mission_prompt import MissionPromptConfigurationWire
 
 
 MISSION_WIRE_SCHEMA_ID = "https://yux.app/contracts/mission-supervisor/v1/mission-wire.schema.json"
@@ -48,6 +50,14 @@ class MissionPlanRequestWire(StrictWireModel):
     allowed_source_ids: list[str] = Field(default_factory=list)
     asked_question_keys: list[str] = Field(default_factory=list)
     clarification_round: int = Field(default=0, ge=0, le=1)
+    mission_prompt: MissionPromptConfigurationWire | None = None
+
+    @field_validator("mission_prompt")
+    @classmethod
+    def planning_stages_only(cls, value):
+        if value and "synthesizer" in value.instructions:
+            raise ValueError("mission_prompt_stage_out_of_scope")
+        return value
 
 
 class ClarificationQuestionWire(StrictWireModel):
@@ -85,6 +95,14 @@ class MissionConversationTurnRequestWire(StrictWireModel):
     operationalContext: dict[str, Any] = Field(default_factory=dict)
     allowedActionPacks: list[SelectedPackWire] = Field(default_factory=list, max_length=20)
     allowedCapabilityKeys: list[str] = Field(default_factory=list, max_length=500)
+    mission_prompt: MissionPromptConfigurationWire | None = None
+
+    @field_validator("mission_prompt")
+    @classmethod
+    def conversation_stage_only(cls, value):
+        if value and set(value.instructions) != {"synthesizer"}:
+            raise ValueError("mission_prompt_stage_out_of_scope")
+        return value
 
 
 class ModelUsageWire(StrictWireModel):

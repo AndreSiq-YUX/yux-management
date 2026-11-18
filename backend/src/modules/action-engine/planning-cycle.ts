@@ -31,6 +31,8 @@ export function reconcilePlanningCost(value: unknown, reservedBrl: string) {
       outputTokens: validCount(row.outputTokens),
       reasoningTokens: validCount(row.reasoningTokens),
       reportedCostUsd: validAmount(row.reportedCostUsd),
+      ...(typeof row.requestFingerprint === 'string' && /^[a-f0-9]{64}$/.test(row.requestFingerprint)
+        ? { requestFingerprint: row.requestFingerprint } : {}),
     }
   })
   const amounts = stages.map(stage => stage.reportedCostUsd)

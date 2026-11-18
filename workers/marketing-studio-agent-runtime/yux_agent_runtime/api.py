@@ -32,6 +32,7 @@ from .trace import stable_hash
 from .mission import MissionPlanRequest, plan_mission
 from .mission_supervisor import MissionSupervisor, MissionSupervisorError
 from .mission_contracts import MissionConversationTurnRequestWire, validate_mission_conversation_response
+from .mission_prompt import MissionPromptConfigurationWire, MissionPromptInstruction, MissionPromptStage
 from .mission_conversation import MissionConversationWorkflow
 from .mission_diagnostics import mission_failure_diagnostic
 from .workflow import CREDITS_BASE_PER_RUN, StrategyWorkflowEngine, estimate_workflow_credits, resolve_retrieval_audience
@@ -240,6 +241,26 @@ class PreviewStrategistRequest(BaseModel):
     published_stage_instructions: dict[PromptStageKey, PromptInstruction] = Field(default_factory=dict, max_length=24)
     published_prompt_version: int | None = Field(default=None, ge=1)
     commercial_catalog: dict[str, Any] | None = None
+
+
+class CandidateMissionPrompt(BaseModel):
+    stage: MissionPromptStage
+    instruction: MissionPromptInstruction
+    version: int = Field(ge=1)
+
+    def apply(self, published: MissionPromptConfigurationWire | None) -> dict[str, Any]:
+        return {
+            "version": self.version,
+            "instructions": {**(published.instructions if published else {}), self.stage: self.instruction},
+        }
+
+
+class PreviewMissionIntakeRequest(MissionConversationTurnRequestWire):
+    candidate_adjustment: CandidateMissionPrompt | None = None
+
+
+class PreviewMissionPlanRequest(MissionPlanRequest):
+    candidate_adjustment: CandidateMissionPrompt | None = None
 
 
 class KnowledgeSectionRequest(BaseModel):
@@ -647,22 +668,42 @@ def create_app(
         return {"baseline": baseline, "candidate": candidate}
 
     @app.post("/instructions/preview/mission-intake", dependencies=[Depends(require_runtime_token)])
-    def preview_mission_intake(request: MissionConversationTurnRequestWire) -> dict[str, Any]:
+    def preview_mission_intake(request: PreviewMissionIntakeRequest) -> dict[str, Any]:
         validate_tenant(
             request.organization_id, request.client_id, request.contract_id,
             profile_key="growth_strategist", audience=request.audience,
         )
-        selected = build_strategy_workflow_engine(runtime_store, context=request.model_dump(), offline_preview=True)
-        return {"baseline": preview_workflow(selected, MissionConversationWorkflow.workflow_input(request))}
+        context = request.model_dump(exclude={"candidate_adjustment"})
+        original = MissionConversationTurnRequestWire.model_validate(context)
+        selected = build_strategy_workflow_engine(runtime_store, context=context, offline_preview=True)
+        result = {"baseline": preview_workflow(selected, MissionConversationWorkflow.workflow_input(original))}
+        if request.candidate_adjustment:
+            try:
+                candidate = MissionConversationTurnRequestWire.model_validate({
+                    **context, "mission_prompt": request.candidate_adjustment.apply(original.mission_prompt),
+                })
+            except ValidationError as error:
+                raise HTTPException(status_code=422, detail="mission_prompt_candidate_invalid") from error
+            result["candidate"] = preview_workflow(selected, MissionConversationWorkflow.workflow_input(candidate))
+        return result
 
     @app.post("/instructions/preview/mission-supervisor", dependencies=[Depends(require_runtime_token)])
-    def preview_supervisor(request: MissionPlanRequest) -> dict[str, Any]:
+    def preview_supervisor(request: PreviewMissionPlanRequest) -> dict[str, Any]:
         validate_tenant(request.organization_id, request.client_id, request.contract_id, profile_key="mission_supervisor")
-        value = request.model_dump()
+        value = request.model_dump(exclude={"candidate_adjustment"})
         if request.proposed_plan is not None:
             raise HTTPException(status_code=400, detail="mission_supervisor_preview_requires_generation")
         try:
-            return {"baseline": preview_mission_supervisor(mission_planner(value), value)}
+            selected = mission_planner(value)
+            result = {"baseline": preview_mission_supervisor(selected, value)}
+            if request.candidate_adjustment:
+                candidate = MissionPlanRequest.model_validate({
+                    **value, "mission_prompt": request.candidate_adjustment.apply(request.mission_prompt),
+                })
+                result["candidate"] = preview_mission_supervisor(selected, candidate.model_dump())
+            return result
+        except ValidationError as error:
+            raise HTTPException(status_code=422, detail="mission_prompt_candidate_invalid") from error
         except MissionSupervisorError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 

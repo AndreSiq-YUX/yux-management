@@ -7,6 +7,7 @@ import { runWithDatabaseRequestContext } from '../../src/db/request-context.js'
 import { handleStrategyAdminChat } from '../../src/jobs/handlers/strategy.js'
 import { REVENUE_RECOVERY_PACK_V0 } from '../../src/modules/action-engine/packs/revenue-recovery-v0.js'
 import { publishActionPackVersion } from '../../src/modules/action-engine/repository.js'
+import { pinMissionPromptVersion } from '../../src/modules/action-engine/mission-prompt-versions.js'
 import { buildServer, type AppJobQueue } from '../../src/server.js'
 import { fixtureIds, fixturePassword, fixtureUsers, seedIntegrationFixtures } from './support/fixtures.js'
 
@@ -22,6 +23,7 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
   let app: Awaited<ReturnType<typeof buildServer>>
   let adminCookie: string
   let clientCookie: string
+  let deniedCookies: string[]
   let templateId: string
   let packageId: string
   let priceId: string
@@ -49,6 +51,7 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
       DATABASE_URL: database.toString(), YUX_AGENT_RUNTIME_URL: 'http://127.0.0.1:4109',
       YUX_AGENT_RUNTIME_TOKEN: 'local-simulated-runtime', STRATEGY_PRESALES_PILOT_ORGANIZATION_IDS: organizationId,
       STRATEGY_PRESALES_BILLABLE_CONTRACT_IDS: fixtureIds.contractA,
+      ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS: organizationId,
     })
     const queued = { add: job.mockImplementation(async () => ({ id: randomUUID() })) } as unknown as AppJobQueue
     app = await buildServer(env, { pool: apiPool, jobQueue: queued })
@@ -59,6 +62,7 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     }
     adminCookie = await login(fixtureUsers.yux_admin.email)
     clientCookie = await login(fixtureUsers.client_admin_A.email)
+    deniedCookies = [clientCookie, await login(fixtureUsers.yux_operator.email), await login(fixtureUsers.client_member_A.email)]
     packageId = (await admin.query("SELECT id FROM public.packages WHERE key = 'maquina_comercial'")).rows[0].id
     await admin.query("INSERT INTO public.organizations(id,name,slug,kind,client_id) VALUES ($1,'Subconta de captação de teste',$2,'client',$3)",
       [organizationId, 'agent-qa-' + organizationId, fixtureIds.clientA])
@@ -117,17 +121,16 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
       expect(wire.action_pack.key).toBe('revenue_recovery')
       expect(wire).not.toHaveProperty('context_snapshot_id')
       expect(wire.capabilities.length).toBeGreaterThan(0)
-      return Response.json({ baseline: { requests: [{ stage: 'planner' }] } })
+      const stage = { stage: 'planner' }
+      return Response.json({ baseline: { requests: [stage] },
+        ...(wire.candidate_adjustment ? { candidate: { requests: [{ ...stage,
+          stageInstructionApplied: wire.candidate_adjustment.stage === stage.stage, providerFingerprint: 'a'.repeat(64),
+        }] } } : {}) })
     })
     vi.stubGlobal('fetch', runtime)
     const root = '/api/strategy-engine/agent-prompts'
     const body = { flow: 'mission-supervisor', organizationId, missionId }
-    for (const user of [fixtureUsers.yux_operator, fixtureUsers.client_admin_A, fixtureUsers.client_member_A]) {
-      const session = await app.inject({
-        method: 'POST', url: '/api/auth/login', payload: { email: user.email, password: fixturePassword },
-      })
-      expect(session.statusCode).toBe(200)
-      const cookie = session.cookies.map(item => item.name + '=' + item.value).join('; ')
+    for (const cookie of deniedCookies) {
       expect((await call('GET', root + '/missions?organizationId=' + organizationId, undefined, cookie)).statusCode).toBe(403)
       expect((await call('POST', root + '/preview', body, cookie)).statusCode).toBe(403)
     }
@@ -140,6 +143,15 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     expect(result.statusCode, result.body).toBe(200)
     expect(result.headers['cache-control']).toBe('no-store')
     expect(runtime).toHaveBeenCalledTimes(1)
+    const publication = { ...body, operation: 'publish', stage: 'planner', expectedVersion: 0,
+      instruction: 'Valide a condição de retirada antes de detalhar o plano.', reason: 'Ensaio em ambiente local.' }
+    const approved = await call('POST', root + '/versions', publication)
+    expect(approved.statusCode, approved.body).toBe(200)
+    expect(approved.json()).toMatchObject({ version: 1, instructions: { planner: publication.instruction },
+      test_fingerprints: ['a'.repeat(64)] })
+    expect(runtime).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(String(runtime.mock.calls[1][1].body)).candidate_adjustment)
+      .toEqual({ stage: 'planner', instruction: publication.instruction, version: 1 })
     expect((await admin.query('SELECT status, version::int FROM public.action_missions WHERE id = $1', [missionId])).rows)
       .toEqual([{ status: 'draft', version: 1 }])
     for (const table of ['action_planning_cycles', 'action_mission_context_snapshots', 'action_plans']) {
@@ -280,10 +292,7 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
       return Response.json({ synthesis: { answer: 'Próximo passo a confirmar.' } })
     }))
 
-    for (const role of [fixtureUsers.yux_operator, fixtureUsers.client_admin_A, fixtureUsers.client_member_A]) {
-      const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: role.email, password: fixturePassword } })
-      expect(login.statusCode).toBe(200)
-      const cookie = login.cookies.map(item => item.name + '=' + item.value).join('; ')
+    for (const cookie of deniedCookies) {
       expect((await call('GET', scopePath, undefined, cookie)).statusCode).toBe(403)
       expect((await call('POST', base + '/preview', previewRequest, cookie)).statusCode).toBe(403)
       expect((await call('POST', base + '/versions', publication, cookie)).statusCode).toBe(403)
@@ -328,5 +337,52 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
       operation: 'restore', restoreVersion: firstVersion, reason: 'Restaurar etapa aprovada.' })
     expect(restored.statusCode).toBe(200)
     expect(restored.json()).toMatchObject({ stage_instructions: [{ mode: 'proposal', stage, instruction }] })
+  })
+
+  it('limits mission turn adjustments to the intended account and audience, and pins the version through retries', async () => {
+    const base = '/api/strategy-engine/agent-prompts'
+    const body = { flow: 'mission-intake', organizationId, audience: 'internal_operator', message: 'Prepare a captação.' }
+    const issue = { ...body, operation: 'publish', stage: 'synthesizer', expectedVersion: 0,
+      instruction: 'Confirme o processo logístico.', reason: 'Caso sintético.' }
+    const runtime = vi.fn(async (url: string, init: RequestInit) => {
+      expect(url).toBe('http://127.0.0.1:4109/instructions/preview/mission-intake')
+      const request = JSON.parse(String(init.body))
+      expect(request.organization_id).toBe(organizationId)
+      expect(request.audience).toBe(body.audience)
+      return Response.json({ baseline: { requests: [{ stage: 'synthesizer' }] },
+        ...(request.candidate_adjustment ? { candidate: { requests: [{ stage: 'synthesizer',
+          stageInstructionApplied: true, providerFingerprint: 'b'.repeat(64),
+        }] } } : {}) })
+    })
+    vi.stubGlobal('fetch', runtime)
+    const internal = `${base}/scope?organizationId=${organizationId}&promptScope=mission-intake-internal`
+    for (const cookie of deniedCookies) {
+      expect((await call('GET', internal, undefined, cookie)).statusCode).toBe(403)
+      expect((await call('POST', base + '/preview', body, cookie)).statusCode).toBe(403)
+      expect((await call('POST', base + '/versions', issue, cookie)).statusCode).toBe(403)
+    }
+    expect((await call('POST', base + '/versions', { ...issue, stage: 'planner' })).statusCode).toBe(409)
+    expect(runtime).not.toHaveBeenCalled()
+    const publish = await call('POST', base + '/versions', issue)
+    expect(publish.statusCode, publish.body).toBe(200)
+    expect(publish.json()).toMatchObject({ version: 1, instructions: { synthesizer: issue.instruction } })
+    expect((await call('GET', internal.replace('intake-internal', 'intake-client'))).json().versions).toEqual([])
+    expect((await call('GET', internal.replace(organizationId, fixtureIds.organizationA))).json().versions).toEqual([])
+
+    const run = { organizationId, scope: 'mission-intake-internal' as const, operationId: randomUUID(), operationVersion: 1 }
+    const pin = (request: typeof run) => runWithDatabaseRequestContext(
+      { role: 'yux_operator', organizationIds: [organizationId], serviceRole: 'worker' },
+      () => pinMissionPromptVersion(worker, app.config, request),
+    )
+    expect(await pin(run)).toEqual({ version: 1, instructions: { synthesizer: issue.instruction } })
+    const revised = await call('POST', base + '/versions', { ...issue, expectedVersion: 1, instruction: 'Confirme a região atendida.' })
+    expect(revised.statusCode, revised.body).toBe(200)
+    expect(await pin(run)).toEqual({ version: 1, instructions: { synthesizer: issue.instruction } })
+    expect(await pin({ ...run, operationId: randomUUID() })).toEqual({ version: 2, instructions: revised.json().instructions })
+    const restored = await call('POST', base + '/versions', { organizationId, operation: 'restore',
+      promptScope: 'mission-intake-internal', restoreVersion: 0, expectedVersion: 2, reason: 'Retomar a configuração herdada.' })
+    expect(restored.statusCode, restored.body).toBe(200)
+    expect(await pin(run)).toEqual({ version: 1, instructions: { synthesizer: issue.instruction } })
+    expect(await pin({ ...run, operationId: randomUUID() })).toBeUndefined()
   })
 })

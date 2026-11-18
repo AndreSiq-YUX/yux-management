@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from .contracts import AgentContractError, parse_json_object, validate_composite_mission_plan, validate_mission_plan
 from .mission_contracts import MissionSupervisorProposal, PlanWire
+from .mission_prompt import apply_stage_adjustment, planning_prompt_configuration
 from .model_profiles import ModelProfile, build_model_trace, measure_generation
 from .providers import OpenRouterClient, ProviderRequestError
 from .funnel_nurture import FunnelNurtureError, FunnelNurtureSpecialistWorkflow
@@ -61,7 +62,7 @@ class MissionSupervisor:
             "observations": value.get("observations") or [],
             "missionRoute": value.get("mission_route") or {},
         }
-        return [
+        return apply_stage_adjustment([
             {
                 "role": "system",
                 "content": (
@@ -90,14 +91,17 @@ class MissionSupervisor:
                 ),
             },
             {"role": "user", "content": json.dumps(envelope, ensure_ascii=False, sort_keys=True, separators=(",", ":"))},
-        ]
+        ], value, "planner")
 
     def prepare_request(self, value: dict[str, Any]) -> tuple[MissionRoute, dict[str, Any]]:
         try:
             route = self.router.route(value)
         except MissionRoutingError as error:
             raise MissionSupervisorError(str(error)) from error
-        messages = self.compose_messages({**value, "mission_route": route.model_dump()})
+        messages = self.compose_messages({
+            **value, "mission_route": route.model_dump(),
+            "mission_prompt": planning_prompt_configuration(value, route.selected_pack_keys),
+        })
         return route, {
             "model": self.profile.model,
             "messages": messages,
@@ -109,6 +113,7 @@ class MissionSupervisor:
 
     def propose(self, value: dict[str, Any]) -> dict[str, Any]:
         route, request = self.prepare_request(value)
+        value = {**value, "mission_prompt": planning_prompt_configuration(value, route.selected_pack_keys)}
         messages = request["messages"]
         try:
             response = self.client.chat_completion(**request)
@@ -196,6 +201,8 @@ class MissionSupervisor:
             usage,
         )
         result["trace"]["provider"] = response.get("provider") or self.profile.provider
+        if value["mission_prompt"]:
+            result["trace"]["missionPromptVersion"] = value["mission_prompt"]["version"]
         result["trace"]["specialists"] = [
             {key: item for key, item in trace.items() if key != "_measurement"}
             for trace in [*campaign_traces, *funnel_traces]

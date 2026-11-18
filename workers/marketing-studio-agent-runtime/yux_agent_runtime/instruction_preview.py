@@ -9,6 +9,7 @@ from .funnel_nurture import FunnelNurtureClarificationRequired
 from .harness import Harness, filter_allowed_tools, select_model_route
 from .llm_routing import RoutedLlmClient
 from .mission_supervisor import MissionSupervisor
+from .mission_prompt import planning_prompt_configuration
 from .planning_budget import decision_from_wire
 from .providers import OpenRouterClient, ProviderRequestError
 from .runtime_store import InMemoryAgentRuntimeStore
@@ -152,6 +153,11 @@ def preview_mission_supervisor(supervisor: MissionSupervisor, value: dict[str, A
             return {**preview, "blockedReason": decision.reason}
 
     route, request = supervisor.prepare_request(value)
+    configuration = planning_prompt_configuration(value, route.selected_pack_keys)
+    value = {**value, "mission_prompt": configuration}
+    instructions = (configuration or {}).get("instructions", {})
+    organization_version = (configuration or {}).get("version")
+    editable = "radar_prospecting" not in route.selected_pack_keys
     wire = {key: item for key, item in request.items() if key != "session_id"}
     context = value.get("strategy_context") or {}
     known = {
@@ -170,7 +176,9 @@ def preview_mission_supervisor(supervisor: MissionSupervisor, value: dict[str, A
         "profile": supervisor.profile.key,
         "route": supervisor.profile.key,
         "fingerprint": stable_hash(wire),
-        "versions": {"global": 1, "profile": supervisor.profile.version},
+        "versions": {"global": 1, "profile": supervisor.profile.version, "organization": organization_version},
+        "stageInstructionApplied": "planner" in instructions,
+        "editable": editable,
         "request": wire,
         "policyTools": [item["key"] for item in value.get("capabilities", [])],
         "sources": sources,
@@ -191,15 +199,18 @@ def preview_mission_supervisor(supervisor: MissionSupervisor, value: dict[str, A
             preview["missingSpecialistInputs"] = {"workflow": workflow, "fields": error.question_keys}
             break
         for node, _ in specialist.NODES:
+            stage_key = f"{workflow}.{node}"
             request = specialist.prepare_request(node, value)
             wire = {key: item for key, item in request.items() if key != "session_id"}
             client = specialist.client
             specialist_stage = {
-                "stage": f"{workflow}.{node}",
+                "stage": stage_key,
                 "profile": node,
                 "route": client.use_case if isinstance(client, RoutedLlmClient) else specialist.profile.key,
                 "fingerprint": stable_hash(wire),
-                "versions": {"global": 1, "profile": specialist.profile.version},
+                "versions": {"global": 1, "profile": specialist.profile.version, "organization": organization_version},
+                "stageInstructionApplied": stage_key in instructions,
+                "editable": editable,
                 "request": wire,
                 "policyTools": [],
                 "sources": sources,

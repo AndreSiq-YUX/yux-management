@@ -15,6 +15,7 @@ type StagePreview = {
   attempts?: Array<{ provider: string; modelName: string }>
   versions: { global: number; profile: number; organization?: number | null }
   stageInstructionApplied?: boolean
+  editable?: boolean
   request: {
     model: string
     fallback_models?: string[] | null
@@ -40,8 +41,9 @@ type Simulation = {
 type Preview = { baseline: Simulation; candidate?: Simulation; publishedVersion?: number }
 type StageInstruction = { mode: string; stage: string; instruction: string }
 type Version = {
-  version: number; instruction: string | null; reason: string; author_id: string; operation: string; created_at: string
+  version: number; instruction?: string | null; reason: string; author_id: string; operation: string; created_at: string
   stage_instructions?: StageInstruction[]
+  instructions?: Record<string, string>
 }
 type AccountScope = {
   contracts: Contract[]
@@ -56,7 +58,7 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
   const [consumers, setConsumers] = useState<Consumer[]>([])
   const [inventoryError, setInventoryError] = useState(false)
   const [organizationId, setOrganizationId] = useState('')
-  const [scope, setScope] = useState<(AccountScope & { organizationId: string }) | null>(null)
+  const [scope, setScope] = useState<(AccountScope & { key: string }) | null>(null)
   const [scopeError, setScopeError] = useState(false)
   const [contractId, setContractId] = useState('')
   const [flow, setFlow] = useState('strategist')
@@ -67,6 +69,10 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
   const inspectingSupervisor = flow === 'mission-supervisor'
   const [mode, setMode] = useState('diagnostic_48h')
   const [audience, setAudience] = useState('client_user')
+  const isStrategist = flow === 'strategist'
+  const promptScope = isStrategist ? undefined : inspectingSupervisor ? 'mission-planning'
+    : audience === 'internal_operator' ? 'mission-intake-internal' : 'mission-intake-client'
+  const scopeKey = `${organizationId}/${promptScope ?? 'strategist'}`
   const [message, setMessage] = useState('')
   const [candidateInstruction, setCandidateInstruction] = useState('')
   const [candidateStage, setCandidateStage] = useState('')
@@ -91,11 +97,13 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
   useEffect(() => {
     if (!organizationId) return
     const controller = new AbortController()
-    apiRequest<AccountScope>(`${endpoint}/scope?organizationId=${encodeURIComponent(organizationId)}`, { signal: controller.signal })
-      .then(data => { if (!controller.signal.aborted) setScope({ organizationId, ...data }) })
+    const params = new URLSearchParams({ organizationId })
+    if (promptScope) params.set('promptScope', promptScope)
+    apiRequest<AccountScope>(`${endpoint}/scope?${params}`, { signal: controller.signal })
+      .then(data => { if (!controller.signal.aborted) setScope({ key: scopeKey, ...data }) })
       .catch(() => { if (!controller.signal.aborted) setScopeError(true) })
     return () => controller.abort()
-  }, [organizationId, scopeRevision])
+  }, [organizationId, promptScope, scopeKey, scopeRevision])
 
   useEffect(() => {
     if (!inspectingSupervisor || !organizationId) return
@@ -110,6 +118,12 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
     return () => controller.abort()
   }, [inspectingSupervisor, organizationId, contractId, missionScope])
 
+  const scenario = {
+    flow, organizationId, contractId: contractId || undefined,
+    ...(inspectingSupervisor ? { missionId } : { message: message.trim() }),
+    ...(isStrategist ? { mode } : flow === 'mission-intake' ? { audience } : {}),
+  }
+
   async function simulate(event: FormEvent) {
     event.preventDefault()
     setRunning(true)
@@ -119,17 +133,13 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
       const result = await apiRequest<Preview>(`${endpoint}/preview`, {
         method: 'POST',
         body: {
-          flow, organizationId, contractId: contractId || undefined,
-          ...(inspectingSupervisor ? { missionId } : { message: message.trim() }),
-          ...(flow === 'strategist' ? { mode, candidateInstruction: candidateInstruction.trim() || undefined,
-            candidateStage: candidateStage || undefined } : {}),
-          ...(flow === 'mission-intake' ? { audience } : {}),
+          ...scenario, candidateInstruction: candidateInstruction.trim() || undefined,
+          candidateStage: candidateStage || undefined,
         },
       })
       setPreview(result)
-      if (flow === 'strategist') {
-        setEditableStages(result.baseline.requests.map(({ stage, profile }) => ({ stage, profile })))
-      }
+      setEditableStages(result.baseline.requests.filter(stage => stage.editable !== false && !stage.unavailableRoute)
+        .map(({ stage, profile }) => ({ stage, profile })))
     } catch {
       setError('Não foi possível montar a prévia. Confira a conta, o contrato e a configuração dos modelos.')
     } finally {
@@ -144,12 +154,11 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
       const version = await apiRequest<Version>(`${endpoint}/versions`, {
         method: 'POST',
         body: {
-          operation, organizationId, reason: reason.trim(),
+          operation, reason: reason.trim(),
           expectedVersion: operation === 'publish' ? preview?.publishedVersion : scope?.versions[0]?.version ?? 0,
           ...(operation === 'publish'
-            ? { instruction: candidateInstruction.trim(), mode, stage: candidateStage || undefined,
-              message: message.trim(), contractId: contractId || undefined }
-            : { restoreVersion: Number(restoreVersion) }),
+            ? { ...scenario, instruction: candidateInstruction.trim(), stage: candidateStage || undefined }
+            : { organizationId, promptScope, restoreVersion: Number(restoreVersion) }),
         },
       })
       setScope(current => current && ({ ...current, versions: [version, ...current.versions] }))
@@ -187,17 +196,22 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
     setCandidateStage('')
     setCandidateInstruction('')
     setEditableStages([])
+    setRestoreVersion('0')
+    setFeedback('')
+    setScopeError(false)
   }
 
   const control = 'mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2'
-  const scopeReady = scope?.organizationId === organizationId
+  const scopeReady = scope?.key === scopeKey
   const scopedMissions = availableMissions?.scope === missionScope ? availableMissions.items : []
   const hasPreviewInput = inspectingSupervisor ? scopedMissions.some(mission => mission.id === missionId) : Boolean(message.trim())
-  const appliedCandidate = preview?.candidate && preview.publishedVersion !== undefined && (!candidateStage || preview.candidate.requests.some(
+  const appliedCandidate = preview?.candidate && preview.publishedVersion !== undefined && ((!candidateStage && isStrategist) || preview.candidate.requests.some(
     stage => stage.stage === candidateStage && stage.stageInstructionApplied,
   ))
   const currentVersion = scope?.versions[0]
-  const currentStage = currentVersion?.stage_instructions?.find(entry => entry.mode === mode && entry.stage === candidateStage)
+  const currentStageInstruction = isStrategist
+    ? currentVersion?.stage_instructions?.find(entry => entry.mode === mode && entry.stage === candidateStage)?.instruction
+    : currentVersion?.instructions?.[candidateStage]
   const usesPilotReference = flow === 'strategist' && candidateStage
     && !preview?.baseline.requests.some(stage => stage.versions.organization)
   const baselineTitle = inspectingSupervisor ? 'Requisições do planejamento' : usesPilotReference ? 'Referência do piloto' : 'Configuração vigente'
@@ -252,9 +266,6 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
               setMissionId('')
               setMissionError(false)
               setScope(null)
-              setScopeError(false)
-              setFeedback('')
-              setRestoreVersion('0')
             }} className={control}>
               <option value="">Selecione uma subconta</option>
               {organizations.map(org => <option key={org.id} value={org.id}>{org.name}</option>)}
@@ -288,7 +299,10 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
             </label>
           ) : inspectingSupervisor ? (
             <label>Missão
-              <select aria-label="Missão" value={missionId} onChange={event => setMissionId(event.target.value)} className={control} required>
+              <select aria-label="Missão" value={missionId} onChange={event => {
+                setMissionId(event.target.value)
+                clearStageEditor()
+              }} className={control} required>
                 <option value="">{scopeReady && availableMissions?.scope === missionScope && !scopedMissions.length
                   ? 'Nenhuma missão neste escopo' : 'Selecione uma missão'}</option>
                 {scopedMissions.map(mission => <option key={mission.id} value={mission.id}>{mission.title}</option>)}
@@ -296,7 +310,10 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
             </label>
           ) : (
             <label>Público
-              <select aria-label="Público" value={audience} onChange={event => setAudience(event.target.value)} className={control}>
+              <select aria-label="Público" value={audience} onChange={event => {
+                setAudience(event.target.value)
+                clearStageEditor()
+              }} className={control}>
                 <option value="client_user">Usuário do portal</option>
                 <option value="internal_operator">Operador interno</option>
               </select>
@@ -305,30 +322,28 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
           {!inspectingSupervisor && <label className="md:col-span-2">Mensagem de teste
             <textarea aria-label="Mensagem de teste" required value={message} maxLength={8_000} onChange={event => setMessage(event.target.value)} rows={3} className={control} />
           </label>}
-          {flow === 'strategist' && (
-            <>
-              <div className="md:col-span-2">
-                <label>Etapa da instrução
-                  <select value={candidateStage} onChange={event => {
-                    setCandidateStage(event.target.value)
-                    setCandidateInstruction('')
-                  }} className={control}>
-                    <option value="">Instrução-base da síntese de pré-venda</option>
-                    {editableStages.map(stage => <option key={stage.stage} value={stage.stage}>{stage.stage} · {stage.profile}</option>)}
-                  </select>
-                </label>
-                {!editableStages.length && <p className="mt-1 text-gray-600">Simule o cenário para listar as etapas da tarefa.</p>}
-              </div>
-              <label className="md:col-span-2">Instrução candidata (opcional)
-                <textarea value={candidateInstruction} maxLength={4_000} onChange={event => setCandidateInstruction(event.target.value)} rows={3} className={control} />
-              </label>
-              {candidateStage && (
-                <p className="md:col-span-2 whitespace-pre-wrap text-gray-600">
-                  {currentStage ? `Ajuste vigente desta etapa: ${currentStage.instruction}` : 'Esta etapa usa as instruções herdadas.'}
-                  {' '}A publicação vale para esta etapa da tarefa selecionada.
-                </p>
-              )}
-            </>
+          <div className="md:col-span-2">
+            <label>Etapa da instrução
+              <select value={candidateStage} disabled={!isStrategist && !editableStages.length} onChange={event => {
+                setCandidateStage(event.target.value)
+                setCandidateInstruction('')
+              }} className={control}>
+                <option value="">{isStrategist ? 'Instrução-base da síntese de pré-venda' : 'Selecione uma etapa'}</option>
+                {editableStages.map(stage => <option key={stage.stage} value={stage.stage}>{stage.stage} · {stage.profile}</option>)}
+              </select>
+            </label>
+            {!editableStages.length && !preview && <p className="mt-1 text-gray-600">Simule o cenário para listar as etapas editáveis.</p>}
+          </div>
+          {(isStrategist || candidateStage) && <label className="md:col-span-2">Instrução candidata (opcional)
+            <textarea value={candidateInstruction} maxLength={4_000} onChange={event => setCandidateInstruction(event.target.value)} rows={3} className={control} />
+          </label>}
+          {candidateStage && (
+            <p className="md:col-span-2 whitespace-pre-wrap text-gray-600">
+              {currentStageInstruction ? `Ajuste vigente desta etapa: ${currentStageInstruction}` : 'Esta etapa usa as instruções herdadas.'}
+              {' '}{isStrategist ? 'A publicação vale para esta etapa da tarefa selecionada.'
+                : inspectingSupervisor ? 'A missão serve de cenário. A publicação vale para esta etapa no planejamento da subconta.'
+                  : 'A publicação vale para este público nas conversas de missão da subconta.'}
+            </p>
           )}
         </fieldset>
         {scopeError && <p role="alert" className="text-sm text-red-700">Não foi possível consultar os contratos da subconta.</p>}
@@ -346,13 +361,15 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
         </div>
       )}
 
-      {flow === 'strategist' && scopeReady && (
+      {scopeReady && (
         <section className="space-y-4 rounded-lg border bg-white p-5 text-sm">
           <div>
-            <h2 className="text-lg font-semibold">Publicação do estrategista</h2>
+            <h2 className="text-lg font-semibold">{isStrategist ? 'Publicação do estrategista'
+              : inspectingSupervisor ? 'Publicação do planejamento' : 'Publicação da conversa de missão'}</h2>
             <p className="text-gray-600">
               {scope.pilotEnabled ? 'Conta habilitada para o piloto.' : 'Execução do piloto desativada para esta subconta.'}
-              {' '}{currentVersion && (currentVersion.instruction || currentVersion.stage_instructions?.length)
+              {' '}{currentVersion && (currentVersion.instruction || currentVersion.stage_instructions?.length
+                || Object.keys(currentVersion.instructions ?? {}).length)
                 ? `Versão publicada ${currentVersion.version}.` : 'Configuração herdada selecionada.'}
             </p>
           </div>
@@ -365,7 +382,7 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
             </button>
             {scope.versions.length > 0 && (
               <div className="flex flex-wrap items-end gap-2">
-                <label>Versão da subconta a restaurar
+                <label>{isStrategist ? 'Versão da subconta a restaurar' : 'Versão deste fluxo a restaurar'}
                   <select value={restoreVersion} onChange={event => setRestoreVersion(event.target.value)} className={control}>
                     <option value="0">Configuração herdada</option>
                     {scope.versions.slice(1).map(version => <option key={version.version} value={version.version}>Versão {version.version}</option>)}
@@ -390,12 +407,15 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
                         <strong>{entry.mode} · {entry.stage}</strong>{' '}{entry.instruction}
                       </p>
                     ))}
+                    {Object.entries(version.instructions ?? {}).map(([stage, instruction]) => (
+                      <p key={stage} className="mt-1 whitespace-pre-wrap text-gray-600"><strong>{stage}</strong>{' '}{instruction}</p>
+                    ))}
                   </li>
                 ))}
               </ul>
             </details>
           )}
-          <div className="space-y-2 border-t pt-4">
+          {isStrategist && <div className="space-y-2 border-t pt-4">
             <h3 className="font-semibold">Catálogo comercial do CRM</h3>
             {!scope.catalog.some(item => item.approved) && <p className="text-amber-800">Esta subconta não tem oferta aprovada para o estrategista.</p>}
             {scope.catalog.map(item => (
@@ -404,7 +424,7 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
                 {item.label}
               </label>
             ))}
-          </div>
+          </div>}
         </section>
       )}
     </div>
@@ -432,6 +452,7 @@ function SimulationResult({ title, simulation }: { title: string; simulation: Si
             <p>Perfil {stage.profile} · rota {stage.route} · versão global {stage.versions.global} · perfil {stage.versions.profile}</p>
             {stage.versions.organization && <p>Versão da subconta {stage.versions.organization}</p>}
             {stage.stageInstructionApplied && <p>Esta etapa inclui um ajuste da subconta.</p>}
+            {stage.editable === false && <p>Etapa protegida neste cenário.</p>}
             <p>Saída de até {stage.providerPayload?.max_completion_tokens ?? stage.request.max_tokens} tokens · contingência {stage.attempts?.slice(1).map(item => item.modelName).join(', ') || stage.request.fallback_models?.join(', ') || 'indisponível'}</p>
             <p className="break-all text-xs text-gray-600">Impressão digital {stage.providerFingerprint || stage.fingerprint}</p>
             {stage.selectedPacks?.length ? <p>Pacotes selecionados {stage.selectedPacks.join(', ')}</p> : null}
