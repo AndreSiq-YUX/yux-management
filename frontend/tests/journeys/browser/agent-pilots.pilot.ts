@@ -91,8 +91,24 @@ test('compares pilot prompts, imports a CRM draft and executes a scoped preparat
     await expect(page).toHaveURL(`/client-workspaces/${data.presalesOrg}/comercial/propostas?proposal=${draftId}`)
     await expect(page.getByRole('button', { name: /Outra proposta no mesmo workspace/ }).first()).toBeVisible()
     await expect(page.getByPlaceholder('Escopo')).toHaveValue('Recuperar oportunidades existentes')
-    await expect(page.getByRole('spinbutton')).toHaveValue('1500')
+    const amount = page.getByRole('spinbutton', { name: 'Valor total' })
+    await expect(amount).toHaveValue('1500')
+    await expect(amount).not.toBeEditable()
+    await expect(page.getByRole('heading', { name: 'Itens aprovados' })).toBeVisible()
+    await expect(page.getByRole('listitem').filter({ hasText: 'Acompanhamento comercial' })).toContainText(/R\$\s*1\.500,00/)
+    await expect(page.getByRole('button', { name: 'Gerar', exact: true })).toHaveCount(0)
     await expect(page.getByText('Status: draft', { exact: true })).toBeVisible()
+    await page.getByPlaceholder('Escopo').fill('Escopo conferido na revisão comercial')
+    const savedDraft = page.waitForResponse(response => response.request().method() === 'PATCH'
+      && new URL(response.url()).pathname === `/api/proposals/${draftId}`)
+    await page.getByRole('button', { name: 'Salvar', exact: true }).click()
+    expect((await savedDraft).ok()).toBe(true)
+    await expect(page.getByText('Rascunho salvo', { exact: true })).toBeVisible()
+    await expect(amount).toHaveValue('1500')
+
+    await page.getByRole('button', { name: /Outra proposta no mesmo workspace/ }).first().click()
+    await expect(page.getByRole('button', { name: 'Gerar', exact: true })).toBeVisible()
+    await expect(amount).toBeEditable()
 
     const otherQueue = page.waitForResponse(response => {
       const url = new URL(response.url())

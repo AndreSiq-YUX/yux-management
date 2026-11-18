@@ -326,6 +326,15 @@ export async function createDraft(pool: pg.Pool, user: AuthUser, input: Proposal
 
 export async function updateDraft(pool: pg.Pool, user: AuthUser, proposalId: string, patch: ProposalPatch) {
   const existing = await getProposalForAccess(pool, user, proposalId)
+  if (existing.strategy_catalog_version) {
+    if (patch.packageId !== undefined || patch.blueprintId !== undefined || patch.billingCycle !== undefined
+      || patch.selectedModuleKeys !== undefined
+      || (patch.finalValue !== undefined && patch.finalValue !== Number(existing.final_value))) {
+      throw new ApiError(409, 'strategy_proposal_terms_locked')
+    }
+    // Older editors submit the current total together with the editable fields.
+    patch = { ...patch, finalValue: undefined, overrideReason: undefined }
+  }
   const update = buildProposalUpdate(patch)
   if (update.values.length === 0) return mapProposal({ ...existing, proposal_items: await listItems(pool, proposalId) })
 
@@ -341,7 +350,8 @@ export async function updateDraft(pool: pg.Pool, user: AuthUser, proposalId: str
 }
 
 export async function replaceItems(pool: pg.Pool, user: AuthUser, proposalId: string, items: ProposalItemInput[]) {
-  await getProposalForAccess(pool, user, proposalId)
+  const proposal = await getProposalForAccess(pool, user, proposalId)
+  if (proposal.strategy_catalog_version) throw new ApiError(409, 'strategy_proposal_terms_locked')
   await pool.query('DELETE FROM public.proposal_items WHERE proposal_id = $1', [proposalId])
   if (items.length === 0) return []
 
@@ -410,6 +420,7 @@ export async function listConversionRuns(pool: pg.Pool, user: AuthUser, proposal
 
 export async function generateDraft(pool: pg.Pool, user: AuthUser, proposalId: string) {
   const proposal = await getProposalForAccess(pool, user, proposalId)
+  if (proposal.strategy_catalog_version) throw new ApiError(409, 'strategy_proposal_terms_locked')
   const [diagnostic, template, rules] = await Promise.all([
     getDiagnosticRow(pool, proposal.lead_id),
     getTemplate(pool, proposal.organization_id, proposal.package_id),
@@ -445,6 +456,13 @@ export async function sendProposal(pool: pg.Pool, user: AuthUser, proposalId: st
       || !items.some(item => item.item_key === 'base')
       || items.some(item => !offer.items.some(price => price.key === item.item_key))) {
       throw new ApiError(409, 'strategy_recommendation_catalog_changed')
+    }
+    const totalCents = items.reduce((sum, item) => sum + Math.round(Number(item.total_value) * 100), 0)
+    if (totalCents !== Math.round(Number(proposal.final_value) * 100)
+      || new Set(items.map(item => item.item_key)).size !== items.length
+      || items.some(item => Number(item.quantity) !== 1 || !offer.items.some(price =>
+        price.key === item.item_key && Number(price.recommended) === Number(item.unit_value)))) {
+      throw new ApiError(409, 'strategy_proposal_terms_locked')
     }
   }
   const rules = await getPriceRuleRows(pool, proposal.organization_id, proposal.package_id)
@@ -738,6 +756,7 @@ function mapProposal(row: ProposalRow) {
     billingCycle: row.billing_cycle,
     selectedModuleKeys: row.selected_module_keys ?? [],
     finalValue: Number(row.final_value || 0),
+    commercialTermsLocked: row.strategy_catalog_version ? true : undefined,
     overrideReason: row.override_reason ?? undefined,
     currentVersionId: row.current_version_id ?? undefined,
     convertedClientId: row.converted_client_id ?? undefined,

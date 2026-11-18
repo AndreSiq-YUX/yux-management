@@ -29,7 +29,7 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
   let priceId: string
   let excludedTemplateId: string
 
-  const call = (method: 'GET' | 'POST' | 'PUT', path: string, payload?: object, cookie = adminCookie) =>
+  const call = (method: 'GET' | 'POST' | 'PUT' | 'PATCH', path: string, payload?: object, cookie = adminCookie) =>
     app.inject({ method, url: path, headers: { cookie }, ...(payload ? { payload } : {}) })
 
   beforeAll(async () => {
@@ -489,6 +489,30 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     expect(draftOne.statusCode, draftOne.body).toBe(200)
     expect(draftTwo.statusCode, draftTwo.body).toBe(200)
     expect(draftOne.json().id).toBe(draftTwo.json().id)
+    const draftPath = `/api/proposals/${draftOne.json().id}`
+    const importedDraft = (await call('GET', draftPath)).json()
+    expect(importedDraft).toMatchObject({ finalValue: 1500, items: [{ itemKey: 'base', unitValue: 1500 }] })
+    expect(importedDraft).not.toHaveProperty('strategy_catalog_version')
+    expect(importedDraft).not.toHaveProperty('strategy_recommendation_message_id')
+    const draftRegeneration = await call('POST', `${draftPath}/generate-draft`)
+    expect(draftRegeneration.statusCode, draftRegeneration.body).toBe(409)
+    expect(importedDraft.commercialTermsLocked).toBe(true)
+    const itemReplacement = await call('PUT', `${draftPath}/items`, [])
+    expect(itemReplacement.statusCode, itemReplacement.body).toBe(409)
+    const priceOverride = await call('PATCH', draftPath, { finalValue: 1900 })
+    expect(priceOverride.statusCode, priceOverride.body).toBe(409)
+    const billingCycle = await call('PATCH', draftPath, { billingCycle: 'yearly' })
+    expect(billingCycle.statusCode, billingCycle.body).toBe(409)
+    const revisedScope = await call('PATCH', draftPath, { scope: 'Escopo revisado pelo comercial', finalValue: 1500 })
+    expect(revisedScope.statusCode, revisedScope.body).toBe(200)
+    expect(revisedScope.json()).toMatchObject({ scope: 'Escopo revisado pelo comercial', finalValue: 1500, items: importedDraft.items })
+
+    await admin.query('UPDATE public.proposals SET final_value=1900 WHERE id=$1', [importedDraft.id])
+    const inconsistentDraft = await call('POST', `${draftPath}/send`)
+    expect(inconsistentDraft.statusCode, inconsistentDraft.body).toBe(409)
+    expect((await call('GET', `${draftPath}/versions`)).json()).toEqual([])
+    await admin.query('UPDATE public.proposals SET final_value=1500 WHERE id=$1', [importedDraft.id])
+
     const { rows } = await admin.query('SELECT final_value,status FROM public.proposals WHERE organization_id=$1 AND lead_id=$2', [organizationId, leadId])
     expect(rows).toEqual([{ final_value: '1500.00', status: 'draft' }])
     async function changeCatalogDuringApproval(statement: string, id: string) {

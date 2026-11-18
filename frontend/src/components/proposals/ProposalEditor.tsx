@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { formatCurrency } from '@/lib/utils'
 import { proposalService } from '@/services/proposalService'
 import type { ProposalDraft } from '@/types/proposal'
 
@@ -55,8 +56,10 @@ export function ProposalEditor({
         whatsappMessage: draft.whatsappMessage,
         emailSubject: draft.emailSubject,
         emailBody: draft.emailBody,
-        finalValue: draft.finalValue,
-        overrideReason: draft.overrideReason,
+        ...(draft.commercialTermsLocked ? {} : {
+          finalValue: draft.finalValue,
+          overrideReason: draft.overrideReason,
+        }),
       })
       toast.success('Rascunho salvo')
       await onRefresh()
@@ -107,15 +110,12 @@ export function ProposalEditor({
           <p className="text-sm text-gray-500">Status: {draft.status}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            disabled={busy}
-            variant="outline"
-            onClick={generate}
-          >
-            <RefreshCw className="mr-1 h-4 w-4" />
-            Gerar
-          </Button>
+          {!draft.commercialTermsLocked && (
+            <Button size="sm" disabled={busy} variant="outline" onClick={generate}>
+              <RefreshCw className="mr-1 h-4 w-4" />
+              Gerar
+            </Button>
+          )}
           <Button size="sm" disabled={busy} variant="outline" onClick={save}>
             <Save className="mr-1 h-4 w-4" />
             Salvar
@@ -136,22 +136,41 @@ export function ProposalEditor({
         placeholder="Escopo"
         onChange={(event) => setDraft({ ...draft, scope: event.target.value })}
       />
+      {draft.commercialTermsLocked && (
+        <div>
+          <h3 className="text-sm font-medium">Itens aprovados</h3>
+          <ul className="space-y-1 text-sm text-muted-foreground">
+            {draft.items.map(item => (
+              <li key={item.id} className="flex justify-between gap-4">
+                <span>{item.label}</span>
+                <span>{formatCurrency(item.totalValue)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="grid gap-3 md:grid-cols-2">
         <Input
           type="number"
           min="0"
+          aria-label="Valor total"
+          readOnly={draft.commercialTermsLocked}
           value={draft.finalValue}
           onChange={(event) =>
             setDraft({ ...draft, finalValue: Number(event.target.value) })
           }
         />
-        <Input
-          value={draft.overrideReason || ''}
-          placeholder="Motivo para valor fora da faixa, quando aplicavel"
-          onChange={(event) =>
-            setDraft({ ...draft, overrideReason: event.target.value })
-          }
-        />
+        {draft.commercialTermsLocked ? (
+          <p className="self-center text-sm text-muted-foreground">Para alterar os valores, aprove uma nova recomendação na ficha comercial.</p>
+        ) : (
+          <Input
+            value={draft.overrideReason || ''}
+            placeholder="Motivo para valor fora da faixa, quando aplicavel"
+            onChange={(event) =>
+              setDraft({ ...draft, overrideReason: event.target.value })
+            }
+          />
+        )}
       </div>
       <Textarea
         value={draft.whatsappMessage || ''}

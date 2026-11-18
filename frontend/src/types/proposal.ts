@@ -93,6 +93,7 @@ export interface ProposalDraft {
   billingCycle: BillingCycle
   selectedModuleKeys: string[]
   finalValue: number
+  commercialTermsLocked?: true
   overrideReason?: string
   currentVersionId?: string
   convertedClientId?: string
@@ -101,7 +102,7 @@ export interface ProposalDraft {
   items: ProposalItem[]
 }
 
-export type ProposalSnapshot = Omit<ProposalDraft, 'currentVersionId' | 'convertedClientId' | 'contractId' | 'projectId'>
+export type ProposalSnapshot = Omit<ProposalDraft, 'commercialTermsLocked' | 'currentVersionId' | 'convertedClientId' | 'contractId' | 'projectId'>
 
 export interface ProposalVersion {
   id: string
