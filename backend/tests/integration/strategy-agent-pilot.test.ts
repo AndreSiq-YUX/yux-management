@@ -101,6 +101,74 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     await admin?.end()
   })
 
+  it('shows failed presales measurements and open reserves only to Admin YUX in the exact scope', async () => {
+    const wallet = await admin.query<{ id: string }>(
+      `INSERT INTO public.ai_credit_wallets(organization_id, client_id, contract_id, current_balance)
+       VALUES ($1, $2, $3, 10) RETURNING id`, [organizationId, fixtureIds.clientA, fixtureIds.contractA],
+    )
+    const failedOperation = async (contractId: string | null) => {
+      const { rows } = await admin.query<{ id: string }>(
+        `WITH session AS (
+           INSERT INTO public.yux_strategy_chat_sessions(actor_user_id, organization_id, client_id, contract_id)
+           VALUES ($1, $2, $3, $4) RETURNING id
+         )
+         INSERT INTO public.yux_strategy_chat_messages(session_id, role, status, content, safe_context)
+         SELECT id, 'assistant', 'failed', 'conteudo-privado-fixture', '{"promptVersion": 1}'::jsonb FROM session RETURNING id`,
+        [fixtureUsers.yux_admin.id, organizationId, fixtureIds.clientA, contractId],
+      )
+      return rows[0].id
+    }
+    const failed = await failedOperation(null)
+    const billable = await failedOperation(fixtureIds.contractA)
+    const attempts = [
+      { stage: 'retrieval', provider: 'provedor-privado-fixture', status: 'received', costUsd: 0.125, tokens: { input: 12, reasoning: 0 } },
+      { stage: 'synthesizer', model: 'modelo-privado-fixture', status: 'started', costUsd: null },
+    ]
+    await admin.query(
+      `WITH run AS (
+         INSERT INTO public.agent_execution_runs(organization_id, run_source, profile_key, status, input_payload)
+         VALUES ($1, 'strategy_admin', 'growth_strategist', 'failed', jsonb_build_object('strategy_operation_id', $2::text))
+         RETURNING id
+       )
+       INSERT INTO public.agent_context_snapshots(run_id, profile_key, context_kind, safe_context, context_hash)
+       SELECT id, 'growth_strategist', 'runtime', jsonb_build_object('measurement', 'presales_provider_attempts',
+         'audience', 'internal_operator', 'attempts', $3::jsonb), repeat('a', 64) FROM run`,
+      [organizationId, failed, JSON.stringify(attempts)],
+    )
+    await admin.query(
+      `INSERT INTO private.strategy_workflow_credit_holds(organization_id, contract_id, operation_id, owner_token, wallet_id, input_hash,
+          reserved_credits, unlimited, state, attempts)
+       VALUES ($1, $2, $3, $4, $5, repeat('b', 64), 4, FALSE, 'uncertain', $6::jsonb)`,
+      [organizationId, fixtureIds.contractA, billable, randomUUID(), wallet.rows[0].id, JSON.stringify(attempts)],
+    )
+    const history = (org: string, contract?: string) =>
+      `/api/strategy-engine/agent-prompts/presales-history?organizationId=${org}${contract ? `&contractId=${contract}` : ''}`
+    const unbilled = await call('GET', history(organizationId))
+    expect(unbilled.statusCode).toBe(200)
+    expect(unbilled.headers['cache-control']).toBe('no-store')
+    expect(unbilled.json().executions).toEqual([expect.objectContaining({
+      id: failed, state: 'failed', credits: expect.objectContaining({ state: 'unbilled' }),
+      provider: { attempts: 2, knownSubtotalUsd: 0.125, totalUsd: null, inputTokens: 12, outputTokens: null, reasoningTokens: 0 },
+      stages: [expect.objectContaining({ name: 'retrieval', totalUsd: 0.125 }),
+        expect.objectContaining({ name: 'synthesizer', totalUsd: null })],
+    })])
+    for (const content of ['conteudo-privado-fixture', 'provedor-privado-fixture', 'modelo-privado-fixture']) {
+      expect(unbilled.body).not.toContain(content)
+    }
+    const billed = await call('GET', history(organizationId, fixtureIds.contractA))
+    expect(billed.statusCode).toBe(200)
+    expect(billed.json().executions).toEqual([expect.objectContaining({
+      id: billable, state: 'failed',
+      credits: { state: 'uncertain', unlimited: false, reserved: 4, charged: null, released: null },
+      provider: expect.objectContaining({ knownSubtotalUsd: 0.125, totalUsd: null }),
+    })])
+    expect((await call('GET', history(organizationId, fixtureIds.contractB))).statusCode).toBe(409)
+    expect((await call('GET', history(fixtureIds.organizationB, fixtureIds.contractB))).json()).toEqual({ executions: [] })
+    for (const cookie of deniedCookies) {
+      expect((await call('GET', history(organizationId, fixtureIds.contractA), undefined, cookie)).statusCode).toBe(403)
+    }
+  })
+
   async function createSupervisorScenario() {
     const missionId = randomUUID()
     const { parameters: _schema, ...definition } = REVENUE_RECOVERY_PACK_V0

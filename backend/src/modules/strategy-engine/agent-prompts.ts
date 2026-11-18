@@ -18,6 +18,7 @@ import { changePromptVersion, listPromptVersions, presalesPilotEnabled, presales
 import { listPresalesLeads, loadCommercialCatalog } from './presales-context.js'
 import { loadPlanningHistory } from './planning-history.js'
 import { listMissionUsageConversations, loadMissionTurnHistory } from './mission-turn-history.js'
+import { loadPresalesHistory } from './presales-history.js'
 
 const inventory = [
   { key: 'strategist', name: 'Estrategista, Diagnóstico 48h e proposta consultiva', owner: 'Estratégia YUX', audience: 'Admin', state: 'Prévia disponível', instructions: 'Perfil, instruções globais e especialistas da especificação publicada' },
@@ -407,6 +408,21 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
     }
     reply.header('Cache-Control', 'no-store')
     return { executions: await loadPlanningHistory(app.pg, parsed.data) }
+  })
+
+  app.get('/agent-prompts/presales-history', async (request, reply) => {
+    const actor = requireAdminRole(request)
+    const parsed = tenantSchema.safeParse(request.query)
+    if (!parsed.success) throw new ApiError(400, 'invalid_presales_history_scope')
+    const { organizationId, contractId } = parsed.data
+    const scope = await loadAgentPromptScope(app.pg, organizationId)
+    if (contractId && !scope.contracts.some(contract => contract.id === contractId)) {
+      throw new ApiError(409, 'agent_prompt_contract_out_of_scope')
+    }
+    reply.header('Cache-Control', 'no-store')
+    const executions = await runWithDatabaseRequestContext({ role: actor.role, organizationIds: [organizationId], serviceRole: 'api' },
+      () => loadPresalesHistory(app.pg, parsed.data))
+    return { executions }
   })
 
   app.get('/agent-prompts/conversations', async (request, reply) => {

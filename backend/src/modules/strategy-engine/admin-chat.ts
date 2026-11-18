@@ -158,12 +158,14 @@ export async function prepareStrategyAdminChat(
     [sessionId, actorUserId, request.message],
   )).rows[0]
 
+  const settings = promptSettings(version, request.mode)
+  const versionContext = version && settings.active ? { promptVersion: version.version } : {}
   const assistantMessage = (await pool.query<ChatRow>(
     `INSERT INTO public.yux_strategy_chat_messages (
-       session_id,actor_user_id,role,content,status,model_provider,model_name,routing_rule_id
-     ) VALUES ($1,$2,'assistant','Estrategista analisando contexto...','queued',$3,$4,$5)
+       session_id,actor_user_id,role,content,status,model_provider,model_name,routing_rule_id,safe_context
+     ) VALUES ($1,$2,'assistant','Estrategista analisando contexto...','queued',$3,$4,$5,$6::jsonb)
      RETURNING *`,
-    [sessionId, actorUserId, route.rows[0].provider, route.rows[0].model_name, route.rows[0].id],
+    [sessionId, actorUserId, route.rows[0].provider, route.rows[0].model_name, route.rows[0].id, JSON.stringify(versionContext)],
   )).rows[0]
 
   await pool.query(
@@ -173,7 +175,6 @@ export async function prepareStrategyAdminChat(
     [sessionId],
   )
 
-  const settings = promptSettings(version, request.mode)
   return {
     session,
     userMessage,

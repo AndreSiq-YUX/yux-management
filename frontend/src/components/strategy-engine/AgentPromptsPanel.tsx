@@ -4,6 +4,7 @@ import { apiRequest } from '@/lib/apiClient'
 import type { StrategyOrganization } from '@/types/strategyEngine'
 import { PlanningUsageHistory } from './PlanningUsageHistory'
 import { MissionTurnUsageHistory } from './MissionTurnUsageHistory'
+import { PresalesUsageHistory } from './PresalesUsageHistory'
 
 type Consumer = { key: string; name: string; owner: string; audience: string; state: string; instructions: string }
 type Contract = { id: string; name: string }
@@ -411,6 +412,8 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
         organizationId={organizationId} contractId={contractId} missionId={missionId} />}
       {scopeReady && flow === 'mission-intake' && <MissionTurnUsageHistory key={`${missionScope}/${audience}`}
         organizationId={organizationId} contractId={contractId} audience={audience} />}
+      {scopeReady && isStrategist && <PresalesUsageHistory key={missionScope}
+        organizationId={organizationId} contractId={contractId} />}
 
       {preview && (
         <div className={`grid gap-4 ${preview.candidate ? 'lg:grid-cols-2' : ''}`}>

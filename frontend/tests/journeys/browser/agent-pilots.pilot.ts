@@ -95,6 +95,26 @@ test('compares pilot prompts, imports a CRM draft and executes a scoped preparat
     await expect(page.getByPlaceholder('Escopo')).toHaveCount(0)
   })
 
+  await test.step('review presales usage separately from commercial credits', async () => {
+    await page.goto('/admin/strategy-engine?tab=agent-prompts')
+    await page.getByLabel('Subconta', { exact: true }).selectOption(data.presalesOrg)
+    await page.getByLabel('Contrato', { exact: true }).selectOption(data.presalesContract)
+    const usage = await readUsageThroughUi(page, 'presales-history', 'Consultar consumo da pré-venda')
+    expect(usage.executions).toHaveLength(2)
+    expect(usage.executions[0]).toMatchObject({
+      state: 'completed', provider: { attempts: expect.any(Number), knownSubtotalUsd: expect.any(Number) },
+      stages: expect.arrayContaining([expect.objectContaining({ name: 'synthesizer', reasoningTokens: 3 })]),
+    })
+    const card = page.getByRole('region', { name: 'Consumo da pré-venda' }).locator('article').first()
+    await expect(card.getByRole('heading', { name: 'Uso do provedor', exact: true })).toBeVisible()
+    await expect(card.getByRole('heading', { name: 'Créditos comerciais', exact: true })).toBeVisible()
+    await card.getByText('Consumo medido por etapa', { exact: true }).click()
+    await expect(card.getByText('Síntese', { exact: true })).toBeVisible()
+    await page.getByLabel('Contrato', { exact: true }).selectOption(data.otherPresalesContract)
+    const other = await readUsageThroughUi(page, 'presales-history', 'Consultar consumo da pré-venda')
+    expect(other.executions).toEqual([])
+  })
+
   const instruction = 'Confirme a retirada antes de propor o briefing.'
   const publication = 'Publicação sintética para ensaiar a reversão.'
   await test.step('inspect the mission strategy, compare and publish the intake adjustment', async () => {

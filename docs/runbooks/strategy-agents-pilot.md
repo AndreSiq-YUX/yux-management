@@ -3,6 +3,14 @@
 
 Base avaliada no plano, revisão 020308a de origin/main. A implantação local está na branch codex/agentes-yux-piloto. A configuração de execução do estrategista começa desativada por subconta.
 
+## Verificação inicial em produção
+
+Em 18/11/2026, a API de produção respondeu com saúde e prontidão confirmadas na revisão `7cba84f`. O Admin YUX mostrou os workspaces de Captação e Villeman e Massas e os respectivos contratos ativos **Captação** e **Personalizado**. O painel **Agentes e prompts** ainda não existia nessa revisão. Essa consulta foi somente leitura.
+
+O ensaio em PostgreSQL local partiu das 140 migrações versionadas em `7cba84f`, inseriu registros sintéticos e aplicou a candidata com 173 migrações. Contratos, subcontas, leads, propostas, projetos, conversas e missões preservaram os campos conferidos. A repetição aplicou zero migrações e a contagem de mensagens de saída permaneceu igual. A situação das migrações e dos backups do banco real ainda precisa ser verificada no ambiente de produção.
+
+A produção foi autorizada para os testes, sem envio aos leads. A versão candidata precisa estar disponível para que as prévias possam ser verificadas nesse ambiente. Antes de atualizar a stack, confronte a versão e as migrações do ambiente com a candidata e confirme o backup restaurável e o retorno da versão estável conforme o [procedimento de rollout](yux-remediation-rollout.md). Na primeira validação, mantenha as listas do piloto vazias e use a prévia **Simular sem custo**. A geração paga e a ativação dos dois pilotos dependem dos aceites previstos no plano.
+
 ## Operação em homologação
 
 1. Abra **Admin → IA/LLM → Agentes e prompts**. Escolha o fluxo, a subconta e o contrato quando aplicável. Use uma mensagem sintética para o estrategista ou a conversa de missão. Para o supervisor, selecione uma missão existente nesse escopo e inspecione as requisições do planejamento, incluindo as etapas condicionais.
@@ -53,6 +61,8 @@ Aplique a migração 0264 antes de usar a versão faturável do estrategista. De
 O ID da resposta enfileirada identifica a operação. A reserva usa a especificação efetiva e é registrada antes do primeiro transporte. Uma execução concluída devolve a parcela não usada e gera um lançamento. Se o processamento falhar com uma chamada sem resposta confirmada, a reserva fica pendente de conciliação. Consulte `private.strategy_workflow_credit_holds` pelo ID da operação, com acesso autorizado ao banco, e valide o estado e os recibos antes de regularizar o saldo. Uma operação que já chamou o provedor rejeita reenvio com o mesmo ID. Um processamento interrompido antes da primeira chamada pode reassumir a reserva após cinco minutos com o mesmo ID e a mesma entrada.
 
 Nas execuções sem cobrança comercial, localize o registro em `agent_execution_runs` pelo `strategy_operation_id` do campo `input_payload`, além da subconta e do contrato. Consulte o snapshot vinculado pelo ID da execução com `measurement` igual a `presales_provider_attempts`. As tentativas são gravadas antes do transporte e atualizadas quando chega o recibo. Mesmo que a análise falhe, os custos confirmados continuam disponíveis e uma tentativa `started` conserva o total pendente. Nas execuções faturáveis, as tentativas ficam na reserva e a conclusão vincula a reserva ao ID da execução.
+
+Após a migração 0271, o Admin YUX pode abrir **Agentes e prompts**, selecionar o estrategista, a subconta e o contrato e usar **Consultar consumo da pré-venda**. A consulta mostra até dez análises do escopo, incluindo falhas. O painel apresenta custo do provedor em USD, tokens por etapa e créditos comerciais. Tentativas sem recibo conservam o total pendente e preservam o subtotal confirmado. Operações antigas sem medição disponível aparecem com o registro de consumo em aberto, quando vinculadas a uma versão de pré-venda.
 
 ## Conciliação da conversa de missão
 

@@ -1,15 +1,11 @@
 import type { Queryable } from '../action-engine/repository.js'
+import { providerAttempts, summarizeCreditHold, summarizeProviderAttempts, type CreditHoldUsage } from './provider-attempts.js'
 
 type ConversationScope = { organizationId: string; contractId?: string }
-type TurnRow = {
+type TurnRow = CreditHoldUsage & {
   id: string
   started_at: string | Date
   attempts: unknown
-  credit_state: 'held' | 'executing' | 'released' | 'settled' | 'uncertain' | null
-  reserved: number | null
-  charged: number | null
-  unlimited: boolean | null
-  unbilled: boolean
 }
 
 export async function listMissionUsageConversations(pool: Queryable, scope: ConversationScope) {
@@ -68,31 +64,9 @@ export async function loadMissionTurnHistory(pool: Queryable, scope: Conversatio
      ORDER BY started_at DESC, id DESC LIMIT 10`,
     [scope.organizationId, scope.contractId ?? null, scope.conversationId, scope.audience],
   )
-  return rows.map(row => {
-    const attempts: Array<{ status?: unknown; costUsd?: unknown; tokens?: Record<string, unknown> }> = Array.isArray(row.attempts)
-      ? row.attempts.map(attempt => attempt && typeof attempt === 'object' ? attempt : {}) : []
-    const costs = attempts.flatMap(attempt => attempt.status === 'received' && typeof attempt.costUsd === 'number'
-      && Number.isFinite(attempt.costUsd) && attempt.costUsd >= 0 ? [attempt.costUsd] : [])
-    const knownSubtotalUsd = costs.length ? costs.reduce((total, cost) => total + cost, 0) : null
-    function observedTokens(key: 'input' | 'output' | 'reasoning') {
-      const values = attempts.flatMap(attempt => {
-        const value = attempt.tokens?.[key]
-        return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? [value] : []
-      })
-      return values.length ? values.reduce((total, value) => total + value, 0) : null
-    }
-    return {
-      id: row.id, startedAt: new Date(row.started_at).toISOString(),
-      provider: {
-        attempts: attempts.length || null, knownSubtotalUsd,
-        totalUsd: costs.length === attempts.length ? knownSubtotalUsd : null,
-        inputTokens: observedTokens('input'), outputTokens: observedTokens('output'), reasoningTokens: observedTokens('reasoning'),
-      },
-      credits: {
-        state: row.credit_state ?? (row.unbilled ? 'unbilled' as const : 'unmeasured' as const),
-        unlimited: row.unlimited, reserved: row.unlimited ? null : row.reserved, charged: row.charged,
-        released: !row.unlimited && row.reserved !== null && row.charged !== null ? row.reserved - row.charged : null,
-      },
-    }
-  })
+  return rows.map(row => ({
+    id: row.id, startedAt: new Date(row.started_at).toISOString(),
+    provider: summarizeProviderAttempts(providerAttempts(row.attempts)),
+    credits: summarizeCreditHold(row),
+  }))
 }
