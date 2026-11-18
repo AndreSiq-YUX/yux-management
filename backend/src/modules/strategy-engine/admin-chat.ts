@@ -202,7 +202,7 @@ type RuntimeStrategyResult = {
   synthesis?: Record<string, unknown>
   policy?: Record<string, unknown>
   credits?: Record<string, unknown>
-  usage?: { stages?: unknown; reportedGenerationCostUsd?: number | null }
+  usage?: { stages?: unknown; reportedGenerationCostUsd?: number | null; reportedProviderCostUsd?: number | null }
 }
 
 export async function processStrategyAdminChat(
@@ -220,8 +220,13 @@ export async function processStrategyAdminChat(
 
   try {
     const presales = request.presales && request.organizationId ? request.presales : null
+    let runtimeClientId = request.clientId
     if (presales && request.organizationId) {
-      await assertScope(pool, request.organizationId, request.clientId, request.contractId)
+      const scopedClientId = await assertScope(pool, request.organizationId, request.clientId, request.contractId)
+      const billableContracts = (env.STRATEGY_PRESALES_BILLABLE_CONTRACT_IDS ?? '').split(',').map(id => id.trim())
+      if (!runtimeClientId && request.contractId && billableContracts.includes(request.contractId)) {
+        runtimeClientId = scopedClientId ?? undefined
+      }
     }
     const organizationId = request.organizationId
     const [catalog, prospect, history] = presales && organizationId ? await Promise.all([
@@ -234,12 +239,13 @@ export async function processStrategyAdminChat(
       profile_key: 'growth_strategist',
       source: 'strategy_admin',
       organization_id: request.organizationId ?? null,
-      client_id: request.clientId ?? null,
+      client_id: runtimeClientId ?? null,
       contract_id: request.contractId ?? null,
       mode: request.mode,
       ...(presales ? {
         presales_candidate: true,
         presales_instruction: presales.instruction,
+        strategy_operation_id: request.assistantMessageId,
         retrieval_context: {
           conversation_history: history,
           opportunity: prospect,
@@ -278,7 +284,7 @@ export async function processStrategyAdminChat(
         opportunityVersion: prospect?.version ?? null,
         recommendation,
         generationUsage: runtime.usage ?? null,
-        commercialCredits: runtime.credits?.reserved ?? null,
+        commercialCredits: runtime.credits?.charged ?? runtime.credits?.reserved ?? null,
       } : {}),
     }
     const completed = (await pool.query<ChatRow>(
@@ -322,14 +328,15 @@ export async function processStrategyAdminChat(
 }
 
 async function assertScope(pool: Queryable, organizationId: string, clientId?: string, contractId?: string) {
-  const result = await pool.query(
-    `SELECT 1 FROM public.organizations org WHERE org.id = $1
+  const result = await pool.query<{ client_id: string | null }>(
+    `SELECT org.client_id FROM public.organizations org WHERE org.id = $1
       AND ($2::uuid IS NULL OR org.client_id = $2)
       AND ($3::uuid IS NULL OR EXISTS (SELECT 1 FROM public.contracts c
         WHERE c.id = $3 AND c.client_id = org.client_id AND c.status = 'active'))`,
     [organizationId, clientId ?? null, contractId ?? null],
   )
   if (!result.rows.length) throw new ApiError(409, 'strategy_chat_scope_invalid')
+  return result.rows[0].client_id
 }
 
 async function loadUserHistory(pool: Queryable, sessionId: string, currentMessageId: string) {

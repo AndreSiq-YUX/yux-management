@@ -5,6 +5,7 @@ import logging
 import os
 import re
 from typing import Any, Literal
+from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exception_handlers import request_validation_exception_handler
@@ -24,13 +25,15 @@ from .radar_discovery_extraction import extract_radar_businesses, validate_radar
 from .radar_receipts import execute_radar_receipt, revalidate_radar_receipt
 from .radar_decisions import decide_radar_action, validate_saved_decision, TASKS as DECISION_TASKS
 from .perplexity_research import run_radar_deep_research,normalize_research_response,REMOTE_FINANCIAL_CEILING_SUPPORTED
-from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore, CreditReservationError
+from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore, CreditReservationError, StrategyCreditConflict
+from .strategy_usage import StrategyUsage
+from .trace import stable_hash
 from .mission import MissionPlanRequest, plan_mission
 from .mission_supervisor import MissionSupervisor, MissionSupervisorError
 from .mission_contracts import MissionConversationTurnRequestWire
 from .mission_conversation import MissionConversationWorkflow
 from .mission_diagnostics import mission_failure_diagnostic
-from .workflow import StrategyWorkflowEngine, estimate_workflow_credits, resolve_retrieval_audience
+from .workflow import CREDITS_BASE_PER_RUN, StrategyWorkflowEngine, estimate_workflow_credits, resolve_retrieval_audience
 from .instruction_preview import preview_mission_supervisor, preview_workflow
 
 
@@ -212,6 +215,7 @@ class ExecuteWorkflowRequest(BaseModel):
     autonomy_policies: list[dict[str, Any]] | None = None
     presales_candidate: bool = False
     presales_instruction: str | None = Field(default=None, min_length=1, max_length=4_000)
+    strategy_operation_id: UUID | None = None
     # Accepted for backward compatibility but ignored: credits are always
     # estimated server-side (see workflow.estimate_workflow_credits).
     estimated_credits: int = Field(default=0, ge=0)
@@ -517,12 +521,14 @@ def create_app(
             profile_key=request.profile_key,
             audience=workflow_audience,
         )
-        selected_engine = workflow_engine(request.model_dump())
-        execution = request.model_dump(exclude={"estimated_credits"})
+        execution = request.model_dump(exclude={"estimated_credits", "strategy_operation_id"})
+        selected_engine = workflow_engine(execution)
         execution["workflow_spec"] = selected_engine.resolve_workflow_spec(
             request.mode, request.source, request.workflow_spec,
         )
         credits_required = estimate_workflow_credits(execution["workflow_spec"], request.mode, request.source)
+        if request.presales_candidate and request.source == "strategy_admin" and request.profile_key == "growth_strategist":
+            return execute_presales_workflow(request, selected_engine, execution, credits_required)
         try:
             credits = reserve_billable_credits(
                 organization_id=request.organization_id,
@@ -535,6 +541,52 @@ def create_app(
             raise HTTPException(status_code=402, detail=str(error)) from error
         result = selected_engine.execute(**execution)
         return {**result, "credits": credits}
+
+    def execute_presales_workflow(request, selected_engine, execution, credits_required):
+        meter = StrategyUsage()
+        credits = None
+        settle = None
+        if request.client_id and request.contract_id:
+            if request.strategy_operation_id is None:
+                raise HTTPException(status_code=422, detail="strategy_credit_operation_required")
+            key = (request.organization_id, request.contract_id, str(request.strategy_operation_id))
+            owner = str(uuid4())
+            try:
+                runtime_store.hold_strategy_credits(
+                    key, client_id=request.client_id, input_hash=stable_hash(execution),
+                    owner_token=owner, credits=credits_required,
+                )
+            except CreditReservationError as error:
+                raise HTTPException(status_code=402, detail=str(error)) from error
+            except StrategyCreditConflict as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+
+            def settle(charged):
+                return runtime_store.settle_strategy_credits(
+                    key, client_id=request.client_id, owner_token=owner, charged_credits=charged,
+                )
+
+            meter.record = lambda attempts: runtime_store.record_strategy_credit_attempts(
+                key, owner_token=owner, attempts=attempts,
+            )
+        try:
+            with meter.activate():
+                result = selected_engine.execute(**execution)
+        except Exception:
+            if settle is not None:
+                settle(None)
+            raise
+        if settle is not None:
+            completed_specialists = sum(
+                output["verification"]["status"] != "failed" for output in result["subagents"]
+            )
+            credits = settle(CREDITS_BASE_PER_RUN + completed_specialists)
+        usage = {
+            **result.get("usage", {}),
+            "providerAttempts": meter.attempts,
+            "reportedProviderCostUsd": meter.total_cost_usd(),
+        }
+        return {**result, "usage": usage, "credits": credits}
 
     @app.post("/instructions/preview/strategist", dependencies=[Depends(require_runtime_token)])
     def preview_strategist(request: PreviewStrategistRequest) -> dict[str, Any]:

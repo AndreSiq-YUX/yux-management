@@ -48,6 +48,7 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
       NODE_ENV: 'test', SESSION_SECRET: 'strategy-qa-local-test-session-secret',
       DATABASE_URL: database.toString(), YUX_AGENT_RUNTIME_URL: 'http://127.0.0.1:4109',
       YUX_AGENT_RUNTIME_TOKEN: 'local-simulated-runtime', STRATEGY_PRESALES_PILOT_ORGANIZATION_IDS: organizationId,
+      STRATEGY_PRESALES_BILLABLE_CONTRACT_IDS: fixtureIds.contractA,
     })
     const queued = { add: job.mockImplementation(async () => ({ id: randomUUID() })) } as unknown as AppJobQueue
     app = await buildServer(env, { pool: apiPool, jobQueue: queued })
@@ -59,8 +60,8 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     adminCookie = await login(fixtureUsers.yux_admin.email)
     clientCookie = await login(fixtureUsers.client_admin_A.email)
     packageId = (await admin.query("SELECT id FROM public.packages WHERE key = 'maquina_comercial'")).rows[0].id
-    await admin.query("INSERT INTO public.organizations(id,name,slug,kind) VALUES ($1,'Subconta de captação de teste',$2,'client')",
-      [organizationId, 'agent-qa-' + organizationId])
+    await admin.query("INSERT INTO public.organizations(id,name,slug,kind,client_id) VALUES ($1,'Subconta de captação de teste',$2,'client',$3)",
+      [organizationId, 'agent-qa-' + organizationId, fixtureIds.clientA])
     await admin.query(
       "INSERT INTO public.leads(id,organization_id,name,email,stage,status) VALUES ($1,$2,'Prospect sintético','lead@simulated.test','NEW','open')",
       [leadId, organizationId],
@@ -131,7 +132,7 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
       expect((await call('POST', root + '/preview', body, cookie)).statusCode).toBe(403)
     }
     expect((await call('POST', root + '/preview', { ...body, organizationId: fixtureIds.organizationA })).statusCode).toBe(404)
-    expect((await call('POST', root + '/preview', { ...body, contractId: fixtureIds.contractA })).statusCode).toBe(409)
+    expect((await call('POST', root + '/preview', { ...body, contractId: fixtureIds.contractB })).statusCode).toBe(409)
     expect(runtime).not.toHaveBeenCalled()
     expect((await call('GET', root + '/missions?organizationId=' + organizationId)).json().missions)
       .toContainEqual({ id: missionId, title: 'Recuperação sintética' })
@@ -158,7 +159,8 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
         return Response.json({ candidate: { requests: [{ fingerprint: 'a'.repeat(64) }] } })
       }
       received.push(body)
-      return Response.json({ synthesis: {
+      return Response.json({ credits: body.client_id ? { reserved: 3, charged: 2, released: 1 } : null,
+        usage: { reportedProviderCostUsd: null }, synthesis: {
         answer: 'Escopo de teste.',
         recommendation: { decision: 'recommend', rationale: 'Há demanda existente e falta acompanhamento.', packageId, itemKeys: ['base'] },
       } })
@@ -172,19 +174,31 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     expect(published.statusCode, published.body).toBe(200)
     expect((await call('POST', base + '/versions', publication)).statusCode).toBe(409)
     expect((await call('POST', base + '/preview', { flow: 'strategist', organizationId,
-      contractId: fixtureIds.contractA, mode: 'proposal', message: 'Contraprova' })).statusCode).toBe(409)
-    const run = async (message: string, sessionId?: string) => {
+      contractId: fixtureIds.contractB, mode: 'proposal', message: 'Contraprova' })).statusCode).toBe(409)
+    const run = async (message: string, sessionId?: string, billableContract = false) => {
       const sent = await call('POST', '/api/functions/run-strategy-admin-chat', {
-        body: { message, sessionId, organizationId, leadId, mode: 'proposal' },
+        body: { message, sessionId, organizationId, leadId, mode: 'proposal',
+          contractId: fixtureIds.contractA },
       })
       expect(sent.statusCode, sent.body).toBe(202)
       const queued = job.mock.lastCall![1]
       await runWithDatabaseRequestContext({ role: 'client_member', organizationIds: [organizationId], serviceRole: 'worker' },
-        () => handleStrategyAdminChat(worker, app.config, queued))
+        () => handleStrategyAdminChat(worker, {
+          ...app.config, STRATEGY_PRESALES_BILLABLE_CONTRACT_IDS: billableContract ? fixtureIds.contractA : undefined,
+        }, queued))
       return sent.json<{ session: { id: string }; assistantMessage: { id: string } }>()
     }
     const first = await run('Orçamento confirmado de R$ 2.000.')
-    const second = await run('Recomende agora.', first.session.id)
+    const second = await run('Recomende agora.', first.session.id, true)
+    expect(received[0].client_id).toBeNull()
+    expect(received[1].client_id).toBe(fixtureIds.clientA)
+    expect(received[1].strategy_operation_id).toBe(second.assistantMessage.id)
+    const persistedUsage = await admin.query(
+      'SELECT safe_context FROM public.yux_strategy_chat_messages WHERE id=$1', [second.assistantMessage.id],
+    )
+    expect(persistedUsage.rows[0].safe_context).toMatchObject({
+      commercialCredits: 2, generationUsage: { reportedProviderCostUsd: null },
+    })
     expect(received[1].retrieval_context.conversation_history).toEqual([
       expect.objectContaining({ content: 'Orçamento confirmado de R$ 2.000.' }),
     ])

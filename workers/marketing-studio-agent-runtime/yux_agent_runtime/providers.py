@@ -15,6 +15,7 @@ from urllib.request import Request
 
 from .trace import stable_hash
 from .provider_http_deadline import HttpDeadlineExceeded, open_url as urlopen, run_with_deadline
+from .strategy_usage import strategy_metered_transport
 
 
 class ProviderRequestError(Exception):
@@ -173,7 +174,8 @@ class OpenRouterClient:
         if response_format:
             payload["response_format"] = response_format
 
-        response = self.transport(
+        response = strategy_metered_transport(
+            self.transport,
             f"{self.base_url.rstrip('/')}/chat/completions",
             _bearer_headers(
                 self.api_key,
@@ -181,6 +183,7 @@ class OpenRouterClient:
             ),
             payload,
             "POST",
+            provider=self.provider_name,
         )
         from .radar_receipts import capture_radar_raw_response
         capture_radar_raw_response(response)
@@ -236,7 +239,8 @@ class OpenRouterClient:
         if not self.api_key:
             raise ProviderAvailabilityError(f"missing_{self.provider_name}_api_key")
         self._require_model_approval([model])
-        response = self.transport(
+        response = strategy_metered_transport(
+            self.transport,
             f"{self.base_url.rstrip('/')}/embeddings",
             _bearer_headers(self.api_key),
             {
@@ -247,6 +251,7 @@ class OpenRouterClient:
                 "encoding_format": "float",
             },
             "POST",
+            provider=self.provider_name,
         )
         if not isinstance(response, dict):
             raise ProviderRequestError("invalid_openrouter_embeddings_response")

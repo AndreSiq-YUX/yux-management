@@ -360,14 +360,18 @@ export function StrategyAdminChatPanel({
 }
 
 function GenerationUsage({ context }: { context: Record<string, unknown> }) {
-  const usage = context.generationUsage as { reportedGenerationCostUsd?: number | null }
-  const cost = usage.reportedGenerationCostUsd
+  const usage = context.generationUsage as {
+    reportedGenerationCostUsd?: number | null
+    reportedProviderCostUsd?: number | null
+  }
+  const hasProviderCost = usage.reportedProviderCostUsd !== undefined
+  const cost = hasProviderCost ? usage.reportedProviderCostUsd : usage.reportedGenerationCostUsd
   const credits = context.commercialCredits
   return (
     <p className="mt-2 border-t pt-2 text-xs text-gray-600">
-      Geração {typeof cost === 'number' ? new Intl.NumberFormat('pt-BR', {
+      {hasProviderCost ? 'Custo do provedor' : 'Geração'} {typeof cost === 'number' ? new Intl.NumberFormat('pt-BR', {
         style: 'currency', currency: 'USD', maximumFractionDigits: 6,
-      }).format(cost) : 'com custo indisponível'}
+      }).format(cost) : 'indisponível'}
       {' · '}Créditos comerciais {typeof credits === 'number' ? credits.toLocaleString('pt-BR') : 'sem lançamento'}
     </p>
   )

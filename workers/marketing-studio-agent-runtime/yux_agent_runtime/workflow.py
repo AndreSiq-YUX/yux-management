@@ -16,6 +16,7 @@ from .contracts import (
 from .harness import Harness
 from .radar import RadarCompanyInput, build_radar_workflow_spec, synthesize_radar_output
 from .runtime_store import AgentRuntimeStore
+from .strategy_usage import strategy_usage_stage
 from .trace import TraceRecorder, sanitize_trace_payload, stable_hash
 
 
@@ -866,7 +867,7 @@ class StrategyWorkflowEngine:
             "forbidden_actions": agent.get("forbidden_actions", []),
             "approval_policy": agent.get("approval_policy", {}),
         }
-        result = self.harness.execute_agent({
+        agent_state = {
             "agent": agent,
             "stage_key": stage_key,
             "record_workflow_attempts": presales_candidate,
@@ -895,7 +896,9 @@ class StrategyWorkflowEngine:
             "client_id": client_id,
             "contract_id": contract_id,
             "model_route_key": model_route_key,
-        })
+        }
+        with strategy_usage_stage(stage_key):
+            result = self.harness.execute_agent(agent_state)
         output = result["agent_runs"][-1]["output_payload"]
         if model_route_key == "action_engine_strategist" and output.get("finish_reason") == "length":
             raise AgentContractError("mission_conversation_output_truncated")
