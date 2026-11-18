@@ -37,7 +37,8 @@ def billing(monkeypatch):
 
     monkeypatch.setenv("YUX_AGENT_RUNTIME_TOKEN", "test-runtime-token")
     target = urlsplit(DATABASE)
-    service_url = urlunsplit((target.scheme, f"yux_runtime@{target.hostname}:{target.port}", target.path, "", ""))
+    server = target.netloc.rsplit("@", 1)[-1]
+    service_url = urlunsplit((target.scheme, f"yux_runtime:integration-service-password@{server}", target.path, "", ""))
     monkeypatch.setenv("DATABASE_URL", service_url)
     store = PostgresAgentRuntimeStore(service_url)
     contract = str(uuid4())

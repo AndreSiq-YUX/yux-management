@@ -14,11 +14,12 @@ runtimeDatabase.password = 'integration-service-password'
 export default defineConfig({
   testDir: path.resolve(frontendDirectory, 'tests/journeys/browser'),
   testMatch: 'agent-pilots.pilot.ts',
+  outputDir: path.resolve(frontendDirectory, 'test-results/agent-pilots'),
   workers: 1,
   timeout: 120_000,
   expect: { timeout: 20_000 },
   use: {
-    ...devices['Desktop Chrome'], channel: 'chrome', baseURL: 'http://127.0.0.1:4187',
+    ...devices['Desktop Chrome'], channel: process.env.CI ? undefined : 'chrome', baseURL: 'http://127.0.0.1:4187',
     actionTimeout: 15_000, trace: 'retain-on-failure',
   },
   webServer: [

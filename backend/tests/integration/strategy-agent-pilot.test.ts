@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
+import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { applyMigrations } from '../../scripts/apply-migrations.js'
 import { loadEnv } from '../../src/config/env.js'
 import { createContextAwarePool } from '../../src/db/client.js'
 import { runWithDatabaseRequestContext } from '../../src/db/request-context.js'
@@ -9,7 +11,9 @@ import { REVENUE_RECOVERY_PACK_V0 } from '../../src/modules/action-engine/packs/
 import { publishActionPackVersion } from '../../src/modules/action-engine/repository.js'
 import { pinMissionPromptVersion } from '../../src/modules/action-engine/mission-prompt-versions.js'
 import { buildServer, type AppJobQueue } from '../../src/server.js'
-import { fixtureIds, fixturePassword, fixtureUsers, seedIntegrationFixtures } from './support/fixtures.js'
+import {
+  fixtureIds, fixturePassword, fixtureUsers, integrationRolePassword, provisionIntegrationServiceRoles, seedIntegrationFixtures,
+} from './support/fixtures.js'
 
 const url = process.env.YUX_AGENT_PILOT_TEST_DATABASE_URL
 
@@ -38,10 +42,13 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
       throw new Error('Use the dedicated local database yux_agent_pilot_test')
     }
     admin = new pg.Pool({ connectionString: database.toString() })
+    await applyMigrations(admin, fileURLToPath(new URL('../../src/db/migrations/', import.meta.url)), { log: () => undefined })
+    await provisionIntegrationServiceRoles(admin)
     await seedIntegrationFixtures(admin)
     const service = (username: string) => {
       const target = new URL(database)
       target.username = username
+      target.password = integrationRolePassword
       return new pg.Pool({ connectionString: target.toString() })
     }
     worker = createContextAwarePool(service('yux_worker'), 'worker')
