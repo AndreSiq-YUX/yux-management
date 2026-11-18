@@ -89,6 +89,27 @@ await rig.sql('DELETE FROM public.action_missions WHERE id=$1 AND create_idempot
 await rig.sql(`INSERT INTO public.contract_modules(contract_id,module_key,enabled)
   VALUES ($1,'action_engine',TRUE),($2,'action_engine',TRUE)
   ON CONFLICT(contract_id,module_key) DO UPDATE SET enabled=TRUE`, [missionContract, presalesContract])
+const routingClient = randomUUID()
+const routingOrg = randomUUID()
+const routingContract = randomUUID()
+const routingConnection = randomUUID()
+await rig.sql(`INSERT INTO public.clients(id,company_name,contact_name,email,sector,size,lead_source)
+  VALUES ($1,'Empresa fictícia de atendimento','Contato fictício',$2,'Software','small','integration')`,
+[routingClient, `${routingClient}@integration.test`])
+await rig.sql(`INSERT INTO public.organizations(id,name,slug,kind,client_id)
+  VALUES ($1,'Subconta fictícia de WhatsApp',$2,'client',$3)`, [routingOrg, `whatsapp-${routingOrg}`, routingClient])
+await rig.sql(`INSERT INTO public.contracts (id,client_id,package_id,status)
+  SELECT $1,$2,package_id,'active' FROM public.contracts WHERE id=$3`, [routingContract, routingClient, presalesContract])
+await rig.sql(`INSERT INTO public.contract_modules(contract_id,module_key,enabled)
+  VALUES ($1,'whatsapp_ai',TRUE)`, [routingContract])
+await rig.sql(`WITH assistant AS (
+  INSERT INTO public.ai_assistants(organization_id,client_id,contract_id,name,assistant_role,strategy_profile_id)
+  SELECT $1,$2,$3,'Suporte fictício','support',id FROM public.yux_strategy_agent_profiles WHERE profile_key='support_assistant'
+  RETURNING id
+)
+INSERT INTO public.channel_connections(id,organization_id,channel,name,adapter_key,inbound_token_hash,assistant_id)
+SELECT $4,$1,'whatsapp','WhatsApp fictício','meta-cloud',$5,id FROM assistant`,
+[routingOrg, routingClient, routingContract, routingConnection, randomUUID()])
 await rig.sql(`INSERT INTO public.ai_credit_wallets(organization_id,client_id,contract_id,current_balance)
   VALUES ($1,$2,$3,10),($4,$5,$6,10) ON CONFLICT(contract_id) DO UPDATE SET current_balance=10`,
   [missionOrg, fixtureIds.clientA, missionContract, presalesOrg, fixtureIds.clientB, presalesContract])
@@ -187,7 +208,7 @@ const listener = createServer(async (req, res) => {
   try {
     if (req.method === 'GET' && req.url === '/fixture') {
       return respond(200, { names, budget, objective, agencyObjective, revisedAudience, sourceTitle, agencySourceTitle,
-        leadId, missionOrg, missionContract, presalesOrg, presalesContract, otherPresalesContract })
+        leadId, missionOrg, missionContract, presalesOrg, presalesContract, otherPresalesContract, routingOrg, routingConnection })
     }
     if (req.method === 'POST' && req.url === '/worker-tick') {
       await rig.workerTick()

@@ -3,7 +3,17 @@
 
 Base avaliada no plano, revisão 020308a de origin/main. A implantação local está na branch codex/agentes-yux-piloto. A configuração de execução do estrategista começa desativada por subconta.
 
-## Verificação inicial em produção
+## Teste manual na YUX Captação
+
+A YUX Captação é a única subconta do piloto. A conta de cliente Villeman e Massas está fora dos testes e da ativação. Para testar representação comercial e isolamento entre contas ou contratos, use os cenários sintéticos do ambiente isolado.
+
+1. Abra **Admin → IA/LLM → Agentes e prompts**. Selecione **YUX Captação** e o contrato **Captação**.
+2. Em **Estrategista YUX**, use **Simular sem custo** com um caso fictício, como uma empresa que já recebe leads e perde oportunidades por falta de acompanhamento. Compare as fontes e confira a indicação de catálogo ausente ou incompleto, quando exibida.
+3. Em **Action Engine · conversa da missão**, use **Simular sem custo** com um pedido fictício para preparar a captação. Confira as instruções, o portfólio recuperado e as fontes exigidas. No planejamento, selecione apenas uma missão de teste pertencente ao contrato **Captação**.
+
+Mantenha as listas de execução vazias durante as prévias e os testes sem envio a leads. A etapa supervisionada de criação de rascunhos depende do catálogo aprovado, da prontidão operacional e dos aceites por fluxo e público.
+
+## Histórico da verificação inicial em produção
 
 Em 18/11/2026, o Dokploy registrava a revisão `020308a` como última implantação concluída do Portal, a partir da branch `main`. A API respondeu com saúde e prontidão, mas os metadados de saúde ainda informavam `7cba84f`. Use o commit do histórico do Dokploy e uma verificação funcional do Portal para conferir a versão publicada. A leitura no Admin confirmou os contratos ativos e a ausência do painel **Agentes e prompts**.
 
@@ -11,7 +21,7 @@ O ensaio em PostgreSQL local partiu das 140 migrações versionadas na revisão 
 
 Uma consulta somente leitura no container da API confirmou 164 registros de migração em produção, até `0262_email_reply_capture`. Em banco local, o ensaio aplicou as nove migrações e testou o retorno da API para `020308a` com o esquema atualizado. O retorno manteve a leitura de projetos, análises, diagnósticos, rascunhos e missões, o isolamento de propostas e a filtragem de leads na lixeira. A API de `7cba84f` voltou a listar um lead sintético na lixeira. O ponto de retorno desta implantação é `020308a`.
 
-A produção foi autorizada para os testes, sem envio aos leads. O responsável informou que não há backup completo e autorizou seguir com a validação. Use as listas de execução vazias, confirme a revisão de retorno e valide as prévias com **Simular sem custo**. A geração paga e a ativação dos dois pilotos dependem dos aceites previstos no plano. O estado da restauração continua registrado no [manifesto de rollout](../releases/yux-remediation-manifest.json).
+A autorização inicial permitiu prévias em produção sem envio aos leads. O responsável informou que não havia backup completo e autorizou seguir com a validação. A revisão de retorno foi conferida com as listas de execução vazias. O estado da restauração continua registrado no [manifesto de rollout](../releases/yux-remediation-manifest.json).
 
 ## Prévia validada em produção
 
@@ -29,9 +39,9 @@ O Dokploy concluiu a revisão `ddb6b7e427f8115a35a3b03fe27f27d8b605e2e3`, que re
 
 Na comparação da Captação com a mesma pergunta fictícia, a síntese vigente conservou a impressão digital anterior. A candidata passou de zero para quatro trechos do catálogo publicado e também passou com documentos obrigatórios na simulação. A prévia de Villeman carregou sem as fontes da Captação, e a tela de propostas abriu. Os pilotos seguiram desativados. Os testes usaram respostas simuladas e não enviaram mensagens a leads.
 
-## Operação em homologação
+## Ensaio técnico e fase supervisionada na Captação
 
-1. Abra **Admin → IA/LLM → Agentes e prompts**. Escolha o fluxo, a subconta e o contrato quando aplicável. Use uma mensagem sintética para o estrategista ou a conversa de missão. Para o supervisor, selecione uma missão existente nesse escopo e inspecione as requisições do planejamento, incluindo as etapas condicionais.
+1. Abra **Admin → IA/LLM → Agentes e prompts**. Escolha o fluxo e o contrato **Captação** na subconta **YUX Captação**. Use uma mensagem sintética para o estrategista ou a conversa de missão. Para o supervisor, selecione uma missão de teste nesse contrato e inspecione as requisições do planejamento, incluindo as etapas condicionais.
 2. Expanda uma etapa para conferir modelo, contingências, mensagens, fontes e impressão digital. A comparação usa o adaptador do runtime com transporte simulado. A recuperação é lexical e resolve as permissões atuais da conta. As sínteses que dependem de especialistas recebem resultados simulados.
 3. No estrategista, selecione o contrato ativo para revisar **Catálogo comercial do CRM** e, se for necessário conferir o contexto do primeiro turno, selecione uma **Oportunidade da prévia**. O Admin YUX pode preparar o catálogo e simular com a oportunidade enquanto a execução do piloto está desativada. O comercial aprova os modelos ativos do CRM que representam ofertas vendáveis. Cada oferta exige uma regra de preço base. O pacote técnico Crescimento YUX fica fora da seleção.
 4. No estrategista, escolha a tarefa e simule um cenário para carregar as etapas. Selecione um especialista ou a síntese da tarefa e compare o ajuste com a configuração vigente. A opção de instrução-base da síntese continua disponível para toda a pré-venda. Informe a justificativa e publique para a subconta. O servidor repete a simulação, verifica que a etapa participou e guarda as impressões digitais, autoria, data e justificativa. Uma edição simultânea exige recarregar a versão mais recente.
@@ -100,24 +110,23 @@ A migração 0268 registra, em área privada, as referências que entraram em ca
 
 Aplique a migração antes de atualizar os serviços e atualize a API e o worker antes do runtime, para que o contrato aceite as referências privadas de entrada. Para turnos anteriores à migração, a verificação usa as referências que já estavam registradas nas respostas. Na homologação, revogue uma fonte sintética após o primeiro turno e confira o briefing recomposto, a recusa de uma resposta reaproveitada e o bloqueio do planejamento que ainda dependa da versão revogada.
 
-## Contas e fontes dos pilotos
+## Conta e fontes do piloto
 
 Consulta de produção em 18/11/2026 com sessão de Admin YUX. O contexto do workspace confirmou os contratos ativos e os módulos Action Engine, CRM e Automações nos dois escopos. A criação de missões no Admin está no modo conversa nas duas subcontas. A prontidão dos canais e dos executores precisa de verificação por capacidade.
 
 | Piloto | Cadastro observado | Revisão operacional |
 |---|---|---|
-| Villeman e Massas | Subconta `972e8163-81b7-4e3f-b964-777110b660b8`, contrato **Personalizado** `6675ead3-946c-4312-91b0-b482bbcd27e2`. Há uma estratégia em rascunho com seções de ofertas, públicos e restrições, sem produtos ou documentos vinculados. A consulta retornou zero itens ativos de portfólio, zero documentos do contrato e nenhum perfil de marca. | O representante confirma linhas, compradores, território, logística, condições e materiais liberados. O cenário de cozinhas industriais em São Paulo fica como referência de teste até a revisão. Operações valida os vínculos das fontes e a preparação de rascunhos. |
 | YUX Captação | Subconta `249d6c3d-d92d-447d-9f67-5f4db99ee04c`, contrato **Captação** `a90855c7-fb2c-4a52-8316-59cb76288a3c`. Perfil salvo com descrição, posicionamento e três regiões. A consulta retornou nove itens ativos no portfólio, marca em rascunho, um documento indexado e um publicado. Uma leitura do catálogo no banco confirmou zero modelos comerciais ativos na subconta. Também não há estratégia salva. | O comercial revisa perfil do cliente ideal, ofertas vendáveis e condições, escolhe a oportunidade e aprova um modelo ativo com regra de preço base por oferta. Verificar na prévia a aplicação da versão publicada do documento e o público autorizado. Operações valida a marca, os estágios do CRM e a preparação da missão. |
 
 O documento publicado **Catálogo YUX — ofertas, ferramentas e capacidades operacionais** orienta o uso do Diagnóstico YUX 48h quando faltam dados para sugerir uma implantação. Antes do ajuste, a prévia recuperava o documento com `diagnóstico` e retornava zero trechos para uma pergunta completa sobre o mesmo tema. A configuração candidata publicada em `ddb6b7e4` repete uma vez a busca textual da pré-venda piloto com termos da pergunta quando a consulta inicial fica vazia. As permissões de subconta, contrato, perfil e público são aplicadas nas duas consultas. O ensaio em PostgreSQL recuperou a fonte para o contrato autorizado e manteve a restrição para outro contrato e para o público externo.
 
-O rascunho de **Villeman e Massas** apresenta marmitarias, refeitórios e hotéis como segmentos a validar. A área **Empresas e marcas representadas** está aberta para cadastro. O representante precisa confirmar as linhas realmente oferecidas, a autorização de entrega por região e os materiais que podem ser usados. A eventual prova de atendimento citada no rascunho segue sem identificação em qualquer material de revisão externa até autorização.
+No inventário inicial, **Villeman e Massas** tinha estratégia em rascunho e nenhum produto ativo ou documento vinculado ao contrato. Esse registro é histórico. Os testes de representação usam portfólio, regiões e condições fictícias em ambiente isolado.
 
 Portfólio, contrato e catálogo vendável têm controles próprios. A prévia da versão candidata confirma quais fontes e ofertas entram em cada fluxo depois dos vínculos e das aprovações. A consulta acima não alterou cadastros nem canais de envio.
 
 No catálogo do Admin, **Modelos sem regra de preço base** identifica as ofertas que ainda precisam de preço no CRM. A retirada de uma aprovação continua disponível quando o preço base é removido. Novas aprovações exigem uma regra de preço base cadastrada.
 
-A revisão deve testar dois contratos ativos na mesma subconta e duas subcontas distintas. Na conversa de missão, a seleção explícita do contrato determina os módulos elegíveis e a disponibilidade do CRM. No estrategista do piloto e na conversa de missão sem contrato selecionado, o contexto mantém a metodologia e a estratégia publicada da subconta e pede um contrato para consultar portfólio e documentos contratuais. A prévia mostra o escopo das fontes recuperadas e as lacunas de cadastro. O link **Gerenciar vínculos da metodologia** abre os controles existentes de publicação e vínculo por perfil, módulo e fluxo.
+O teste automatizado de isolamento usa dois contratos ativos na mesma subconta sintética e duas subcontas sintéticas distintas. Na conversa de missão, a seleção explícita do contrato determina os módulos elegíveis e a disponibilidade do CRM. No estrategista do piloto e na conversa de missão sem contrato selecionado, o contexto mantém a metodologia e a estratégia publicada da subconta e pede um contrato para consultar portfólio e documentos contratuais. A prévia mostra o escopo das fontes recuperadas e as lacunas de cadastro. O link **Gerenciar vínculos da metodologia** abre os controles existentes de publicação e vínculo por perfil, módulo e fluxo.
 
 ## Capacidade e prontidão no piloto
 
@@ -135,8 +144,8 @@ Use o [catálogo funcional](../yux-hub-catalogo-funcionalidades-capacidades.md) 
 - A comparação de versões cobre o estrategista, a conversa de missão por público e o planejamento. No planejamento, a prévia mostra o supervisor e os especialistas de funil, preparação do CRM e campanha conforme o pacote selecionado. As requisições usam os mesmos dados e adaptadores da execução, com transporte simulado. Os especialistas dependem de um plano válido e a tela sinaliza os requisitos ausentes e a rota indisponível. O identificador do snapshot é atribuído durante a execução real.
 - A síntese aceita análises completas e estruturas de fatos, restrições, alternativas e evidências. A inspeção compara a requisição efetiva em um caso congelado, antes do transporte. Fontes recuperadas para o perfil principal ficam naquele perfil. Especialistas de outros perfis usam os dados comerciais autorizados para análise.
 - A integração local com PostgreSQL e geração simulada cobre publicação por conta, bloqueio de contrato fora de escopo, troca de conta na conversa, histórico de orçamento, reversão, duplo clique e mudança de preço. A contraprova de pré-venda registra o adiamento por dados insuficientes e confirma a recusa de importação no CRM. Na representação sintética, o segundo turno muda a área de atuação e a retirada. O planejamento recebe o público revisado e mantém a oferta original.
-- No planejamento, uma reserva já liquidada retorna o registro consolidado em reprocessamentos. As medições de geração ficam no histórico interno de planejamento. Enquanto o custo em reais estiver pendente de conciliação, o orçamento mantém a estimativa reservada. A conciliação comercial está exercitada no estrategista e nos turnos de missão faturáveis. Ainda faltam teto econômico validado, avaliação cega paga e observação comercial dos dois pilotos.
-- O aceite permanece separado por subconta, fluxo e público. A preparação das fontes reais, a avaliação paga sob autorização explícita e as ondas de migração A8 e A9 seguem os critérios do plano original.
+- No planejamento, uma reserva já liquidada retorna o registro consolidado em reprocessamentos. As medições de geração ficam no histórico interno de planejamento. Enquanto o custo em reais estiver pendente de conciliação, o orçamento mantém a estimativa reservada. A conciliação comercial está exercitada no estrategista e nos turnos de missão faturáveis. A avaliação real e a observação comercial ficam restritas à Captação e dependem dos aceites e do teto aprovados.
+- A8 depende da qualidade e dos custos medidos na Captação. A9 tem validação e liberação próprias por fluxo.
 
 Para reproduzir a integração, crie um banco PostgreSQL local dedicado `yux_agent_pilot_test`. Execute `npm run test:integration -- strategy-agent-pilot` no backend com `YUX_AGENT_PILOT_TEST_DATABASE_URL` apontando para esse banco e um usuário que possa aplicar as migrações e configurar os papéis de serviço de teste. A suíte prepara o banco e usa dados sintéticos. Use a mesma variável no teste `test_workflow_credits_postgres.py` após a criação dos dados sintéticos pela integração do backend. Os testes `test_presales_instruction_preview.py`, `test_mission_supervisor.py` e `test_customer_context.py` exercitam a composição e a recuperação do runtime sem geração externa.
 
@@ -152,11 +161,11 @@ O ensaio local inclui publicação e reversão de uma instrução de missão pel
 
 A verificação automática executa a integração do piloto e a jornada de navegador em bancos descartáveis separados. Cada etapa mantém seu próprio resultado mesmo quando uma verificação geral falha. O teste de navegador usa o Chromium instalado pela verificação automática e inclui os rastros de falha no artefato de aceitação.
 
-## Comparação cega e aceite dos pilotos
+## Comparação cega e contabilização
 
-O lote reaproveita os 24 casos de Missões, com seus seis reservados, e acrescenta oito cenários sintéticos para cada piloto, com dois reservados em cada um. A comparação das duas configurações, com duas repetições por caso, prevê 160 respostas para avaliar e 172 turnos para contabilizar. A previsão precisa incluir os turnos preparatórios, as etapas de cada fluxo e as contingências. O orçamento desse lote deve ser definido antes da rodada paga.
+O lote implementado no comparador reflete o plano inicial de duas contas. Ele prevê 160 respostas para avaliar e 172 turnos para contabilizar. O grupo de representação pode ser usado em ensaios sintéticos isolados. Antes de uma rodada real da Captação, delimite os casos e as versões ao novo escopo, ajuste o comparador para essa coorte e recalcule o orçamento, incluindo turnos preparatórios, etapas e contingências.
 
-No diretório do runtime, prepare o lote e confira a identidade das versões antes de capturar as respostas.
+Os comandos a seguir reproduzem o lote sintético existente no diretório do runtime.
 
 ```powershell
 python scripts/compare_agent_pilots.py template --output .\pilot-capture.json
@@ -170,13 +179,13 @@ python scripts/compare_agent_pilots.py score --capture .\pilot-metered.json --re
 - Para importar tentativas, monte `pilot-receipts.json` com uma chave por execução registrada em `turnTraceIds` ou `traceId`. Cada valor é uma lista de tentativas do runtime. Inclua todos os turnos de cada resposta que for conciliar. Na pré-venda, consulte `generationUsage.providerAttempts` e o `runId` do estrategista. Para uma análise sem cobrança que falhou, use `attempts` do registro `presales_provider_attempts`. Nos turnos faturáveis de missão, consulte `attempts` na reserva privada vinculada ao `agent_run_id`. Nos demais turnos do piloto, consulte `attempts` no registro `mission_turn_provider_attempts`. Inclua falhas e contingências da mesma execução. Acrescente `costBrl` como texto decimal quando houver conciliação em reais e use `null` nesse campo enquanto o custo estiver pendente. Reserve a lista vazia para um turno em que os registros confirmem zero chamadas. O comparador confere os modelos das tentativas com a autorização. Em `outcome`, registre o aceite, o aceite na primeira revisão e a correção de preço ou escopo quando observados.
 - Entregue o pacote cego a dois avaliadores distintos. Use a [rubrica](../../workers/marketing-studio-agent-runtime/evals/strategic-quality/rubric.md) para notas e justificativas. No lugar de `validReferences`, registre em `validCitationIndexes` as posições das citações verificadas na lista `citations`, começando em zero. Além dos seis critérios binários da rubrica, registre `commercialIntegrity`, `externalAudience` e `executionTruth` em `gates`. Uma diferença superior a um ponto em qualquer dimensão exige desempate documentado via `--adjudications`.
 - Para a rodada paga, registre a autorização explícita, as combinações de serviço e modelo aprovadas e o teto em `authorization.approvalReference`, `authorization.routes` e `authorization.ceilingBrl`. A medição de qualidade usa a procedência `live` somente quando a geração e as revisões ocorreram. O comparador opera em arquivos locais e preserva o estado `not_evaluated` para capturas simuladas.
-- Confira os três grupos separadamente. O relatório mantém o custo por diagnóstico aceito, proposta aprovada e missão aprovada pendente quando faltam medições ou aprovações. O comando de pontuação encerra com código 2 se a comparação ou o teto do lote ainda estiverem pendentes.
+- No ensaio do comparador existente, confira os três grupos separadamente. O relatório mantém o custo por diagnóstico aceito, proposta aprovada e missão aprovada pendente quando faltam medições ou aprovações. O comando de pontuação encerra com código 2 se a comparação ou o teto do lote ainda estiverem pendentes.
 
-## Aceites por subconta e expansão
+## Aceites da operação supervisionada na Captação
 
 Antes da operação supervisionada, guarde num registro interno o ambiente de homologação, o commit implantado e os escopos conferidos. Crie o arquivo `pilot-release.json` com `schemaVersion` igual a `1`, `environment` com o identificador da homologação, `revision` com o SHA completo do commit e `scopes` com uma linha para cada combinação de conta, contrato, fluxo e público a ativar.
 
-- Preencha cada linha com `pilot` (`villeman_massas` ou `yux_captacao`), `organizationId`, `contractId`, `flow`, `audience` e `candidateHash`. Use `presales` com `internal_operator` para a pré-venda da YUX, `mission_intake` com o público efetivamente verificado (`client_user` ou `internal_operator`) e `mission_supervisor` com `client_user` para o contexto de planejamento. Registre todos os públicos e contratos abrangidos pela configuração. Inclua nas listas de escopos apenas as combinações aprovadas.
+- Preencha cada linha com `pilot` igual a `yux_captacao`, `organizationId`, `contractId`, `flow`, `audience` e `candidateHash`. Use `presales` com `internal_operator` para a pré-venda da YUX, `mission_intake` com o público efetivamente verificado (`client_user` ou `internal_operator`) e `mission_supervisor` com `client_user` para o contexto de planejamento. Inclua apenas as combinações aprovadas do contrato **Captação**.
 - Anote no `candidateHash` a impressão digital da configuração candidata congelada. Para missões, use a versão do fluxo completo avaliado, incluindo a conversa e o planejamento, correspondente à chave `<piloto>:mission` da captura. Para pré-venda, use a chave `yux_captacao:presales`.
 - Rode a conferência com os escopos preenchidos para obter o `scopeFingerprint` de cada linha. Registre separadamente a jornada em homologação (`journey`) e o ensaio de reversão que preserva diagnósticos e rascunhos (`rollback`). Cada registro contém `result` igual a `passed`, `reference` para a evidência e `scopeFingerprint`.
 - O responsável comercial e o responsável técnico registram decisões separadas. Adicione `commercialApproval` e `technicalApproval` à linha com `decision`, `reviewer`, `reference` e `scopeFingerprint`. Use `approved` somente depois da decisão correspondente. Trocar o ambiente, o commit, o contrato, o público ou a configuração invalida os registros anteriores para aquele escopo.
@@ -200,10 +209,18 @@ python scripts/compare_agent_pilots.py check-release --release-manifest .\pilot-
 
 A conferência compara as listas atuais e propostas. Ela aponta alterações fora do escopo do aceite, entradas sem aprovação e IDs que ainda liberariam a subconta inteira pela lista antiga. Inclua no registro de aceite todos os escopos que deseja manter para a subconta no fluxo em revisão. O comando só grava o relatório local. Guarde-o junto às evidências.
 
-Durante a operação supervisionada, registre em `decisions` as decisões revisadas de cada escopo. Use `id` único da decisão, `reference` para a revisão, `scopeFingerprint`, `mode` igual a `draft`, `decision` igual a `accepted` ou `rejected`, `case` igual a `standard` ou `insufficient_information` e `criticalViolation` como booleano. Uma falha crítica sinaliza a suspensão do piloto correspondente. Para decidir sobre expansão, confira os dois pilotos com o mesmo lote da avaliação cega, incluindo os desempates quando necessários.
+Durante a operação supervisionada, registre em `decisions` as decisões revisadas de cada escopo. Use `id` único da decisão, `reference` para a revisão, `scopeFingerprint`, `mode` igual a `draft`, `decision` igual a `accepted` ou `rejected`, `case` igual a `standard` ou `insufficient_information` e `criticalViolation` como booleano. Uma falha crítica sinaliza a suspensão do fluxo correspondente. Antes de decidir sobre A8, confira a avaliação cega da Captação e a janela de dez decisões revisadas, incluindo um caso de informação insuficiente.
 
-```powershell
-python scripts/compare_agent_pilots.py check-release --phase expansion --release-manifest .\pilot-release.json --capture .\pilot-metered.json --review-a .\review-a.jsonl --review-b .\review-b.jsonl --output .\pilot-expansion.json
-```
+O modo `check-release --phase expansion` ainda verifica o escopo original de dois pilotos. Para a Captação, use o relatório de aceites supervisionados por escopo. O relatório de expansão antigo fica como referência histórica.
 
-O relatório de expansão exige pré-venda da YUX e os fluxos de conversa e planejamento dos dois pilotos, os dois aceites de cada escopo registrado e uma avaliação cega com geração real, aprovada para a configuração exata dentro do teto do lote. A janela proposta exige pelo menos dez decisões revisadas por piloto, com ao menos um caso de informação insuficiente em cada um. Guarde os registros e relatórios no ambiente interno de homologação.
+## Liberação independente de A9
+
+A9 pode avançar em paralelo. Cada fluxo exige comparação com a versão vigente, testes de permissões e de regras do canal com dados sintéticos e reversão ensaiada. Comece pela seleção do assistente no Omnichannel e pelas automações de texto externo. Faça a verificação manual na Captação quando aplicável e use simulação ou ambiente isolado para os demais cenários. Durante os testes, os envios a leads ficam desabilitados. A publicação é decidida por fluxo e o relatório de expansão dos pilotos fica fora dessa decisão.
+
+### Seleção de assistente no WhatsApp
+
+O Admin YUX pode abrir **Admin → IA → Agentes e prompts → Simular seleção no WhatsApp** e comparar o comportamento herdado com a nova seleção usando uma mensagem fictícia. Os campos opcionais representam a intenção e a etapa anteriores da conversa. A simulação consulta a configuração do canal, sem chamar modelos, gravar conversas ou enviar mensagens.
+
+A ordem é vínculo ativo do canal, papel temporariamente mantido na conversa, regra por intenção anterior, etapa anterior ou palavra na mensagem e, por fim, SDR padrão. A seleção usa um contrato ativo com WhatsApp habilitado. Quando o vínculo ou o contrato está indisponível, a conversa vai para revisão humana. Em canais com a nova seleção, as respostas geradas ficam pendentes de aprovação. O Admin YUX pode consultar o motivo no Omnichannel.
+
+A variável `OMNICHANNEL_ASSISTANT_ROUTING_CONNECTION_IDS` é vazia por padrão. API e worker usam a mesma lista de canais. A reversão consiste em retirar o ID do canal da lista e atualizar os serviços. Os rascunhos já criados permanecem disponíveis para revisão. Antes de qualquer ativação com geração paga, registre a autorização do serviço, modelo e teto de gasto.

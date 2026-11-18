@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { crmOpsDataClient } from '@/lib/crmOpsDataClient'
 import { omnichannelDataClient } from '@/lib/omnichannelDataClient'
+import { assistantSelectionReasons } from '@/lib/omnichannel/omnichannelRules'
 import {
   Bot, Clock, User, Tag, Plus, X, Phone, Mail, Building,
   Link, DollarSign, Calendar, AlertTriangle, Sparkles, Check, CheckCheck
@@ -326,6 +327,9 @@ export function ConversationDetails({
               const isOutbound = message.direction === 'outbound'
               const isAiSuggestion = message.authorType === 'ai' && message.deliveryStatus === 'queued'
               const isSystem = message.authorType === 'system' || message.contentType === 'system'
+              const selection = message.assistantSelection
+              const selectionLabel = selection && assistantSelectionReasons[selection.reason as keyof typeof assistantSelectionReasons]
+              const assistantLabel = selectionLabel && [selectionLabel, selection.assistantName].filter(Boolean).join(' · ')
 
               if (isSystem) {
                 return (
@@ -344,6 +348,7 @@ export function ConversationDetails({
                       <Bot className="h-4 w-4 animate-bounce" />
                       Sugestão de resposta da IA (Aguardando Aprovação)
                     </div>
+                    {assistantLabel && <p className="text-violet-700">{assistantLabel}</p>}
                     <p className="whitespace-pre-wrap leading-relaxed text-slate-700 italic border-l-2 border-violet-200 pl-2">
                       {message.body}
                     </p>
@@ -381,6 +386,7 @@ export function ConversationDetails({
                       <span className="capitalize">{message.authorType === 'contact' ? 'Cliente' : message.authorType}</span>
                       <span className="font-normal text-[9px]">{message.deliveryStatus}</span>
                     </div>
+                    {assistantLabel && <p className="text-xs text-violet-700">{assistantLabel}</p>}
 
                     {/* Text Body */}
                     <p className="whitespace-pre-wrap leading-relaxed pr-6">

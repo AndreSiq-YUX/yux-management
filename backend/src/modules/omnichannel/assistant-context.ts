@@ -71,8 +71,8 @@ export async function resolveOmnichannelAssistantContext(
     contractId: row?.contract_id || undefined,
     profileKey: row?.profile_key || 'ai_sdr_comercial_1',
     brandRules: {
-      vocabularyDont: normalizeRules(row?.vocabulary_dont),
-      forbiddenTopics: normalizeRules(row?.forbidden_topics),
+      vocabularyDont: normalizeBrandRules(row?.vocabulary_dont),
+      forbiddenTopics: normalizeBrandRules(row?.forbidden_topics),
     },
   }
 }
@@ -88,7 +88,7 @@ export function evaluateBrandGuardrails(
   return { blocked: matched.length > 0, matchedRules: matched }
 }
 
-function normalizeRules(value: unknown): string[] {
+export function normalizeBrandRules(value: unknown): string[] {
   return Array.isArray(value)
     ? value.map(item => String(item).trim()).filter(Boolean)
     : []

@@ -20,12 +20,14 @@ import { getPresalesCatalogSetup, listPresalesLeads, loadCommercialCatalog, load
 import { loadPlanningHistory } from './planning-history.js'
 import { listMissionUsageConversations, loadMissionTurnHistory } from './mission-turn-history.js'
 import { loadPresalesHistory } from './presales-history.js'
+import { resolveOmnichannelAssistantContext } from '../omnichannel/assistant-context.js'
+import { selectOmnichannelAssistant, usesOmnichannelAssistantSelection } from '../omnichannel/assistant-selection.js'
 
 const inventory = [
   { key: 'strategist', name: 'Estrategista, Diagnóstico 48h e proposta consultiva', owner: 'Estratégia YUX', audience: 'Admin', state: 'Prévia disponível', instructions: 'Perfil, instruções globais e especialistas da especificação publicada' },
   { key: 'mission-intake', name: 'Action Engine · conversa da missão', owner: 'Operações YUX', audience: 'Portal e admin', state: 'Prévia disponível', instructions: 'Perfil Growth Strategist, contrato de conversa e contexto operacional' },
   { key: 'mission-supervisor', name: 'Action Engine · supervisor e planejamento', owner: 'Operações YUX', audience: 'Portal e admin', state: 'Prévia disponível', instructions: 'Instruções protegidas do supervisor e contexto do planejamento aprovado' },
-  { key: 'omnichannel', name: 'Omnichannel · SDR, closer, suporte e retenção', owner: 'Atendimento', audience: 'Comprador', state: 'Herdado', instructions: 'Perfil por rota do assistente e prompt nas regras de segurança' },
+  { key: 'omnichannel', name: 'Omnichannel · SDR, closer, suporte e retenção', owner: 'Atendimento', audience: 'Comprador', state: 'Prévia da seleção', instructions: 'WhatsApp · vínculo do canal, regras de atendimento e SDR padrão' },
   { key: 'radar', name: 'Radar · avaliação comercial', owner: 'Produto', audience: 'Admin', state: 'A migrar', instructions: 'Especificação e contrato do Radar no runtime' },
   { key: 'studio', name: 'Marketing Studio · pesquisa, escrita e curadoria', owner: 'Marketing', audience: 'Portal e admin', state: 'Herdado', instructions: 'Prompt global do Studio e instruções de cada etapa' },
   { key: 'automation', name: 'Automações · classificação, mensagem e proposta', owner: 'Operações YUX', audience: 'Operador ou comprador', state: 'A migrar', instructions: 'Prompt da automação e saída conforme a tarefa' },
@@ -222,6 +224,37 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
   app.get('/agent-prompts', async request => {
     requireAdminRole(request)
     return { consumers: inventory }
+  })
+
+  app.get('/agent-prompts/omnichannel/connections', async (request, reply) => {
+    requireAdminRole(request)
+    const query = tenantSchema.pick({ organizationId: true }).safeParse(request.query)
+    if (!query.success) throw new ApiError(400, 'invalid_omnichannel_routing_scope')
+    const { rows } = await app.pg.query<{ id: string; name: string }>(
+      `SELECT id, name FROM public.channel_connections
+        WHERE organization_id = $1 AND channel = 'whatsapp' AND is_active ORDER BY name, id`,
+      [query.data.organizationId],
+    )
+    reply.header('Cache-Control', 'no-store')
+    return rows
+  })
+
+  app.post('/agent-prompts/omnichannel/preview', async (request, reply) => {
+    requireAdminRole(request)
+    const parsed = z.strictObject({
+      organizationId: z.uuid(), connectionId: z.uuid(), message: scenarioMessage,
+      intent: z.string().trim().min(1).max(120).optional(), stage: z.string().trim().min(1).max(120).optional(),
+    }).safeParse(request.body)
+    if (!parsed.success) throw new ApiError(400, 'invalid_omnichannel_routing_scenario')
+    const candidate = await selectOmnichannelAssistant(app.pg, parsed.data)
+    if (!candidate) throw new ApiError(404, 'omnichannel_routing_connection_not_found')
+    const current = await resolveOmnichannelAssistantContext(app.pg, parsed.data.organizationId)
+    reply.header('Cache-Control', 'no-store')
+    return {
+      enabled: usesOmnichannelAssistantSelection(app.config.OMNICHANNEL_ASSISTANT_ROUTING_CONNECTION_IDS, parsed.data.connectionId),
+      baseline: { configuredAssistant: Boolean(current.assistantId) },
+      candidate: 'selection' in candidate ? candidate.selection : { wait: candidate.wait },
+    }
   })
 
   app.get('/agent-prompts/scope', async (request, reply) => {

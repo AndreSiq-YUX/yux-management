@@ -130,6 +130,7 @@ export interface OmnichannelMessageView {
   externalMessageId?: string
   deliveryStatus: DeliveryStatus
   metadata: JsonRecord
+  assistantSelection?: { reason: string; role: string; assistantName: string | null }
   createdAt: string
   updatedAt: string
   attachments: OmnichannelAttachmentView[]

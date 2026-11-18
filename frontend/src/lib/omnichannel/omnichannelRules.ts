@@ -17,6 +17,9 @@ import type {
 } from '@/types/omnichannel'
 
 const DEFAULT_RETENTION_MONTHS = 12
+export const assistantSelectionReasons = {
+  channel_binding: 'Vínculo do canal', locked_role: 'Papel mantido', routing_rule: 'Regra de atendimento', default_sdr: 'SDR padrão',
+}
 
 export function buildChannelEventIdempotencyKey(input: ChannelEventIdempotencyInput) {
   return `${input.connectionId}:${input.eventType}:${input.externalEventId}`

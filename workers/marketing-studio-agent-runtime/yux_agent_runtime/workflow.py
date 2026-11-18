@@ -387,6 +387,7 @@ class StrategyWorkflowEngine:
                 )
             company_context: dict[str, Any] = {}
             if self.customer_context_service is not None:
+                scoped_whatsapp = source == "whatsapp" and (retrieval_context or {}).get("scoped_omnichannel_assistant") is True
                 company_context = self.customer_context_service.retrieve(
                     organization_id=organization_id,
                     contract_id=contract_id,
@@ -395,7 +396,7 @@ class StrategyWorkflowEngine:
                     assistant_id=assistant_id,
                     external=retrieval_audience == "external_contact",
                     audience=retrieval_audience,
-                    **({"scoped_workflow_key": workflow_key} if presales_candidate or source == "mission_intake" else {}),
+                    **({"scoped_workflow_key": workflow_key} if presales_candidate or source == "mission_intake" or scoped_whatsapp else {}),
                     **({"retry_lexical_query": True} if presales_candidate else {}),
                     **({"include_knowledge": False} if source_rules and source_rules["company_documents"] == "forbidden" else {}),
                 )

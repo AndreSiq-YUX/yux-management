@@ -1,5 +1,6 @@
 import json
 import unittest
+from unittest.mock import Mock
 
 from yux_agent_runtime.harness import Harness
 from yux_agent_runtime.providers import OpenRouterClient
@@ -159,6 +160,29 @@ class LiveWorkflowTest(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(result["synthesis"]["reply"]["language"], "pt-BR")
         self.assertEqual(result["policy"]["autonomy_mode"], "suggestion")
+
+    def test_selected_whatsapp_assistant_retrieves_context_for_the_external_contact_and_contract(self):
+        response = json.dumps({
+            "reply": {"body": "Olá"},
+            "classification": {"intent": "support", "stage": "service", "confidence": 0.9},
+            "qualification": {"nextBestAction": "Pedir um detalhe"},
+        })
+        engine, _ = self.make_engine([response, response])
+        engine.customer_context_service = Mock()
+        engine.customer_context_service.retrieve.return_value = {}
+        scope = dict(
+            message="Preciso de suporte", profile_key="ai_sdr_comercial_1", source="whatsapp",
+            organization_id="org-1", contract_id="contract-1", assistant_id="assistant-1", mode="conversation_turn",
+        )
+        engine.execute(**scope)
+        old_context = engine.customer_context_service.retrieve.call_args.kwargs
+        self.assertNotIn("scoped_workflow_key", old_context)
+        engine.execute(**scope, retrieval_context={"scoped_omnichannel_assistant": True, "audience": "internal_operator"})
+        engine.customer_context_service.retrieve.assert_called_with(
+            **old_context, scoped_workflow_key="whatsapp_conversation_turn",
+        )
+        self.assertEqual(old_context["audience"], "external_contact")
+        self.assertEqual(old_context["contract_id"], "contract-1")
 
 
 if __name__ == "__main__":

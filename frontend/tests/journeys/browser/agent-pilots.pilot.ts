@@ -26,6 +26,17 @@ test('compares pilot prompts, imports a CRM draft and executes a scoped preparat
   await page.getByRole('button', { name: 'Entrar', exact: true }).click()
   await expect(page).not.toHaveURL(/\/auth\/login/)
 
+  await test.step('preview WhatsApp routing without changing the live selection', async () => {
+    await page.goto('/admin/strategy-engine?tab=agent-prompts')
+    await page.getByText('Simular seleção no WhatsApp', { exact: true }).click()
+    await page.getByRole('combobox', { name: 'Subconta do WhatsApp', exact: true }).selectOption(data.routingOrg)
+    await page.getByRole('combobox', { name: 'Canal', exact: true }).selectOption(data.routingConnection)
+    await page.getByLabel('Mensagem fictícia').fill('Como acesso o relatório de teste?')
+    await page.getByRole('button', { name: 'Simular seleção sem envio' }).click()
+    await expect(page.getByText('Canal com seleção herdada.')).toBeVisible()
+    await expect(page.getByText('Nova seleção · Vínculo do canal · Suporte fictício')).toBeVisible()
+  })
+
   await test.step('compare the strategist baseline and candidate', async () => {
     const instruction = 'Peça o critério que decide entre aquisição e acompanhamento.'
     await page.goto('/admin/strategy-engine?tab=agent-prompts')

@@ -177,7 +177,7 @@ export async function listMessages(pool: pg.Pool, user: AuthUser, conversationId
      ORDER BY m.created_at ASC`,
     [conversationId],
   )
-  return result.rows.map(mapMessage)
+  return result.rows.map(row => mapMessage(row, user.role === 'yux_admin'))
 }
 
 export async function listOrganizationRows(pool: pg.Pool, user: AuthUser, organizationId: string, table: string, orderBy = 'name') {
@@ -704,7 +704,9 @@ function mapPortalConversation(row: ConversationRow) {
   }
 }
 
-function mapMessage(row: MessageRow) {
+function mapMessage(row: MessageRow, showRouting = false) {
+  const { assistantSelection, ...metadata } = row.metadata || {}
+  const routing = assistantSelection && typeof assistantSelection === 'object' ? assistantSelection as JsonRecord : null
   return {
     id: row.id,
     conversationId: row.conversation_id,
@@ -716,7 +718,10 @@ function mapMessage(row: MessageRow) {
     body: optional(row.body),
     externalMessageId: optional(row.external_message_id),
     deliveryStatus: row.delivery_status,
-    metadata: row.metadata || {},
+    metadata,
+    ...(showRouting && row.author_type === 'ai' && routing && typeof routing.reason === 'string' && typeof routing.role === 'string'
+      ? { assistantSelection: { reason: routing.reason, role: routing.role, assistantName: typeof routing.assistantName === 'string' ? routing.assistantName : null } }
+      : {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     attachments: (row.message_attachments || []).map(mapAttachment),

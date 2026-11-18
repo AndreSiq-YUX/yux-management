@@ -5,6 +5,7 @@ import type { StrategyOrganization } from '@/types/strategyEngine'
 import { PlanningUsageHistory } from './PlanningUsageHistory'
 import { MissionTurnUsageHistory } from './MissionTurnUsageHistory'
 import { PresalesUsageHistory } from './PresalesUsageHistory'
+import { OmnichannelRoutingPreview } from './OmnichannelRoutingPreview'
 
 type Consumer = { key: string; name: string; owner: string; audience: string; state: string; instructions: string }
 type Contract = { id: string; name: string }
@@ -304,6 +305,8 @@ export function AgentPromptsPanel({ organizations }: { organizations: StrategyOr
           </table>
         </div>
       </section>
+
+      <OmnichannelRoutingPreview organizations={organizations} />
 
       <form onSubmit={simulate} onChange={() => setPreview(null)} className="space-y-4 rounded-lg border bg-white p-5">
         <div className="flex flex-wrap items-start justify-between gap-2">

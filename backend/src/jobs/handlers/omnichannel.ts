@@ -6,6 +6,7 @@ import { buildSafeAiFallback } from '../../lib/edge-compat/omnichannel.js'
 import { decodeProviderSecretEncryptionKey, loadProviderSecretFromPool } from '../../lib/edge-compat/providerSecrets.js'
 import { normalizeWhatsAppInbound, sendWhatsAppTemplateMessage, sendWhatsAppTextMessage, verifyWhatsAppTemplateApproval } from '../../lib/edge-compat/whatsappProvider.js'
 import { evaluateBrandGuardrails, resolveOmnichannelAssistantContext } from '../../modules/omnichannel/assistant-context.js'
+import { selectOmnichannelAssistant, usesOmnichannelAssistantSelection } from '../../modules/omnichannel/assistant-selection.js'
 import { evaluateWhatsAppDispatchPolicy } from '../../modules/omnichannel/whatsapp-dispatch-policy.js'
 import { resolveWhatsAppTestRecipient, whatsAppPhoneCandidates } from '../../modules/omnichannel/whatsapp-recipient.js'
 import { ensureLeadConversationLink } from '../../modules/omnichannel/lead-link.js'
@@ -180,7 +181,24 @@ export async function handleInboundMessage(
       return { conversationId, messageId: inboundMessageId, runtime: { skipped: true } }
     }
 
-    const assistantContext = await resolveOmnichannelAssistantContext(pool, organizationId)
+    const routingEnabled = usesOmnichannelAssistantSelection(env.OMNICHANNEL_ASSISTANT_ROUTING_CONNECTION_IDS, connectionId)
+    const routed = routingEnabled ? await selectOmnichannelAssistant(pool, {
+      organizationId, connectionId, conversationId, message: String(message.body),
+    }) : null
+    if (routingEnabled && (!routed || 'wait' in routed)) {
+      const reason = routed?.wait ?? 'assistant_routing_scope_unavailable'
+      if (reason !== 'human_in_control') {
+        await pool.query(
+          `UPDATE public.conversations SET status = 'waiting_human', updated_at = NOW()
+            WHERE id = $1 AND organization_id = $2 AND connection_id = $3 AND status IN ('open','waiting_human')`,
+          [conversationId, organizationId, connectionId],
+        )
+      }
+      await markWebhookEventProcessed(pool, eventId)
+      return { conversationId, messageId: inboundMessageId, runtime: { skipped: true, reason } }
+    }
+    const selected = routed && 'context' in routed ? routed : null
+    const assistantContext = selected?.context ?? await resolveOmnichannelAssistantContext(pool, organizationId)
     const runtime: Row = env.YUX_AGENT_RUNTIME_URL
       ? await invokeAgentRuntime<Row>(env, '/workflows/execute', {
         organization_id: organizationId,
@@ -192,6 +210,7 @@ export async function handleInboundMessage(
         profile_key: assistantContext.profileKey,
         source: 'whatsapp',
         mode: 'conversation_turn',
+        ...(selected ? { retrieval_context: { scoped_omnichannel_assistant: true } } : {}),
         })
       : buildSafeAiFallback(new Error('agent_runtime_not_configured')) as unknown as Row
     const synthesis = record(runtime.synthesis)
@@ -200,7 +219,7 @@ export async function handleInboundMessage(
     const policy = record(runtime.policy)
     const replyBody = String(reply.body || '').trim()
     const brandGuardrail = evaluateBrandGuardrails(replyBody, assistantContext.brandRules)
-    const automaticSendAllowed = policy.should_send === true
+    const automaticSendAllowed = !routingEnabled && policy.should_send === true
       && responseMode === 'automatic'
       && !brandGuardrail.blocked
     let aiMessageId: string | undefined
@@ -223,8 +242,9 @@ export async function handleInboundMessage(
           approvalStatus,
           agentExecutionRunId: record(runtime.run).id || null,
           policy,
-          assistantId: assistantContext.assistantId || null,
-          strategyProfileKey: assistantContext.profileKey,
+          ...(selected
+            ? { assistantSelection: selected.selection }
+            : { assistantId: assistantContext.assistantId || null, strategyProfileKey: assistantContext.profileKey }),
           blockedByBrandGuardrail: brandGuardrail.blocked,
           matchedBrandRules: brandGuardrail.matchedRules,
           classification,
@@ -243,6 +263,22 @@ export async function handleInboundMessage(
       || policy.blocked === true
       || brandGuardrail.blocked
       || runtime.fallbackUsed === true
+    const intent = typeof classification.intent === 'string' ? classification.intent : null
+    if (selected) {
+      await pool.query(
+        `UPDATE public.conversations c
+            SET conversation_current_role = $4, role_locked_until = $5,
+                conversation_stage = COALESCE($6, conversation_stage), classification = COALESCE($7, classification)
+          WHERE c.id = $1 AND c.organization_id = $2 AND c.connection_id = $3
+            AND c.status <> 'waiting_human' AND c.response_mode <> 'manual' AND NOT EXISTS (
+            SELECT 1 FROM public.messages newer JOIN public.messages current ON current.id = $8 AND current.conversation_id = c.id
+             WHERE newer.conversation_id = c.id AND newer.direction = 'inbound'
+               AND (newer.created_at, newer.id) > (current.created_at, current.id))`,
+        [conversationId, organizationId, connectionId, selected.selection.role, selected.lockUntil,
+          typeof classification.stage === 'string' ? classification.stage.trim().slice(0, 120) || null : null,
+          intent?.trim().slice(0, 120) || null, inboundMessageId],
+      )
+    }
     await pool.query(
     `UPDATE public.conversations
      SET status = CASE WHEN $2::boolean THEN 'waiting_human' ELSE status END,
@@ -254,7 +290,7 @@ export async function handleInboundMessage(
     [
       conversationId,
       shouldHandoff,
-      typeof classification.intent === 'string' ? classification.intent : null,
+      selected ? null : intent,
       typeof classification.sentiment === 'string' ? classification.sentiment : null,
       typeof synthesis.qualification === 'object' ? `Proxima acao: ${String(record(synthesis.qualification).nextBestAction || '')}` : null,
     ],
