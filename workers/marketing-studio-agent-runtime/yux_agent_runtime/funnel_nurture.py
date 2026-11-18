@@ -16,6 +16,7 @@ from .contracts import (
     parse_json_object,
 )
 from .model_profiles import ModelProfile, measure_generation
+from .strategy_usage import strategy_usage_stage
 from .mission_prompt import apply_stage_adjustment
 from .providers import OpenRouterClient, ProviderRequestError
 
@@ -158,12 +159,14 @@ class FunnelNurtureSpecialistWorkflow:
 
     def _invoke(self, node: str, value: dict[str, Any]) -> dict[str, Any]:
         request = self.prepare_request(node, value)
+        stage = f"funnel_nurture.{node}"
         try:
-            response = self.client.chat_completion(**request)
+            with strategy_usage_stage(stage):
+                response = self.client.chat_completion(**request)
             self.traces.append({"node": node, "provider": response.get("provider") or self.profile.provider,
                                 "model": response.get("model") or self.profile.model,
                                 "inputTokens": int(response.get("input_tokens") or 0), "outputTokens": int(response.get("output_tokens") or 0),
-                                "_measurement": measure_generation(node, response)})
+                                "_measurement": measure_generation(stage, response)})
             return parse_json_object(str(response.get("content") or ""))
         except ProviderRequestError as error:
             raise FunnelNurtureError("funnel_nurture_model_unavailable") from error

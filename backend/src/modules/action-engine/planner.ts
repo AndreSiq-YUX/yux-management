@@ -13,6 +13,7 @@ import { compileCompositePlan, type CompositeArtifactBinding } from './composite
 import { createPublishedPackRegistry } from './pack-registry.js'
 import { resolvePackSelection } from './pack-resolver.js'
 import { radarProspectingParameters } from './packs/radar-prospecting-v1.js'
+import { normalizePlanningMeasurements } from './planning-cycle.js'
 
 const decimal = z.string().regex(/^-?\d+(\.\d+)?$/)
 const harnessStep = z.object({
@@ -105,20 +106,38 @@ function decimalParameter(value: unknown): bigint {
   return BigInt(whole || '0') * 1_000_000n + BigInt(fraction.slice(0, 6).padEnd(6, '0') || '0')
 }
 
+export class MissionPlanningFailure extends Error {
+  readonly measurements: ReturnType<typeof normalizePlanningMeasurements>
+
+  constructor(message: string, measurements: unknown) {
+    super(message)
+    this.measurements = normalizePlanningMeasurements(measurements)
+  }
+}
+
 export async function requestMissionPlan(
   env: Pick<AppEnv, 'YUX_AGENT_RUNTIME_URL' | 'YUX_AGENT_RUNTIME_TOKEN'>,
   payload: Record<string, unknown>,
   fetchImpl: typeof fetch = fetch,
+  measurePilotUsage = false,
 ): Promise<unknown> {
   if (!env.YUX_AGENT_RUNTIME_URL || !env.YUX_AGENT_RUNTIME_TOKEN) throw new Error('agent_harness_unavailable')
   const wire = toMissionPlanWire(payload)
+  const usePilotMeasurements = measurePilotUsage && [wire.action_pack, ...(wire.pack_catalog ?? [])].every(pack => pack.key !== 'radar_prospecting')
   const response = await fetchImpl(new URL('/missions/plan', env.YUX_AGENT_RUNTIME_URL), {
-    method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${env.YUX_AGENT_RUNTIME_TOKEN}` },
+    method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${env.YUX_AGENT_RUNTIME_TOKEN}`,
+      ...(usePilotMeasurements ? { 'X-YUX-Mission-Pilot-Usage': '1' } : {}) },
     body: JSON.stringify(wire), signal: AbortSignal.timeout(60_000),
   })
   if (!response.ok) {
     // Retain only a bounded machine code; runtime bodies can contain private data.
     const body=await response.json().catch(()=>null) as {detail?:unknown}|null
+    if (usePilotMeasurements && body?.detail && typeof body.detail === 'object') {
+      const { code, planningMeasurements } = body.detail as Record<string, unknown>
+      if (typeof code === 'string' && /^(mission_supervisor|mission_plan|funnel_nurture|campaign_launch)_[a-z0-9_]{1,80}$/.test(code)) {
+        throw new MissionPlanningFailure(`agent_harness_plan_failed:${response.status}:${code}`, planningMeasurements)
+      }
+    }
     const detail=typeof body?.detail==='string'&&/^[a-z][a-z0-9_]{2,100}$/.test(body.detail)?body.detail:undefined
     throw new Error(`agent_harness_plan_failed:${response.status}${detail?`:${detail}`:''}`)
   }

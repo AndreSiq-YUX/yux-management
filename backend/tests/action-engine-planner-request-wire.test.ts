@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { Ajv2020 } from 'ajv/dist/2020.js'
 import { describe, expect, it, vi } from 'vitest'
-import { requestMissionPlan } from '../src/modules/action-engine/planner.js'
+import { MissionPlanningFailure, requestMissionPlan } from '../src/modules/action-engine/planner.js'
 import type { ActionPackVersion } from '../src/modules/action-engine/action-pack.js'
 import { createActionEngineCapabilityRegistry } from '../src/modules/action-engine/capabilities/index.js'
 import { RADAR_PROSPECTING_PACK_V1 } from '../src/modules/action-engine/packs/radar-prospecting-v1.js'
@@ -33,6 +33,25 @@ describe('real backend catalogs crossing the strict Harness request contract', (
     ['private response https://secret.example/token', 'agent_harness_plan_failed:422'],
   ])('retains safe diagnostics without exposing a raw response (%s)',async(detail,expected)=>{
     await expect(requestMissionPlan(env,payload(),async()=>new Response(JSON.stringify({detail}),{status:422}))).rejects.toThrow(expected)
+  })
+  it.each([CAMPAIGN_LAUNCH_PACK_V1, RADAR_PROSPECTING_PACK_V1])('accepts private failure measurements only for the planning pilot of $key', async pack => {
+    const allowed = pack.key === CAMPAIGN_LAUNCH_PACK_V1.key
+    const transport: typeof fetch = async (_url, init) => {
+      expect(new Headers(init?.headers).get('X-YUX-Mission-Pilot-Usage')).toBe(allowed ? '1' : null)
+      return Response.json({ detail: { code: 'campaign_launch_model_unavailable', planningMeasurements: [
+        { node: 'planner', attemptCount: 1, reportedCostUsd: 0.014, providerToken: 'private-metadata' },
+      ] } }, { status: 422 })
+    }
+    const result = requestMissionPlan(env, payload(pack), transport, true)
+    if (allowed) {
+      await expect(result).rejects.toBeInstanceOf(MissionPlanningFailure)
+      const failure = await result.catch(error => error as MissionPlanningFailure) as MissionPlanningFailure
+      expect(failure.measurements[0]).toMatchObject({ node: 'planner', reportedCostUsd: 0.014 })
+      expect(JSON.stringify(failure)).not.toContain('private-metadata')
+    } else {
+      await expect(result).rejects.not.toBeInstanceOf(MissionPlanningFailure)
+      await expect(result).rejects.toThrow('agent_harness_plan_failed:422')
+    }
   })
   for (const pack of [RADAR_PROSPECTING_PACK_V1, REVENUE_RECOVERY_PACK_V0, FUNNEL_NURTURE_PACK_V1, CAMPAIGN_LAUNCH_PACK_V1]) {
     it(`sends ${pack.key} accepted by the exported Python request schema`, async () => {

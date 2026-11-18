@@ -14,6 +14,8 @@ it('keeps the reservation until provider cost is fully measured in reais', () =>
     .toMatchObject({ budgetCostBrl: '5', measurements: { reportedCostUsd: 0.25, recognizedCostBrl: null } })
   expect(reconcilePlanningCost([{ node: 'planner', reportedCostUsd: 0 }], '5'))
     .toMatchObject({ budgetCostBrl: '0', measurements: { recognizedCostBrl: '0', pendingReconciliation: false } })
+  expect(reconcilePlanningCost([{ node: 'planner', attemptsWithoutCost: 1, reportedCostUsd: 0, knownCostSubtotalUsd: 0.25 }], '5'))
+    .toMatchObject({ budgetCostBrl: '5', measurements: { reportedCostUsd: null, knownCostSubtotalUsd: 0.25, pendingReconciliation: true } })
 })
 import {
   createPlanningArtifactCacheKey,

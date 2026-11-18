@@ -11,11 +11,12 @@ import type { EnqueueJobOptions } from '../../src/jobs/queue.js'
 import { handleActionEngineProcessMissionConversation, handleActionEnginePlanMission, handleActionEngineSchedule,
   handleActionEngineExecute, handleActionEngineCollectMetrics, handleActionEngineEvaluation } from '../../src/jobs/handlers/action-engine.js'
 import { crmPreparationProposal } from '../support/crm-preparation-fixture.js'
+import { requestMissionPlan } from '../../src/modules/action-engine/planner.js'
 import { createSequenceDraft, publishSequenceDraft } from '../../src/modules/automations/mission-commands.js'
 import { buildMissionPlanningCatalog, buildMissionPlanningContext } from '../../src/modules/action-engine/mission-plan-request.js'
 import { getMission, hashCanonical } from '../../src/modules/action-engine/repository.js'
 
-it('creates and reviews real drafts through conversation without a sender, with retries, tenant isolation and activation gates', async () => {
+it.each([false, true])('preserves the CRM preparation journey and private accounting with specialist failure %s', async specialistFails => {
   const jobs: Array<{name: string; data: Record<string, unknown>; options?: EnqueueJobOptions}> = []
   const queue = { async add(name: string, data: Record<string, unknown>, options?: EnqueueJobOptions) { jobs.push({name,data,options}); return {id: randomUUID()} }, async close() {} }
   const rig = await createIntegrationRig({queueMode: 'stub', missionConversations: true, stubJobQueue: queue})
@@ -126,6 +127,37 @@ it('creates and reviews real drafts through conversation without a sender, with 
         await rig.sql('UPDATE public.company_strategies SET archived_at=NULL WHERE id=$1', [strategy.body.id])
       }
     })
+    if (specialistFails) {
+      const sendFailure: typeof fetch = async (_url, init) => {
+        expect(new Headers(init?.headers).get('X-YUX-Mission-Pilot-Usage')).toBe('1')
+        return Response.json({ detail: { code: 'funnel_nurture_model_unavailable', planningMeasurements: [
+          { node: 'planner', attemptCount: 1, inputTokens: 100, outputTokens: 50,
+            reasoningTokens: 6, attemptsWithoutCost: 0, reportedCostUsd: 0.014 },
+          { node: 'funnel_nurture.crm_architect', attemptCount: 1, attemptsWithoutCost: 1, reportedCostUsd: null },
+        ] } }, { status: 422 })
+      }
+      const run = () => within(() => handleActionEnginePlanMission(pool as never, env, planJob.data, queue, {
+        invokePlan: (config, input) => requestMissionPlan(config, input, sendFailure, true),
+      }))
+      await expect(run()).rejects.toThrow('agent_harness_plan_failed:422:funnel_nurture_model_unavailable')
+      await expect(run()).resolves.toEqual({ skipped: 'mission_state_changed' })
+      const receipt = await rig.sql(`SELECT cycle.status,usage.calls,usage.cost_brl::text,usage.metadata
+        FROM public.action_planning_usage_entries usage JOIN public.action_planning_cycles cycle ON cycle.id=usage.cycle_id
+        WHERE cycle.mission_id=$1 AND usage.nature='actual'`, [missionId])
+      expect(receipt.rows).toHaveLength(1)
+      expect(receipt.rows[0]).toMatchObject({ status: 'cancelled', calls: 2, cost_brl: '5.000000', metadata: {
+        measurements: { reportedCostUsd: null, knownCostSubtotalUsd: 0.014, pendingReconciliation: true, stages: [
+          { node: 'planner', knownInputTokens: 100, reasoningTokens: 6, reportedCostUsd: 0.014 },
+          { node: 'funnel_nurture.crm_architect', attemptsWithoutCost: 1, reportedCostUsd: null },
+        ] },
+      } })
+      expect((await rig.sql('SELECT id FROM public.action_plans WHERE mission_id=$1', [missionId])).rows).toHaveLength(0)
+      const blocked = (await getChat()).body
+      expect(blocked.status).toBe('blocked')
+      expect(JSON.stringify(blocked)).not.toMatch(/knownCostSubtotalUsd|planningMeasurements|0\.014/)
+      expect(await rig.providerCalls()).toHaveLength(0)
+      return
+    }
     const planResult = await within(() => handleActionEnginePlanMission(pool as never,env,planJob.data,queue,{invokePlan:async(_env,input)=>{
       expect(input.mission_prompt).toEqual({version:1,instructions:{'funnel_nurture.crm_architect':planningInstruction},source_rules:sourceRules})
       expect(input.allowed_source_ids).toContain(sourceId)

@@ -36,6 +36,11 @@ def test_embedding_and_fallback_attempts_are_reported_without_inventing_missing_
         ("retrieval", ["qwen/qwen3-embedding-8b"], "qwen/qwen3-embedding-8b"),
         ("generation", ["primary"], "primary"), ("generation", ["secondary"], "secondary:effective"),
     ]
+    retrieval, generation = meter.planning_measurements()
+    assert retrieval["reportedCostUsd"] == 0
+    assert generation["attemptCount"] == 2 and generation["attemptsWithoutCost"] == 1
+    assert generation["reportedCostUsd"] is None and generation["knownCostSubtotalUsd"] == 0.02
+    assert generation["outputTokens"] is None and generation["knownOutputTokens"] == 4
 
 
 def test_reservation_write_failure_prevents_transport():

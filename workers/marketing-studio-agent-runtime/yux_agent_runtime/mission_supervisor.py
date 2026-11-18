@@ -10,6 +10,7 @@ from .contracts import AgentContractError, parse_json_object, validate_composite
 from .mission_contracts import MissionSupervisorProposal, PlanWire
 from .mission_prompt import apply_stage_adjustment, planning_prompt_configuration
 from .model_profiles import ModelProfile, build_model_trace, measure_generation
+from .strategy_usage import strategy_usage_stage
 from .providers import OpenRouterClient, ProviderRequestError
 from .funnel_nurture import FunnelNurtureError, FunnelNurtureSpecialistWorkflow
 from .campaign_launch import CampaignLaunchError, CampaignLaunchSpecialistWorkflow
@@ -116,7 +117,8 @@ class MissionSupervisor:
         value = {**value, "mission_prompt": planning_prompt_configuration(value, route.selected_pack_keys)}
         messages = request["messages"]
         try:
-            response = self.client.chat_completion(**request)
+            with strategy_usage_stage("planner"):
+                response = self.client.chat_completion(**request)
         except ProviderRequestError as error:
             raise MissionSupervisorError("mission_supervisor_model_unavailable") from error
 

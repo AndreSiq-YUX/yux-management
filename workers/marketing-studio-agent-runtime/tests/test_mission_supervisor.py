@@ -4,12 +4,14 @@ import json
 from hashlib import sha256
 
 import pytest
+from fastapi.testclient import TestClient
 
 from yux_agent_runtime.instruction_preview import preview_mission_supervisor
 from yux_agent_runtime.llm_routing import RoutedLlmClient
 from yux_agent_runtime.mission_supervisor import MissionSupervisor, MissionSupervisorError
 from yux_agent_runtime.model_profiles import ModelProfile
-from yux_agent_runtime.providers import OpenRouterClient
+from yux_agent_runtime.providers import OpenRouterClient, ProviderRequestError
+from yux_agent_runtime.runtime_store import InMemoryAgentRuntimeStore
 import test_campaign_launch_mission
 import test_funnel_nurture
 
@@ -103,7 +105,15 @@ def _supervisor(response: dict | str) -> MissionSupervisor:
     return MissionSupervisor(OpenRouterClient(api_key="test", transport=transport), profile)
 
 
-def test_supervisor_preview_reuses_exact_payload_without_calling_original_transport():
+def _planning_client(supervisor, monkeypatch):
+    monkeypatch.setenv("YUX_AGENT_RUNTIME_TOKEN", "synthetic-token")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://fixture@127.0.0.1:5432/yux_test")
+    from yux_agent_runtime.api import create_app
+
+    return TestClient(create_app(InMemoryAgentRuntimeStore(), mission_supervisor=supervisor))
+
+
+def test_supervisor_preview_reuses_exact_payload_without_calling_original_transport(monkeypatch):
     supervisor = _supervisor(_plan_response())
     original = supervisor.client.transport
     sent = []
@@ -131,6 +141,19 @@ def test_supervisor_preview_reuses_exact_payload_without_calling_original_transp
     assert stage["providerPayload"] == {
         key: item for key, item in sent[0].items() if key != "session_id"
     }
+    runtime = _planning_client(supervisor, monkeypatch)
+    headers = {
+        "Authorization": "Bearer synthetic-token", "X-YUX-Mission-Pilot-Usage": "1",
+    }
+    preview_response = runtime.post("/instructions/preview/mission-supervisor", json=value, headers=headers)
+    assert preview_response.status_code == 200, preview_response.text
+    assert len(sent) == 1
+    response = runtime.post("/missions/plan", json=value, headers=headers)
+    assert response.status_code == 200, response.text
+    assert len(sent) == 2
+    measurement, = response.json()["trace"]["planningMeasurements"]
+    assert measurement["inputTokens"] == 100 and measurement["attemptCount"] == 1
+    assert measurement["requestFingerprint"] == preview_response.json()["baseline"]["requests"][0]["providerFingerprint"]
 
 
 @pytest.mark.parametrize("pack,fixture,objective", [
@@ -319,7 +342,7 @@ def test_retrieved_prompt_injection_is_marked_untrusted_and_cannot_expand_author
         supervisor.propose(request)
 
 
-def test_preparation_uses_the_real_eight_step_topology_and_specialist_artifacts() -> None:
+def _crm_preparation_case():
     request = _request()
     request['mission']['mode'] = 'prepare'
     keys = ['pack.readiness', 'pack.inspect', 'pack.simulate_funnel', 'pack.draft_funnel',
@@ -341,6 +364,11 @@ def test_preparation_uses_the_real_eight_step_topology_and_specialist_artifacts(
         step = _step(key, capability, 'draft' if index >= 3 else 'none', keys[index-1:index] if index else [])
         step['capabilityVersion'] = 2 if index == 0 else 1
         response['plan']['steps'].append(step)
+    return request, response, keys
+
+
+def test_preparation_uses_the_real_eight_step_topology_and_specialist_artifacts() -> None:
+    request, response, keys = _crm_preparation_case()
     supervisor = _supervisor(response)
     class DraftSpecialist:
         traces = []
@@ -358,3 +386,38 @@ def test_preparation_uses_the_real_eight_step_topology_and_specialist_artifacts(
     assert len(artifacts['emails']) == 3
     assert 'automation' not in artifacts
     assert result['selectedPacks'][0]['key'] == 'crm_preparation'
+
+
+def test_pilot_planning_preserves_receipts_when_a_specialist_times_out(monkeypatch):
+    request, response, _ = _crm_preparation_case()
+    request["mission"]["parameters"]["icp"] = "Cozinhas industriais"
+    supervisor = _supervisor(response)
+    original = supervisor.client.transport
+
+    def planner_transport(*args):
+        result = original(*args)
+        result["usage"].update(cost=0.014, completion_tokens_details={"reasoning_tokens": 6})
+        return result
+
+    def specialist_transport(*_args):
+        raise ProviderRequestError("synthetic_private_provider_error")
+
+    supervisor.client.transport = planner_transport
+    specialist, _ = test_funnel_nurture.workflow()
+    specialist.client = OpenRouterClient(api_key="synthetic", transport=specialist_transport)
+    supervisor.funnel_nurture = specialist
+    api = _planning_client(supervisor, monkeypatch)
+    headers = {"Authorization": "Bearer synthetic-token"}
+    plain = api.post("/missions/plan", json=request, headers=headers)
+    assert plain.status_code == 422
+    assert plain.json()["detail"] == "funnel_nurture_model_unavailable"
+
+    measured = api.post("/missions/plan", json=request, headers={**headers, "X-YUX-Mission-Pilot-Usage": "1"})
+    assert measured.status_code == 422
+    detail = measured.json()["detail"]
+    assert detail["code"] == "funnel_nurture_model_unavailable"
+    planner, specialist_row = detail["planningMeasurements"]
+    assert planner["node"] == "planner" and planner["reportedCostUsd"] == 0.014 and planner["reasoningTokens"] == 6
+    assert specialist_row["node"] == "funnel_nurture.crm_architect" and specialist_row["attemptCount"] == 1
+    assert specialist_row["attemptsWithoutCost"] == 1 and specialist_row["reportedCostUsd"] is None
+    assert "synthetic_private_provider_error" not in measured.text and "gpt-4.1-mini" not in measured.text

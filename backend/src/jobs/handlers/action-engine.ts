@@ -5,7 +5,7 @@ import type { AppJobQueue } from '../../server.js'
 import { createBullMqJobId } from '../queue.js'
 import { createActionEngineCapabilityRegistry } from '../../modules/action-engine/capabilities/index.js'
 import { ensureCrmPreparationPackVersion } from '../../modules/action-engine/packs/crm-preparation-v1.js'
-import { compileSupervisorPlan, diffMissionPlans, requestMissionPlan, type CompiledMissionPlan } from '../../modules/action-engine/planner.js'
+import { compileSupervisorPlan, diffMissionPlans, MissionPlanningFailure, requestMissionPlan, type CompiledMissionPlan } from '../../modules/action-engine/planner.js'
 import {
   getMission, insertMissionContextSnapshot, insertPlanRevision, recordApproval, recordEvaluation, transitionMission, type Queryable,
 } from '../../modules/action-engine/repository.js'
@@ -21,7 +21,7 @@ import {
   reconcileUnknownEffect,
 } from '../../modules/action-engine/provider-reconciliation.js'
 import { releaseResourceClaims } from '../../modules/action-engine/resource-claims.js'
-import { getPlanningReservationAge, PLANNING_RECHECK_WINDOW_MS, reconcilePlanningCost, reservePlanningCall, settlePlanningCall } from '../../modules/action-engine/planning-cycle.js'
+import { getPlanningReservationAge, PLANNING_RECHECK_WINDOW_MS, reconcilePlanningCost, reconcilePlanningUsage, reservePlanningCall, settlePlanningCall } from '../../modules/action-engine/planning-cycle.js'
 import { enforceMissionRetention } from '../../modules/action-engine/retention.js'
 import { processCompletedMissionLearning } from '../../modules/action-engine/learning.js'
 import { redactMissionTelemetry } from '../../modules/action-engine/telemetry-redaction.js'
@@ -614,23 +614,25 @@ export async function handleActionEnginePlanMission(
     if (missionPrompt) payload.mission_prompt = missionPrompt
     const previousCompiled = payload.previous_revision as Record<string, unknown> | undefined
     const planningStartedAt = Date.now()
-    const rawPlan = await (dependencies.invokePlan ?? requestMissionPlan)(env, payload)
+    let rawPlan: unknown = null
+    let planningFailure: MissionPlanningFailure | undefined
+    try {
+      rawPlan = dependencies.invokePlan
+        ? await dependencies.invokePlan(env, payload)
+        : await requestMissionPlan(env, payload, undefined, governedPlanning)
+    } catch (error) {
+      if (!governedPlanning || !(error instanceof MissionPlanningFailure) || !error.measurements.length) throw error
+      planningFailure = error
+    }
     const planningDurationMs = Math.max(0, Date.now() - planningStartedAt)
     const rawEnvelope = rawPlan && typeof rawPlan === 'object' ? rawPlan as Record<string, unknown> : {}
     const rawUsage = rawEnvelope.usage && typeof rawEnvelope.usage === 'object' ? rawEnvelope.usage as Record<string, unknown> : {}
     const { planningMeasurements, missionPromptVersion, ...rawTrace } = rawEnvelope.trace && typeof rawEnvelope.trace === 'object'
       ? rawEnvelope.trace as Record<string, unknown> : {}
     const storedPlan = rawEnvelope.trace ? { ...rawEnvelope, trace: rawTrace } : rawEnvelope
-    const cost = reconcilePlanningCost(planningMeasurements, planningEstimate.costBrl)
-    const { stages } = cost.measurements
-    const aggregateUnits = (units: Array<number | null>, reserved: number) => {
-      const known = units.reduce<number>((total, value) => total + (value ?? 0), 0)
-      return units.length && units.every(value => value !== null) ? known : Math.max(known, reserved)
-    }
-    const actual = {
-      calls: governedPlanning ? aggregateUnits(stages.map(stage => Math.max(1, stage.attemptCount ?? 1)), planningEstimate.calls) : 1,
-      inputTokens: governedPlanning ? aggregateUnits(stages.map(stage => stage.inputTokens), planningEstimate.inputTokens) : Number(rawUsage.inputTokens ?? 0),
-      outputTokens: governedPlanning ? aggregateUnits(stages.map(stage => stage.outputTokens), planningEstimate.outputTokens) : Number(rawUsage.outputTokens ?? 0),
+    const cost = reconcilePlanningCost(planningFailure?.measurements ?? planningMeasurements, planningEstimate.costBrl)
+    const actual = governedPlanning ? reconcilePlanningUsage(cost, planningEstimate, planningDurationMs) : {
+      calls: 1, inputTokens: Number(rawUsage.inputTokens ?? 0), outputTokens: Number(rawUsage.outputTokens ?? 0),
       costBrl: cost.budgetCostBrl, latencyMs: planningDurationMs,
     }
     const settlement = await transaction(pool, client => settlePlanningCall(client, {
@@ -640,10 +642,12 @@ export async function handleActionEnginePlanMission(
       metadata: {
         profileKey: rawTrace.profileKey ?? 'mission_supervisor', promptHash: rawTrace.promptHash ?? null,
         measurements: cost.measurements,
+        ...(planningFailure ? { planningFailure: planningFailure.message } : {}),
         ...(typeof missionPromptVersion === 'number' ? { missionPromptVersion } : {}),
       },
     }))
     if (settlement.budgetExceeded) throw new Error('planning_actual_budget_exhausted')
+    if (planningFailure) throw planningFailure
     const telemetryKey = env.ACTION_ENGINE_TELEMETRY_REDACTION_KEY ?? env.ACTION_ENGINE_MUTATION_LEASE_SECRET
     if (telemetryKey) {
       const telemetry = redactMissionTelemetry({

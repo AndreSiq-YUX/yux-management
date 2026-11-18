@@ -35,29 +35,55 @@ export async function getPlanningReservationAge(client: Queryable, cycleId: stri
   return prior.rows[0]?.age_ms ?? null
 }
 
-export function reconcilePlanningCost(value: unknown, reservedBrl: string) {
+export function normalizePlanningMeasurements(value: unknown) {
   const validAmount = (amount: unknown) => typeof amount === 'number' && Number.isFinite(amount) && amount >= 0 ? amount : null
-  const validCount = (count: unknown) => typeof count === 'number' && Number.isSafeInteger(count) && count >= 0 ? count : null
-  const stages = (Array.isArray(value) ? value : []).map(item => {
+  const validCount = (count: unknown) => typeof count === 'number' && Number.isSafeInteger(count) && count >= 0 && count <= 2_147_483_647 ? count : null
+  return (Array.isArray(value) ? value : []).map(item => {
     const row = item && typeof item === 'object' ? item as Record<string, unknown> : {}
+    const attemptsWithoutCost = validCount(row.attemptsWithoutCost)
+    const reportedCostUsd = attemptsWithoutCost ? null : validAmount(row.reportedCostUsd)
     return {
       node: typeof row.node === 'string' && /^[a-z0-9_.-]{1,80}$/.test(row.node) ? row.node : null,
       attemptCount: validCount(row.attemptCount),
       inputTokens: validCount(row.inputTokens),
       outputTokens: validCount(row.outputTokens),
       reasoningTokens: validCount(row.reasoningTokens),
-      reportedCostUsd: validAmount(row.reportedCostUsd),
+      knownInputTokens: validCount(row.inputTokens) ?? validCount(row.knownInputTokens),
+      knownOutputTokens: validCount(row.outputTokens) ?? validCount(row.knownOutputTokens),
+      knownReasoningTokens: validCount(row.reasoningTokens) ?? validCount(row.knownReasoningTokens),
+      attemptsWithoutCost,
+      reportedCostUsd,
+      knownCostSubtotalUsd: reportedCostUsd ?? validAmount(row.knownCostSubtotalUsd),
       ...(typeof row.requestFingerprint === 'string' && /^[a-f0-9]{64}$/.test(row.requestFingerprint)
         ? { requestFingerprint: row.requestFingerprint } : {}),
     }
   })
+}
+
+export function reconcilePlanningCost(value: unknown, reservedBrl: string) {
+  const stages = normalizePlanningMeasurements(value)
   const amounts = stages.map(stage => stage.reportedCostUsd)
   const reportedCostUsd = amounts.length && amounts.every(amount => amount !== null)
     ? amounts.reduce((total, amount) => total + amount, 0) : null
+  const knownCosts = stages.flatMap(stage => stage.knownCostSubtotalUsd === null ? [] : [stage.knownCostSubtotalUsd])
+  const knownCostSubtotalUsd = knownCosts.length ? knownCosts.reduce((total, amount) => total + amount, 0) : null
   const recognizedCostBrl = reportedCostUsd === 0 ? '0' : null
   return {
     budgetCostBrl: recognizedCostBrl ?? reservedBrl,
-    measurements: { stages, reportedCostUsd, recognizedCostBrl, pendingReconciliation: recognizedCostBrl === null },
+    measurements: { stages, reportedCostUsd, knownCostSubtotalUsd, recognizedCostBrl, pendingReconciliation: recognizedCostBrl === null },
+  }
+}
+
+export function reconcilePlanningUsage(cost: ReturnType<typeof reconcilePlanningCost>, reserved: PlanningUsage, latencyMs: number): PlanningUsage {
+  const { stages } = cost.measurements
+  function tokens(field: 'inputTokens' | 'outputTokens', knownField: 'knownInputTokens' | 'knownOutputTokens') {
+    const known = stages.reduce((total, stage) => total + (stage[knownField] ?? 0), 0)
+    return stages.length && stages.every(stage => stage[field] !== null) ? known : Math.max(known, reserved[field])
+  }
+  return {
+    calls: stages.length ? stages.reduce((total, stage) => total + Math.max(1, stage.attemptCount ?? 1), 0) : reserved.calls,
+    inputTokens: tokens('inputTokens', 'knownInputTokens'), outputTokens: tokens('outputTokens', 'knownOutputTokens'),
+    costBrl: cost.budgetCostBrl, latencyMs,
   }
 }
 

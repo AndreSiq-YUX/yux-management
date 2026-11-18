@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import json
 import logging
 import os
@@ -731,21 +731,41 @@ def create_app(
             raise HTTPException(status_code=422, detail=str(error)) from error
 
     @app.post("/missions/plan", dependencies=[Depends(require_runtime_token)])
-    def create_mission_plan(request: MissionPlanRequest) -> dict[str, Any]:
+    def create_mission_plan(
+        request: MissionPlanRequest,
+        pilot_usage: str | None = Header(default=None, alias="X-YUX-Mission-Pilot-Usage"),
+    ) -> dict[str, Any]:
         validate_tenant(request.organization_id, request.client_id, request.contract_id, profile_key="mission_supervisor")
+        packs = [request.action_pack, *request.pack_catalog]
+        meter = StrategyUsage() if pilot_usage == "1" and not any(pack.key == "radar_prospecting" for pack in packs) else None
+        value = request.model_dump()
         # The harness returns a proposal only. It never persists Action Engine
         # rows or produces an external effect.
         try:
-            return plan_mission(
-                request.model_dump(),
-                None if request.proposed_plan is not None else mission_planner(request.model_dump()),
-            )
-        except MissionSupervisorError as error:
-            status_code = 503 if str(error) == "mission_supervisor_model_unavailable" else 422
+            with meter.activate() if meter else nullcontext():
+                result = plan_mission(value, None if request.proposed_plan is not None else mission_planner(value))
+        except Exception as error:
+            if not isinstance(error, MissionSupervisorError) and not (meter and meter.attempts):
+                raise
+            code = str(error) if isinstance(error, MissionSupervisorError) else "mission_supervisor_processing_failed"
+            status_code = (503 if code == "mission_supervisor_model_unavailable" else 422) if isinstance(error, MissionSupervisorError) else 500
             logger.error("%s", json.dumps(mission_failure_diagnostic(
-                error, stage="planning", status=status_code, context=request.model_dump(),
+                error, stage="planning", status=status_code, context=value,
             )))
-            raise HTTPException(status_code=status_code, detail=str(error)) from error
+            detail = code
+            if meter and meter.attempts:
+                safe_code = code if re.fullmatch(r"(?:mission_supervisor|mission_plan|funnel_nurture|campaign_launch)_[a-z0-9_]{1,80}", code) else "mission_supervisor_processing_failed"
+                detail = {"code": safe_code, "planningMeasurements": meter.planning_measurements()}
+            raise HTTPException(status_code=status_code, detail=detail) from error
+        if meter and meter.attempts:
+            trace = result["trace"]
+            fingerprints = {row["node"]: row["requestFingerprint"] for row in trace.get("planningMeasurements", []) if row.get("requestFingerprint")}
+            measurements = meter.planning_measurements()
+            for row in measurements:
+                if row["node"] in fingerprints:
+                    row["requestFingerprint"] = fingerprints[row["node"]]
+            trace["planningMeasurements"] = measurements
+        return result
 
     @app.post("/missions/conversations/turn", dependencies=[Depends(require_runtime_token)])
     def mission_conversation_turn(

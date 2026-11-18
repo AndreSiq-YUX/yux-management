@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -31,6 +32,32 @@ class StrategyUsage:
     def total_cost_usd(self):
         costs = [attempt["costUsd"] for attempt in self.attempts]
         return sum(costs) if costs and all(cost is not None for cost in costs) else None
+
+    def planning_measurements(self):
+        grouped = defaultdict(list)
+        for attempt in self.attempts:
+            grouped[attempt["stage"]].append(attempt)
+        measurements = []
+        for node, attempts in grouped.items():
+            costs = [attempt["costUsd"] for attempt in attempts]
+            known_costs = [cost for cost in costs if cost is not None]
+            subtotal = sum(known_costs)
+            row = {
+                "node": node, "attemptCount": len(attempts), "attemptsWithoutCost": costs.count(None),
+                "reportedCostUsd": subtotal if None not in costs and isfinite(subtotal) else None,
+                "knownCostSubtotalUsd": subtotal if known_costs and isfinite(subtotal) else None,
+            }
+            for token, field, known_field in (
+                ("input", "inputTokens", "knownInputTokens"),
+                ("output", "outputTokens", "knownOutputTokens"),
+                ("reasoning", "reasoningTokens", "knownReasoningTokens"),
+            ):
+                counts = [(attempt["tokens"] or {}).get(token) for attempt in attempts]
+                known = sum(count for count in counts if count is not None)
+                row[field] = known if None not in counts else None
+                row[known_field] = known if any(count is not None for count in counts) else None
+            measurements.append(row)
+        return measurements
 
 
 @contextmanager
