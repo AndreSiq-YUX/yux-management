@@ -207,7 +207,8 @@ def pilot_capture(provenance="simulated"):
             authorizedSources=[{"ref": ref, "version": "1", "contentHash": tool.digest(ref),
                                 "reviewExcerpt": "Trecho sintético liberado para revisão.", "private": "server-only"}],
             retrievedReferences=[ref], citations=[ref], answer="Resposta sintética.", latencyMs=index + 1,
-            attempts=[{"kind": "generation", "costBrl": "0.01", "inputTokens": 11, "outputTokens": 9}],
+            attempts=[{"kind": "generation", **route, "requestedModels": [route["modelSnapshot"]],
+                       "costBrl": "0.01", "inputTokens": 11, "outputTokens": 9}],
             outcome={"accepted": False, "acceptedOnFirstReview": False, "priceOrScopeCorrected": None},
         )
     return cases, batch
@@ -293,6 +294,35 @@ def test_pilot_reference_rate_counts_only_citations_both_reviewers_confirm():
     assert group["referenceValidation"] == {"emitted": 33, "valid": 31, "rate": 31 / 33}
     assert "insufficient_valid_references" in group["reasons"]
     assert group["acceptance"] == "failed"
+
+
+def test_receipt_import_keeps_unreconciled_costs_and_validates_every_paid_route():
+    tool = pilot_comparison
+    cases, batch = pilot_capture("live")
+    row = batch["executions"][0]
+    row["attempts"] = None
+    trace = row["traceId"]
+    provider, model = row["provider"], row["modelSnapshot"]
+    receipts = [
+        {"kind": "retrieval", "provider": provider, "model": "embedding", "requestedModels": ["embedding"],
+         "status": "received", "tokens": {"input": 4}, "costUsd": 0.01, "costBrl": "0.05"},
+        {"kind": "generation", "provider": provider, "model": model, "requestedModels": ["fallback-not-approved", model],
+         "status": "started", "tokens": None, "costUsd": None},
+        {"kind": "generation", "provider": provider, "model": model, "requestedModels": [model],
+         "status": "received", "tokens": {"input": 11, "output": 9, "reasoning": 2}, "costUsd": 0.02},
+    ]
+    with pytest.raises(ValueError, match="metered_trace_outside_capture"):
+        tool.attach_metered_attempts(batch, {"unknown-trace": receipts})
+    tool.attach_metered_attempts(batch, {trace: receipts})
+    assert row["attempts"][2]["costBrl"] is None
+    assert row["attempts"][2]["reasoningTokens"] == 2
+    assert tool.economics([row])["knownCostSubtotalBrl"] == "0.05"
+    assert tool.economics([row])["totalCostBrl"] is None
+    batch["authorization"]["routes"].append({"provider": provider, "modelSnapshot": "embedding"})
+    with pytest.raises(ValueError, match="attempt_route_outside_authorization"):
+        tool.validate_capture(batch, cases, batch["corpusHash"])
+    batch["authorization"]["routes"].append({"provider": provider, "modelSnapshot": "fallback-not-approved"})
+    tool.validate_capture(batch, cases, batch["corpusHash"])
 
 
 def test_pilot_economics_include_all_attempts_and_keep_unknown_cost_and_zero_denominators_pending():

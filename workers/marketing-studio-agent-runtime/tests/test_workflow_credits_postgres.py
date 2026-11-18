@@ -246,6 +246,7 @@ def test_mission_turn_recovers_completed_response_after_worker_replay(billing):
         return mission_turn_output()
 
     client, body, headers, _ = mission_turn(billing, transport)
+    body["mission_prompt"] = {"version": 1, "instructions": {"synthesizer": "Confirme o objetivo da missão."}}
     endpoint = "/missions/conversations/turn"
     with ThreadPoolExecutor() as executor:
         running = executor.submit(client.post, endpoint, json=body, headers=headers)
@@ -282,8 +283,17 @@ def test_mission_turn_recovers_completed_response_after_worker_replay(billing):
     assert measured["action"] == "agent_runtime_mission_conversation_turn"
     assert str(measured["agent_run_id"]) == completed.json()["retrievalTraceId"]
     assert measured["attempts"][0]["costUsd"] is None
+    assert measured["attempts"][0]["requestedModels"] == ["openai/gpt-4.1-mini"]
+    assert measured["attempts"][0]["kind"] == "generation"
     assert measured["attempts"][0]["tokens"]["reasoning"] == 2
     assert measured["attempts"][0]["stage"] == "synthesizer"
+    context = db.execute(
+        "SELECT safe_context FROM public.agent_context_snapshots WHERE run_id=%s AND context_kind='runtime'",
+        [measured["agent_run_id"]],
+    ).fetchone()["safe_context"]
+    assert context["organization_prompt_version"] == 1
+    assert context["effective_model"] == measured["attempts"][0]["model"]
+    assert "Confirme o objetivo da missão." not in json.dumps(context)
     assert len(ledger(db, contract)) == 1
 
 

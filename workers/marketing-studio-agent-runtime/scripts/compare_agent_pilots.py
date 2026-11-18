@@ -159,23 +159,55 @@ def validate_capture(batch, cases, corpus_hash):
         require(isinstance(retrieved, list) and all(isinstance(ref, str) for ref in retrieved)
                 and isinstance(citations, list) and all(isinstance(ref, str) for ref in citations), "reference_lists_required")
         require(isinstance(execution.get("answer"), str) and nonnegative_integer(execution.get("latencyMs")), "answer_and_latency_required")
-        validate_economics(execution)
+        validate_economics(execution, approved_routes)
     require(seen == expected, "paired_capture_coverage_invalid")
 
 
-def validate_economics(execution):
+def validate_economics(execution, approved_routes):
     attempts = execution.get("attempts")
     require(attempts is None or isinstance(attempts, list), "invalid_attempt_records")
     for attempt in attempts or []:
         require(isinstance(attempt, dict) and attempt.get("kind") in ("generation", "retrieval") and "costBrl" in attempt, "invalid_attempt_record")
+        if approved_routes is not None:
+            provider, model = provider_model(attempt)
+            requested = attempt.get("requestedModels")
+            require(isinstance(requested, list) and requested and all(isinstance(item, str) and item.strip() for item in requested),
+                    "attempt_requested_models_required")
+            require(all((provider, name) in approved_routes for name in (model, *requested)), "attempt_route_outside_authorization")
         if attempt["costBrl"] is not None:
             amount(attempt["costBrl"])
-        require(all(attempt.get(key) is None or nonnegative_integer(attempt[key]) for key in ("inputTokens", "outputTokens")), "invalid_attempt_tokens")
+        require(all(attempt.get(key) is None or nonnegative_integer(attempt[key])
+                    for key in ("inputTokens", "outputTokens", "reasoningTokens")), "invalid_attempt_tokens")
     outcome = execution.get("outcome") or {}
     require(isinstance(outcome, dict), "invalid_outcome_review")
     for key in ("accepted", "acceptedOnFirstReview", "priceOrScopeCorrected"):
         require(outcome.get(key) is None or isinstance(outcome[key], bool), "invalid_outcome_review")
     require(outcome.get("acceptedOnFirstReview") is not True or outcome.get("accepted") is True, "first_review_requires_acceptance")
+
+
+def attach_metered_attempts(batch, receipts):
+    executions = [row for row in batch["executions"] if row.get("traceId")]
+    by_trace = {row["traceId"]: row for row in executions}
+    require(len(by_trace) == len(executions), "unique_live_trace_required")
+    require(isinstance(receipts, dict) and receipts.keys() <= by_trace.keys(), "metered_trace_outside_capture")
+    for trace_id, entries in receipts.items():
+        require(isinstance(entries, list), "invalid_attempt_records")
+        row = by_trace[trace_id]
+        imported = []
+        for attempt in entries:
+            require(isinstance(attempt, dict) and attempt.get("status") in ("started", "received"), "invalid_metered_attempt")
+            tokens = attempt.get("tokens") or {}
+            require(isinstance(tokens, dict), "invalid_attempt_tokens")
+            kind = attempt.get("kind") or ("retrieval" if attempt.get("stage") == "retrieval" else "generation")
+            imported.append({
+                "kind": kind, "provider": attempt.get("provider"), "modelSnapshot": attempt.get("model"),
+                "requestedModels": attempt.get("requestedModels"), "costBrl": attempt.get("costBrl"),
+                "inputTokens": tokens.get("input"), "outputTokens": tokens.get("output"), "reasoningTokens": tokens.get("reasoning"),
+            })
+        require(row.get("attempts") in (None, imported), "metered_attempts_would_replace_existing_capture")
+        row["attempts"] = imported
+        validate_economics(row, None)
+    return batch
 
 
 def blind_packet(executions, cases):
@@ -323,6 +355,7 @@ def economics(executions):
         "meanCallsPerCase": len(attempts) / len(executions) if executions and not unmetered else None,
         "inputTokens": total_tokens(attempts, unmetered, "inputTokens"),
         "outputTokens": total_tokens(attempts, unmetered, "outputTokens"),
+        "reasoningTokens": total_tokens([attempt for attempt in attempts if attempt["kind"] == "generation"], unmetered, "reasoningTokens"),
         "approved": approvals, "awaitingReview": len(executions) - len(reviewed),
         "firstReviewSample": len(first_reviews),
         "firstReviewAcceptRate": sum(first_reviews) / len(first_reviews) if first_reviews else None,
@@ -340,11 +373,12 @@ def total_tokens(attempts, unmetered, field):
 
 def main():
     parser = argparse.ArgumentParser(description="Freeze, blind and score pilot captures without provider access.")
-    parser.add_argument("action", choices=("template", "blind", "score"))
+    parser.add_argument("action", choices=("template", "attach-attempts", "blind", "score"))
     parser.add_argument("--capture", type=Path)
     parser.add_argument("--review-a", type=Path)
     parser.add_argument("--review-b", type=Path)
     parser.add_argument("--adjudications", type=Path)
+    parser.add_argument("--runtime-receipts", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     cases, corpus_hash = load_cohort()
@@ -354,12 +388,18 @@ def main():
         if not args.capture:
             parser.error("--capture is required")
         batch = json.loads(args.capture.read_text(encoding="utf-8"))
-        validate_capture(batch, cases, corpus_hash)
-        if args.action == "blind":
+        if args.action == "attach-attempts":
+            if not args.runtime_receipts:
+                parser.error("--runtime-receipts is required")
+            require(batch.get("schemaVersion") == 1 and batch.get("corpusHash") == corpus_hash, "frozen_corpus_mismatch")
+            result = attach_metered_attempts(batch, json.loads(args.runtime_receipts.read_text(encoding="utf-8")))
+        elif args.action == "blind":
+            validate_capture(batch, cases, corpus_hash)
             result = blind_packet(batch["executions"], cases)
         else:
             if not args.review_a or not args.review_b:
                 parser.error("two independent review files are required")
+            validate_capture(batch, cases, corpus_hash)
             result = compare(batch, cases, read_jsonl(args.review_a), read_jsonl(args.review_b),
                              read_jsonl(args.adjudications) if args.adjudications else ())
     with args.output.open("x", encoding="utf-8") as output:

@@ -109,6 +109,10 @@ def _presales_context(retrieval_context: dict[str, Any] | None) -> dict[str, Any
     }
 
 
+def _source_versions(sources: list[dict[str, Any]]) -> list[dict[str, str]]:
+    return [{"ref": source["ref"], "source_version": source["version"], "contentHash": source["contentHash"]} for source in sources]
+
+
 def choose_workflow_key(mode: str | None, source: str) -> str:
     if source == "whatsapp":
         return "whatsapp_conversation_turn"
@@ -312,10 +316,20 @@ class StrategyWorkflowEngine:
         ) else {}
         organization_prompt_version = presales_prompt_version
         source_rules = presales_source_rules if presales_candidate and profile_key == "growth_strategist" else None
-        if source == "mission_intake" and workflow_key == "mission_intake_conversation" and mission_prompt:
+        mission_pilot = source == "mission_intake" and workflow_key == "mission_intake_conversation" and bool(mission_prompt)
+        if mission_pilot:
             stage_instructions = mission_prompt["instructions"]
             organization_prompt_version = mission_prompt["version"]
             source_rules = mission_prompt.get("source_rules")
+        pilot_trace = presales_candidate or mission_pilot
+        trace_query = {"message_hash": stable_hash(message)} if pilot_trace else {"message": message}
+        run_input = {"mode": mode, **trace_query}
+        if pilot_trace:
+            run_input.update(
+                organization_prompt_version=organization_prompt_version,
+                input_context_hash=stable_hash(retrieval_context or {}),
+                workflow_spec_hash=stable_hash(workflow_spec),
+            )
         run = self.trace.start_run(
             {
                 "organization_id": organization_id,
@@ -327,12 +341,11 @@ class StrategyWorkflowEngine:
                 "profile_key": profile_key,
                 "assistant_id": assistant_id,
                 "workflow_key": workflow_key,
-                "input_payload": {"mode": mode, **({"message_hash": stable_hash(message)} if presales_candidate else {"message": message})},
+                "input_payload": run_input,
             }
         )
         run_id = run["id"]
         try:
-            trace_query = {"message_hash": stable_hash(message)} if presales_candidate else {"message": message}
             with self.trace.step(run_id, "classify", "classify", trace_query) as step:
                 classification = classify_intent_and_stage(message, source)
                 step.succeed(classification, classification)
@@ -393,14 +406,15 @@ class StrategyWorkflowEngine:
 
             source_report = apply_source_rules(retrieval_context or {}, source_rules) if source_rules else None
             if retrieval_context:
-                with self.trace.step(run_id, "retrieval", "retrieval", trace_query if presales_candidate else {"query": message}) as step:
+                with self.trace.step(run_id, "retrieval", "retrieval", trace_query if pilot_trace else {"query": message}) as step:
                     step_record = step.succeed({"result_ids": (retrieval_context.get("retrieval_log") or {}).get("result_ids", [])})
                     self.trace.record_context(
                         run_id=run_id,
                         step_id=step_record["id"],
                         profile_key=profile_key,
                         context_kind="rag",
-                        safe_context={"source_ids": sorted(evidence_ids(retrieval_context))} if presales_candidate else retrieval_context,
+                        safe_context={"source_ids": sorted(evidence_ids(retrieval_context)), "audience": retrieval_audience}
+                        if pilot_trace else retrieval_context,
                         card_ids=[item.get("id") for item in _as_list(retrieval_context.get("cards")) if isinstance(item, dict) and item.get("id")],
                         chunk_ids=[item.get("id") for item in _as_list(retrieval_context.get("chunks")) if isinstance(item, dict) and item.get("id")],
                     )
@@ -460,7 +474,14 @@ class StrategyWorkflowEngine:
                     synthesis = synthesize_workflow_result(message, plan, subagent_outputs, retrieval_context)
                 if presales_candidate and (receipt := synthesis.pop("_generation_receipt", None)):
                     generation_receipts.append(receipt)
-                step.succeed(synthesis, {"supporting_cards": synthesis.get("supporting_cards", [])})
+                citations = {"supporting_cards": synthesis.get("supporting_cards", [])}
+                if pilot_trace:
+                    cited_sources = synthesis.get("supporting_sources" if presales_candidate else "sources", [])
+                    citations["source_versions"] = _source_versions(cited_sources)
+                step.succeed(
+                    {"response_hash": stable_hash(synthesis)} if pilot_trace else synthesis,
+                    citations,
+                )
 
             action_key = "send_external_message" if source == "whatsapp" else "client_visible_recommendation"
             with self.trace.step(run_id, "policy", "policy", {"action_key": action_key}) as step:
@@ -839,13 +860,15 @@ class StrategyWorkflowEngine:
         synthesis["supporting_cards"] = (
             _verified_ids(synthesis.get("supporting_cards"), set(card_ids)) if presales_candidate else card_ids
         )
-        if presales_candidate and synthesis["supporting_cards"]:
-            from .mission_conversation import build_mission_source_catalog
-            supported = set(synthesis["supporting_cards"])
-            synthesis["supporting_sources"] = [
-                item.model_dump() for item in build_mission_source_catalog(retrieval_context, "internal_operator")
-                if item.kind == "strategy_card" and item.id in supported
-            ]
+        if presales_candidate:
+            synthesis["supporting_sources"] = []
+            if synthesis["supporting_cards"]:
+                from .mission_conversation import build_mission_source_catalog
+                supported = set(synthesis["supporting_cards"])
+                synthesis["supporting_sources"] = [
+                    item.model_dump() for item in build_mission_source_catalog(retrieval_context, "internal_operator")
+                    if item.kind == "strategy_card" and item.id in supported
+                ]
         synthesis["input_hash"] = stable_hash({"message": message, "plan": plan})
         synthesis["model"] = provider["model"]
         synthesis["provider"] = provider["provider"]
@@ -912,7 +935,7 @@ class StrategyWorkflowEngine:
             "stage_key": stage_key,
             "stage_instruction_applied": bool(stage_instruction),
             "organization_prompt_version": organization_prompt_version if presales_candidate or output_contract else None,
-            "record_workflow_attempts": presales_candidate,
+            "record_workflow_attempts": presales_candidate or bool(output_contract and organization_prompt_version),
             "context": {
                 "objective": None if presales_candidate else objective,
                 "strategy_context": strategy_context,
@@ -942,8 +965,6 @@ class StrategyWorkflowEngine:
         with strategy_usage_stage(stage_key):
             result = self.harness.execute_agent(agent_state)
         output = result["agent_runs"][-1]["output_payload"]
-        if model_route_key == "action_engine_strategist" and output.get("finish_reason") == "length":
-            raise AgentContractError("mission_conversation_output_truncated")
         run = result["agent_runs"][-1]
         trace = run.get("model_request_hash")
         if trace and (presales_candidate or stage_instruction or organization_prompt_version and output_contract):
@@ -956,12 +977,17 @@ class StrategyWorkflowEngine:
                     "organization_prompt_version": organization_prompt_version,
                     "stage_instruction_applied": bool(stage_instruction),
                     "stage": stage_key,
+                    "effective_provider": run["model_provider"],
+                    "effective_model": run["model_name"],
                     "source_ids": sorted(evidence_ids(retrieval_context)),
+                    "retrieved_sources": _source_versions(mission_source_catalog or []),
                     "model_usage": output.get("model_usage"),
                     "provider_cost_usd": output.get("cost_usd"),
                     "attempts": output.get("attempts"),
                 },
             )
+        if model_route_key == "action_engine_strategist" and output.get("finish_reason") == "length":
+            raise AgentContractError("mission_conversation_output_truncated")
         if output.get("dry_run") or not output.get("content"):
             raise RuntimeError("agent_provider_output_required")
         return output

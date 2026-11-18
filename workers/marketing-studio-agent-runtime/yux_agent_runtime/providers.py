@@ -184,6 +184,7 @@ class OpenRouterClient:
             payload,
             "POST",
             provider=self.provider_name,
+            kind="generation",
         )
         from .radar_receipts import capture_radar_raw_response
         capture_radar_raw_response(response)
@@ -252,6 +253,7 @@ class OpenRouterClient:
             },
             "POST",
             provider=self.provider_name,
+            kind="retrieval",
         )
         if not isinstance(response, dict):
             raise ProviderRequestError("invalid_openrouter_embeddings_response")

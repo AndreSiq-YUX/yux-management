@@ -43,12 +43,14 @@ def test_presales_synthesis_uses_late_constraints_and_only_verified_source_ids()
 
 
 def test_preview_and_real_adapter_share_messages_without_persisting_preview():
-    engine, calls = test_live_workflows.LiveWorkflowTest().make_engine([json.dumps({"answer": "Simulação", "supporting_cards": []})])
+    engine, calls = test_live_workflows.LiveWorkflowTest().make_engine([json.dumps({
+        "answer": "Simulação", "supporting_cards": [], "supporting_sources": [{"ref": "yux:invented"}],
+    })])
     frozen = execution([])
     preview = preview_workflow(engine, frozen)
     assert calls == []
     assert engine.store.tables == {}
-    engine.execute(**frozen)
+    assert engine.execute(**frozen)["synthesis"]["supporting_sources"] == []
     sent = calls[0]
     stage = preview["requests"][0]
     assert stage["providerPayload"] == {key: value for key, value in sent.items() if key != "session_id"}
@@ -84,12 +86,20 @@ def test_named_presales_instruction_changes_one_stage_and_preserves_protected_ob
     traces = [item["safe_context"] for item in engine.store.list("agent_context_snapshots") if item["context_kind"] == "runtime"]
     assert {trace["stage"]: trace["stage_instruction_applied"] for trace in traces} == {"finance": True, "synthesizer": False}
     assert all(trace["organization_prompt_version"] == 7 for trace in traces)
+    assert [trace["provider_request_fingerprint"] for trace in traces] == [
+        stable_hash({key: value for key, value in call.items() if key != "session_id"}) for call in calls
+    ]
+    assert {(trace["effective_provider"], trace["effective_model"]) for trace in traces} == {("openrouter", calls[0]["model"])}
 
 
 def test_mission_conversation_adjustment_stays_in_protected_system_context():
+    source_id = "11111111-1111-1111-1111-111111111111"
+    source_ref = f"yux:{source_id}"
     engine, calls = test_live_workflows.LiveWorkflowTest().make_engine([
-        json.dumps({"kind": "message", "reply": "Vamos conferir o contexto.", "readiness": {"status": "needs_information"}}),
+        json.dumps({"kind": "message", "reply": "Vamos conferir o contexto.", "readiness": {"status": "needs_information"},
+                    "sourceRefs": [source_ref]}),
     ])
+    engine.harness.routes[1]["model_name"] = "synthetic/chat-2026-11-18"
     workflow = MissionConversationWorkflow(engine)
     instruction = "Priorize a pergunta sobre as regiões atendidas."
     turn = MissionConversationTurnRequestWire.model_validate({
@@ -99,6 +109,9 @@ def test_mission_conversation_adjustment_stays_in_protected_system_context():
     })
     execution = workflow.prepare_turn(turn)
     assert "mission_prompt" not in execution["retrieval_context"]["mission_request"]
+    execution["retrieval_context"]["cards"] = [
+        {"id": source_id, "updated_at": "2026-11-18T05:00:00Z", "concept": "Contexto reservado da conta."},
+    ]
     stage = preview_workflow(engine, execution)["requests"][0]
     assert not calls
     assert stage["stageInstructionApplied"]
@@ -109,6 +122,22 @@ def test_mission_conversation_adjustment_stays_in_protected_system_context():
     response = workflow.respond(turn, execution=execution).model_dump()
     assert "mission_prompt" not in response
     assert stage["providerPayload"] == {key: value for key, value in calls[0].items() if key != "session_id"}
+    snapshots = {item["context_kind"]: item["safe_context"] for item in engine.store.list("agent_context_snapshots")}
+    assert snapshots["rag"] == {"audience": "client_user", "source_ids": [source_id]}
+    assert snapshots["runtime"]["retrieved_sources"] == [{
+        "ref": source_ref, "source_version": response["sources"][0]["version"], "contentHash": response["sources"][0]["contentHash"],
+    }]
+    assert snapshots["runtime"]["provider_request_fingerprint"] == stage["providerFingerprint"]
+    assert snapshots["runtime"]["effective_model"] == calls[0]["model"]
+    run = engine.store.list("agent_execution_runs")[0]
+    assert run["input_payload"]["message_hash"] == stable_hash(turn.user_message)
+    assert run["input_payload"]["input_context_hash"] == stable_hash(execution["retrieval_context"])
+    assert run["output_payload"]["synthesis"] == response
+    steps = {step["step_key"]: step for step in engine.store.list("agent_execution_steps")}
+    assert steps["synthesizer"]["output_payload"] == {"response_hash": stable_hash(response)}
+    assert steps["synthesizer"]["decision"]["source_versions"] == snapshots["runtime"]["retrieved_sources"]
+    assert "Contexto reservado da conta." not in json.dumps([snapshots, steps])
+    assert turn.user_message not in json.dumps([snapshots, steps, run["input_payload"]])
 
 
 def test_mission_portfolio_excludes_other_contracts_and_accounts():

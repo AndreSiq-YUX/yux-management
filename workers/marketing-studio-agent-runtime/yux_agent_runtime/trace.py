@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
+import re
 from time import perf_counter
 from typing import Any
 from uuid import UUID
@@ -20,11 +21,10 @@ def stable_hash(payload: Any) -> str:
 
 _CONTENT_KEYS = {"message", "body", "content", "content_text", "user_input", "text"}
 _SECRET_KEYS = {"authorization", "api_key", "apikey", "access_token", "refresh_token", "secret", "token", "credential", "password", "cookie"}
+_FINGERPRINT_KEYS = {"request_fingerprint", "provider_request_fingerprint", "response_hash", "contentHash", "source_version"}
 
 
 def _redact_text(value: str) -> str:
-    import re
-
     value = re.sub(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", "[email redacted]", value, flags=re.IGNORECASE)
     value = re.sub(r"(?<!\w)\+?\d[\d\s().-]{7,}\d", "[phone redacted]", value)
     value = re.sub(r"\bBearer\s+\S+", "Bearer [secret redacted]", value, flags=re.IGNORECASE)
@@ -39,6 +39,16 @@ def sanitize_trace_payload(value: Any, key: str = "") -> Any:
     if isinstance(value, list):
         return [sanitize_trace_payload(item, key) for item in value]
     if isinstance(value, str):
+        if key in _FINGERPRINT_KEYS and re.fullmatch(r"[0-9a-f]{64}", value):
+            return value
+        if key == "effective_model" and re.fullmatch(r"(?=.*[A-Za-z])[A-Za-z0-9][A-Za-z0-9./_:@-]{0,199}", value):
+            return value
+        if key == "source_version" and re.fullmatch(r"[0-9]{1,10}", value):
+            return value
+        if key in {"ref", "source_ids", "supporting_cards", "source_version"} and re.fullmatch(
+            r"(?:(?:yux|customer|memory):)?[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", value,
+        ):
+            return value
         redacted = _redact_text(value)
         if key.lower() in _CONTENT_KEYS:
             return {"preview": redacted[:240], "content_hash": sha256(value.encode("utf-8")).hexdigest()}

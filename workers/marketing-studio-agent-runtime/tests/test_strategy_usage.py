@@ -11,7 +11,8 @@ def test_embedding_and_fallback_attempts_are_reported_without_inventing_missing_
             return {"data": [{"embedding": [0.3]}], "usage": {"total_tokens": 4, "cost": 0}}
         if payload["model"] == "primary":
             raise ProviderRequestError("simulated_transport_timeout")
-        return {"choices": [{"message": {"content": "ok"}}], "usage": {"completion_tokens": 4, "cost": 0.02}}
+        return {"model": "secondary:effective", "choices": [{"message": {"content": "ok"}}],
+                "usage": {"completion_tokens": 4, "cost": 0.02}}
 
     provider = OpenRouterClient(api_key="synthetic", transport=transport)
     routed = RoutedLlmClient(
@@ -31,6 +32,10 @@ def test_embedding_and_fallback_attempts_are_reported_without_inventing_missing_
     ]
     assert meter.total_cost_usd() is None
     assert meter.attempts[-1]["tokens"] == {"input": None, "output": 4, "total": None, "reasoning": None}
+    assert [(item["kind"], item["requestedModels"], item["model"]) for item in meter.attempts] == [
+        ("retrieval", ["qwen/qwen3-embedding-8b"], "qwen/qwen3-embedding-8b"),
+        ("generation", ["primary"], "primary"), ("generation", ["secondary"], "secondary:effective"),
+    ]
 
 
 def test_reservation_write_failure_prevents_transport():

@@ -42,12 +42,13 @@ def strategy_usage_stage(stage: str):
         _stage.reset(token)
 
 
-def strategy_metered_transport(transport, url, headers, payload, method, *, provider):
+def strategy_metered_transport(transport, url, headers, payload, method, *, provider, kind):
     meter = _meter.get()
     if meter is None:
         return transport(url, headers, payload, method)
     attempt = {
-        "stage": _stage.get(), "provider": provider, "model": payload["model"],
+        "stage": _stage.get(), "kind": kind, "provider": provider, "model": payload["model"],
+        "requestedModels": payload.get("models") or [payload["model"]],
         "status": "started", "tokens": None, "costUsd": None,
     }
     meter.attempts.append(attempt)
