@@ -376,6 +376,33 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     const importRequest = (item: typeof latest) => call('POST', endpoint + item.id + '/import', {
       organizationId, leadId, expectedCatalogVersion: item.catalogVersion,
     })
+    const pending = await call('POST', '/api/functions/run-strategy-admin-chat', {
+      body: { message: 'Analise antes de mover para a lixeira.', organizationId, leadId, mode: 'proposal',
+        contractId: fixtureIds.contractA },
+    })
+    expect(pending.statusCode, pending.body).toBe(202)
+    const queuedAnalysis = job.mock.lastCall![1]
+    await admin.query('UPDATE public.leads SET deleted_at=now(), deleted_by=$2 WHERE id=$1', [leadId, fixtureUsers.yux_admin.id])
+    try {
+      const opportunities = await call('GET', `${base}/opportunities?organizationId=${organizationId}&contractId=${fixtureIds.contractA}`)
+      expect(opportunities.json()).toMatchObject({ enabled: true, leads: [] })
+      const queued = job.mock.calls.length
+      const trashed = await call('POST', '/api/functions/run-strategy-admin-chat', {
+        body: { message: 'Reanalise a oportunidade.', sessionId: second.session.id, mode: 'proposal' },
+      })
+      expect(trashed.statusCode, trashed.body).toBe(404)
+      expect(job.mock.calls).toHaveLength(queued)
+      const runtimeCalls = received.length
+      await expect(runWithDatabaseRequestContext({ role: 'client_member', organizationIds: [organizationId], serviceRole: 'worker' },
+        () => handleStrategyAdminChat(worker, app.config, queuedAnalysis))).rejects.toThrow('strategy_presales_opportunity_out_of_scope')
+      expect(received).toHaveLength(runtimeCalls)
+      expect((await call('GET', endpoint + leadId + '?organizationId=' + organizationId)).json()).toEqual([])
+      const rejected = await importRequest(latest)
+      expect(rejected.statusCode, rejected.body).toBe(404)
+      expect(rejected.json().error).toBe('strategy_presales_opportunity_out_of_scope')
+    } finally {
+      await admin.query('UPDATE public.leads SET deleted_at=NULL, deleted_by=NULL WHERE id=$1', [leadId])
+    }
     const [draftOne, draftTwo] = await Promise.all([importRequest(latest), importRequest(latest)])
     expect(draftOne.statusCode, draftOne.body).toBe(200)
     expect(draftTwo.statusCode, draftTwo.body).toBe(200)

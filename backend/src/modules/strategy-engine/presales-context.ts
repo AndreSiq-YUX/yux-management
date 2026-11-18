@@ -60,14 +60,20 @@ export async function listPresalesLeads(pool: Queryable, organizationId: string,
     `SELECT lead.id, lead.name, lead.company, lead.stage
      FROM public.leads lead
      LEFT JOIN public.crm_instances crm ON crm.id = lead.crm_instance_id AND crm.organization_id = lead.organization_id
-     WHERE lead.organization_id = $1 AND lead.stage NOT IN ('WON', 'LOST')
+     WHERE lead.organization_id = $1 AND lead.deleted_at IS NULL AND lead.stage NOT IN ('WON', 'LOST')
        AND (lead.crm_instance_id IS NULL OR crm.contract_id = $2::uuid)
      ORDER BY lead.updated_at DESC, lead.id LIMIT 100`,
     [organizationId, contractId ?? null],
   )).rows
 }
 
-export async function loadPresalesLead(pool: Queryable, organizationId: string, leadId: string, contractId?: string) {
+export async function loadPresalesLead(
+  pool: Queryable,
+  organizationId: string,
+  leadId: string,
+  contractId?: string,
+  { lock = false }: { lock?: boolean } = {},
+) {
   const { rows } = await pool.query<{
     id: string; name: string; company: string | null; stage: string; crmInstanceId: string | null
     summary: string | null; budget: string | null; painPoints: string[] | null; goals: string[] | null; timeline: string | null
@@ -80,8 +86,9 @@ export async function loadPresalesLead(pool: Queryable, organizationId: string, 
      LEFT JOIN public.crm_instances crm ON crm.id = lead.crm_instance_id AND crm.organization_id = lead.organization_id
      LEFT JOIN public.commercial_diagnostics diagnostic
        ON diagnostic.lead_id = lead.id AND diagnostic.organization_id = lead.organization_id
-     WHERE lead.organization_id = $1 AND lead.id = $2 AND lead.stage NOT IN ('WON', 'LOST')
-       AND (lead.crm_instance_id IS NULL OR crm.contract_id = $3::uuid)`,
+     WHERE lead.organization_id = $1 AND lead.id = $2 AND lead.deleted_at IS NULL AND lead.stage NOT IN ('WON', 'LOST')
+       AND (lead.crm_instance_id IS NULL OR crm.contract_id = $3::uuid)
+     ${lock ? 'FOR SHARE OF lead' : ''}`,
     [organizationId, leadId, contractId ?? null],
   )
   if (!rows[0]) throw new ApiError(404, 'strategy_presales_opportunity_out_of_scope')

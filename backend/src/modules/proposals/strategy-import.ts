@@ -12,7 +12,9 @@ export async function listStrategyRecommendations(pool: Queryable, input: Scope)
         m.safe_context->>'catalogVersion' AS catalog_version
      FROM public.yux_strategy_chat_messages m
      JOIN public.yux_strategy_chat_sessions s ON s.id = m.session_id
+     JOIN public.leads lead ON lead.id = s.presales_lead_id AND lead.organization_id = s.organization_id
      WHERE s.organization_id = $1 AND s.presales_lead_id = $2
+       AND lead.deleted_at IS NULL
        AND m.role = 'assistant' AND m.status = 'completed'
        AND m.safe_context->'recommendation'->>'decision' = 'recommend'
      ORDER BY m.created_at DESC, m.id LIMIT 10`,
@@ -58,10 +60,10 @@ export async function importStrategyRecommendation(pool: pg.Pool, input: Scope &
       )
       if (!contract.rows.length) throw new ApiError(409, 'strategy_recommendation_contract_inactive')
     }
-    const [prospect, catalog] = await Promise.all([
-      loadPresalesLead(client, input.organizationId, input.leadId, message.contract_id ?? undefined),
-      loadCommercialCatalog(client, input.organizationId),
-    ])
+    const prospect = await loadPresalesLead(
+      client, input.organizationId, input.leadId, message.contract_id ?? undefined, { lock: true },
+    )
+    const catalog = await loadCommercialCatalog(client, input.organizationId)
     if (catalog.version !== input.expectedCatalogVersion || message.scope.catalogVersion !== catalog.version) {
       throw new ApiError(409, 'strategy_recommendation_catalog_changed')
     }

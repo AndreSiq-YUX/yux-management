@@ -82,12 +82,16 @@ A migração 0268 registra, em área privada, as referências que entraram em ca
 
 Aplique a migração antes de atualizar os serviços e atualize a API e o worker antes do runtime, para que o contrato aceite as referências privadas de entrada. Para turnos anteriores à migração, a verificação usa as referências que já estavam registradas nas respostas. Na homologação, revogue uma fonte sintética após o primeiro turno e confira o briefing recomposto, a recusa de uma resposta reaproveitada e o bloqueio do planejamento que ainda dependa da versão revogada.
 
-## Contas e fontes a validar
+## Contas e fontes dos pilotos
 
-| Piloto | Referência disponível | Evidência operacional pendente |
+Consulta de produção em 18/11/2026 com sessão de Admin YUX. O contexto do workspace confirmou os contratos ativos e os módulos Action Engine, CRM e Automações nos dois escopos. A criação de missões no Admin está no modo conversa nas duas subcontas. A prontidão dos canais e dos executores precisa de verificação por capacidade.
+
+| Piloto | Cadastro observado | Revisão operacional |
 |---|---|---|
-| Villeman e Massas | Auditoria histórica de 14/10/2026 registrou a organização `972e8163-81b7-4e3f-b964-777110b660b8` e o contrato `6675ead3-946c-4312-91b0-b482bbcd27e2`. [Diagnóstico do Radar](../superpowers/plans/2026-10-14-radar-creditos-diagnostico-retomada.md) | Confirmar contrato e estado atual. O representante revisa estratégia, portfólio, regiões, logística e materiais externos. Operações confirma os canais e capacidades disponíveis. |
-| YUX Captação | Auditoria histórica registrou recuperação autorizada de conhecimento compartilhado. [Runbook do Radar](radar-action-engine-rollout.md) | Confirmar a subconta e o contrato usados na homologação. O comercial aprova as ofertas e seleciona a oportunidade. Operações confirma integrações e prontidão para missões de captação. |
+| Villeman e Massas | Subconta `972e8163-81b7-4e3f-b964-777110b660b8`, contrato **Personalizado** `6675ead3-946c-4312-91b0-b482bbcd27e2`. Perfil salvo sem descrição, posicionamento ou regiões. A consulta retornou zero itens ativos no portfólio, zero documentos de conhecimento do contrato e nenhum perfil de marca. | O representante confirma linhas, compradores, território, logística, condições e materiais liberados. O cenário de cozinhas industriais em São Paulo fica como referência de teste até a revisão. Operações valida os vínculos das fontes e a preparação de rascunhos. |
+| YUX Captação | Subconta `249d6c3d-d92d-447d-9f67-5f4db99ee04c`, contrato **Captação** `a90855c7-fb2c-4a52-8316-59cb76288a3c`. Perfil salvo com descrição, posicionamento e três regiões. A consulta retornou nove itens ativos no portfólio, marca em rascunho e dois documentos no contrato, sendo um indexado e um publicado. A consulta de preços do pacote vinculado ao contrato retornou zero regras. | O comercial revisa perfil do cliente ideal, ofertas vendáveis e condições, escolhe a oportunidade e aprova um modelo ativo com regra de preço base por oferta. Verificar na prévia a aplicação da versão publicada do documento e o público autorizado. Operações valida a marca, os estágios do CRM e a preparação da missão. |
+
+Portfólio, contrato e catálogo vendável têm controles próprios. A prévia da versão candidata confirma quais fontes e ofertas entram em cada fluxo depois dos vínculos e das aprovações. A consulta acima não alterou cadastros nem canais de envio.
 
 A revisão deve testar dois contratos ativos na mesma subconta e duas subcontas distintas. Na conversa de missão, a seleção explícita do contrato determina os módulos elegíveis e a disponibilidade do CRM. No estrategista do piloto e na conversa de missão sem contrato selecionado, o contexto mantém a metodologia e a estratégia publicada da subconta e pede um contrato para consultar portfólio e documentos contratuais. A prévia mostra o escopo das fontes recuperadas e as lacunas de cadastro. O link **Gerenciar vínculos da metodologia** abre os controles existentes de publicação e vínculo por perfil, módulo e fluxo.
 
