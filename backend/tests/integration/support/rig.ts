@@ -56,7 +56,19 @@ export function getIntegrationDatabaseUrl() {
   return databaseUrl
 }
 
-export async function createIntegrationRig(options: { stubJobQueue?: AppJobQueue; missionConversations?:boolean; corsOrigin?: string; queueMode?: 'redis' | 'stub'; radarActionEngine?:boolean; metaOAuth?: boolean; metaTestPhoneNumberId?: string } = {}): Promise<IntegrationRig> {
+type IntegrationRigOptions = {
+  stubJobQueue?: AppJobQueue
+  missionConversations?: boolean
+  corsOrigin?: string
+  queueMode?: 'redis' | 'stub'
+  radarActionEngine?: boolean
+  metaOAuth?: boolean
+  metaTestPhoneNumberId?: string
+  agentPilots?: { presalesOrganizationId: string; missionOrganizationId: string }
+  drainStubQueue?: (processJob: ReturnType<typeof createJobProcessor>) => Promise<void>
+}
+
+export async function createIntegrationRig(options: IntegrationRigOptions = {}): Promise<IntegrationRig> {
   const databaseUrl = getIntegrationDatabaseUrl()
   const redisUrl = process.env.YUX_INTEGRATION_REDIS_URL
     || 'redis://:yux_test_redis_password@127.0.0.1:56379/0'
@@ -94,6 +106,8 @@ export async function createIntegrationRig(options: { stubJobQueue?: AppJobQueue
     JINA_API_KEY: 'integration-jina-api-key',
     KNOWLEDGE_CURATION_ENABLED: 'false',
     MISSION_CONVERSATIONS_ENABLED:options.missionConversations?'true':'false',
+    STRATEGY_PRESALES_PILOT_ORGANIZATION_IDS: options.agentPilots?.presalesOrganizationId,
+    ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS: options.agentPilots?.missionOrganizationId,
     RADAR_ACTION_ENGINE_ENABLED: options.radarActionEngine?'true':'false',
     RADAR_ACTION_ENGINE_TENANT_ALLOWLIST: options.radarActionEngine?fixtureIds.organizationA:'',
     KNOWLEDGE_STORAGE_DIR: storageRoot,
@@ -153,9 +167,12 @@ export async function createIntegrationRig(options: { stubJobQueue?: AppJobQueue
     },
     sql: (text, values) => migrationPool.query(text, values),
     async workerTick() {
-      if (!queue) throw new Error('integration_queue_unavailable_in_stub_mode')
-      await appQueue.add('events.dispatchPending', { limit: 100, integrationTick: randomUUID() })
       const processor = createJobProcessor({ pool: workerPool, env, maintenanceQueue: appQueue })
+      if (!queue) {
+        if (!options.drainStubQueue) throw new Error('integration_queue_unavailable_in_stub_mode')
+        return options.drainStubQueue(processor)
+      }
+      await appQueue.add('events.dispatchPending', { limit: 100, integrationTick: randomUUID() })
       const workers = (Object.keys(QUEUE_NAMES) as JobQueueClass[]).map(queueClass => createWorker(
         QUEUE_NAMES[queueClass], processor, createRedisConnection(redisUrl), {
           prefix: 'yux-integration',

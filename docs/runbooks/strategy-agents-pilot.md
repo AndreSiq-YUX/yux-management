@@ -92,6 +92,14 @@ Use o [catálogo funcional](../yux-hub-catalogo-funcionalidades-capacidades.md) 
 
 Para reproduzir a integração, aplique as migrações num banco local dedicado `yux_agent_pilot_test`, com os papéis de serviço do projeto. Execute `npm run test:integration -- strategy-agent-pilot` no backend com `YUX_AGENT_PILOT_TEST_DATABASE_URL` apontando para esse banco. Use a mesma variável no teste `test_workflow_credits_postgres.py` após a criação dos dados sintéticos pela integração do backend. Os testes `test_presales_instruction_preview.py`, `test_mission_supervisor.py` e `test_customer_context.py` exercitam a composição e a recuperação do runtime sem geração externa.
 
+Para repetir as duas jornadas no Chrome, crie um banco PostgreSQL descartável chamado `yux_test_agent_pilot_browser` em `127.0.0.1` e aponte `YUX_INTEGRATION_DATABASE_URL` para ele com um usuário local autorizado a aplicar migrações e criar papéis de teste. Com Chrome e as dependências do frontend, backend e runtime instalados, execute na raiz do repositório.
+
+```powershell
+npm --prefix frontend exec -- playwright test --config frontend/playwright.agent-pilots.config.ts
+```
+
+O teste aplica migrações, cadastra dados sintéticos e inicia os serviços locais. O runtime compõe as prévias com recuperação lexical real. As respostas da geração e do supervisor são simuladas na interface HTTP do runtime. O navegador usa a sessão do Admin YUX para percorrer as duas subcontas, importar a recomendação no CRM e revisar o plano na área de Missões do portal. O teste verifica o preço vigente, o vínculo com a recomendação, a fonte da missão e a ausência de ações disparadas antes da aprovação.
+
 ## Comparação cega e aceite dos pilotos
 
 O lote reaproveita os 24 casos de Missões, com seus seis reservados, e acrescenta oito cenários sintéticos para cada piloto, com dois reservados em cada um. São 160 respostas previstas para a comparação entre configuração atual e candidata, com duas repetições por caso. Esta amostra tem um orçamento próprio, a definir antes da rodada paga.
