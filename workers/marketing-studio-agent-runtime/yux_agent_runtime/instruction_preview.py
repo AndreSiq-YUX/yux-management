@@ -55,7 +55,9 @@ class _PreviewProvider:
             "versions": {
                 "global": self.harness.global_prompts[agent["agent_type"]].get("prompt_version", 1),
                 "profile": agent.get("prompt_version", 1),
+                "organization": self.state.get("organization_prompt_version"),
             },
+            "stageInstructionApplied": self.state.get("stage_instruction_applied", False),
             "request": wire,
             "policyTools": filter_allowed_tools(agent, self.harness.tool_policies, self.state),
             "sources": sources,

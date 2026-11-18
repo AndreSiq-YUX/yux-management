@@ -256,4 +256,77 @@ describe.skipIf(!url)('admin strategist pilot with Postgres and simulated genera
     expect(restored.json()).toMatchObject({ version: 2, instruction: null })
     expect((await call('GET', base + '/opportunities?organizationId=' + organizationId)).json().enabled).toBe(false)
   })
+
+  it('publishes a single specialist for one task and keeps the enqueued version during later edits', async () => {
+    const base = '/api/strategy-engine/agent-prompts'
+    const stage = 'crm_pipeline_analyst'
+    const instruction = 'Confirme o próximo passo comercial antes de concluir.'
+    const scopePath = `${base}/scope?organizationId=${organizationId}`
+    const scope = (await call('GET', scopePath)).json()
+    const currentVersion = scope.versions[0]?.version ?? 0
+    const publication = { organizationId, expectedVersion: currentVersion, operation: 'publish',
+      instruction, stage, reason: 'Ensaio de versão da etapa.', message: 'Verifique o funil.', mode: 'proposal' }
+    const previewRequest = { flow: 'strategist', organizationId, message: publication.message, mode: publication.mode,
+      candidateStage: stage, candidateInstruction: instruction }
+    const received: Array<Record<string, unknown>> = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body))
+      if (url === 'http://127.0.0.1:4109/instructions/preview/strategist') {
+        return Response.json({ candidate: { requests: [{ stage, fingerprint: 'a'.repeat(64),
+          stageInstructionApplied: body.candidate_stage === stage }] } })
+      }
+      expect(url).toBe('http://127.0.0.1:4109/workflows/execute')
+      received.push(body)
+      return Response.json({ synthesis: { answer: 'Próximo passo a confirmar.' } })
+    }))
+
+    for (const role of [fixtureUsers.yux_operator, fixtureUsers.client_admin_A, fixtureUsers.client_member_A]) {
+      const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: role.email, password: fixturePassword } })
+      expect(login.statusCode).toBe(200)
+      const cookie = login.cookies.map(item => item.name + '=' + item.value).join('; ')
+      expect((await call('GET', scopePath, undefined, cookie)).statusCode).toBe(403)
+      expect((await call('POST', base + '/preview', previewRequest, cookie)).statusCode).toBe(403)
+      expect((await call('POST', base + '/versions', publication, cookie)).statusCode).toBe(403)
+    }
+    expect((await call('POST', base + '/versions', { ...publication, stage: 'missing_specialist' })).json().error)
+      .toBe('agent_prompt_stage_not_simulated')
+
+    const published = await call('POST', base + '/versions', publication)
+    expect(published.statusCode, published.body).toBe(200)
+    const firstVersion = currentVersion + 1
+    expect(published.json()).toMatchObject({ version: firstVersion, instruction: null,
+      stage_instructions: [{ mode: 'proposal', stage, instruction }], test_fingerprints: ['a'.repeat(64)] })
+    const comparison = await call('POST', base + '/preview', previewRequest)
+    expect(comparison.statusCode).toBe(200)
+    expect(comparison.json().publishedVersion).toBe(firstVersion)
+    expect((await call('GET', `${base}/opportunities?organizationId=${organizationId}&mode=proposal`)).json().enabled).toBe(true)
+    expect((await call('GET', `${base}/opportunities?organizationId=${organizationId}&mode=diagnostic_48h`)).json().enabled).toBe(false)
+    const foreignScope = await call('GET', `${base}/scope?organizationId=${fixtureIds.organizationA}`)
+    expect(JSON.stringify(foreignScope.json().versions)).not.toContain(instruction)
+
+    const enqueue = (mode: string) => call('POST', '/api/functions/run-strategy-admin-chat', {
+      body: { organizationId, message: 'Prepare a estratégia.', mode },
+    })
+    const queued = await enqueue('proposal')
+    expect(queued.statusCode, queued.body).toBe(202)
+    const firstJob = job.mock.lastCall![1]
+    expect(firstJob.body.presales).toMatchObject({ version: firstVersion, instruction: null, stageInstructions: { [stage]: instruction } })
+    expect((await enqueue('diagnostic_48h')).statusCode).toBe(202)
+    expect(job.mock.lastCall![1].body.presales).toBeUndefined()
+
+    const updated = await call('POST', base + '/versions', { ...publication, expectedVersion: firstVersion,
+      instruction: 'Peça a confirmação da etapa atual antes de concluir.' })
+    expect(updated.statusCode, updated.body).toBe(200)
+    expect((await call('POST', base + '/versions', {
+      ...publication, expectedVersion: comparison.json().publishedVersion,
+    })).statusCode).toBe(409)
+    await runWithDatabaseRequestContext({ role: 'client_member', organizationIds: [organizationId], serviceRole: 'worker' },
+      () => handleStrategyAdminChat(worker, app.config, firstJob))
+    expect(received[0]).toMatchObject({ presales_stage_instructions: { [stage]: instruction }, presales_prompt_version: firstVersion })
+
+    const restored = await call('POST', base + '/versions', { organizationId, expectedVersion: firstVersion + 1,
+      operation: 'restore', restoreVersion: firstVersion, reason: 'Restaurar etapa aprovada.' })
+    expect(restored.statusCode).toBe(200)
+    expect(restored.json()).toMatchObject({ stage_instructions: [{ mode: 'proposal', stage, instruction }] })
+  })
 })

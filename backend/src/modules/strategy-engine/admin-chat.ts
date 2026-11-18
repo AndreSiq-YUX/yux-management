@@ -5,26 +5,17 @@ import { ApiError } from '../../http/errors.js'
 import { invokeAgentRuntime } from '../../lib/agent-runtime-client.js'
 import type { MissionSourceRefWire } from '../action-engine/generated/mission-wire.js'
 import { verifyMissionKnowledgeContext } from '../action-engine/mission-source-verifier.js'
-import { listPromptVersions, presalesPilotEnabled } from './prompt-versions.js'
+import { listPromptVersions, presalesPilotEnabled, promptInstructionSchema, promptSettings,
+  stageInstructionMapSchema, strategistModeSchema } from './prompt-versions.js'
 import { loadCommercialCatalog, loadPresalesLead, validateRecommendation } from './presales-context.js'
 
 type Queryable = Pick<pg.Pool, 'query'>
 type ChatRow = Record<string, unknown>
 
-const strategyChatModes = [
-  'general',
-  'initial_analysis',
-  'diagnostic_48h',
-  'service_plan',
-  'proposal',
-  'roadmap_30_60_90',
-  'do_not_do',
-] as const
-
 export const strategyAdminChatRequestSchema = z.object({
   sessionId: z.string().uuid().optional(),
   message: z.string().trim().min(1).max(20_000),
-  mode: z.enum(strategyChatModes).default('general'),
+  mode: strategistModeSchema.default('general'),
   organizationId: z.string().uuid().optional(),
   clientId: z.string().uuid().optional(),
   contractId: z.string().uuid().optional(),
@@ -35,7 +26,8 @@ export type StrategyAdminChatRequest = z.infer<typeof strategyAdminChatRequestSc
 
 export const presalesJobSchema = z.object({
   version: z.number().int().positive(),
-  instruction: z.string().trim().min(1).max(4000),
+  instruction: promptInstructionSchema.nullable(),
+  stageInstructions: stageInstructionMapSchema.optional(),
   userMessageId: z.uuid(),
 })
 
@@ -99,7 +91,7 @@ export async function prepareStrategyAdminChat(
     }
     if (isPilot(session.organization_id)) {
       version = (await listPromptVersions(pool, String(session.organization_id), 1))[0]
-      if (version?.instruction && session.presales_lead_id) {
+      if (promptSettings(version, request.mode).active && session.presales_lead_id) {
         await loadPresalesLead(pool, String(session.organization_id), String(session.presales_lead_id), optionalString(session.contract_id))
       }
     }
@@ -107,10 +99,11 @@ export async function prepareStrategyAdminChat(
     if (isPilot(request.organizationId)) {
       version = (await listPromptVersions(pool, request.organizationId!, 1))[0]
     }
-    if (request.leadId && (!request.organizationId || !version?.instruction)) {
+    const active = promptSettings(version, request.mode).active
+    if (request.leadId && (!request.organizationId || !active)) {
       throw new ApiError(409, 'strategy_presales_pilot_inactive')
     }
-    if (request.organizationId && (request.clientId || request.contractId || version?.instruction)) {
+    if (request.organizationId && (request.clientId || request.contractId || active)) {
       await assertScope(pool, request.organizationId, request.clientId, request.contractId)
     }
     if (request.organizationId && request.leadId) {
@@ -177,6 +170,7 @@ export async function prepareStrategyAdminChat(
     [sessionId],
   )
 
+  const settings = promptSettings(version, request.mode)
   return {
     session,
     userMessage,
@@ -190,8 +184,9 @@ export async function prepareStrategyAdminChat(
       assistantMessageId: String(assistantMessage.id),
       actorUserId,
       leadId: optionalString(session.presales_lead_id),
-      ...(version?.instruction ? {
-        presales: { version: version.version, instruction: version.instruction, userMessageId: String(userMessage.id) },
+      ...(version && settings.active ? {
+        presales: { version: version.version, instruction: settings.instruction, userMessageId: String(userMessage.id),
+          stageInstructions: settings.stageInstructions },
       } : {}),
     },
   }
@@ -245,6 +240,8 @@ export async function processStrategyAdminChat(
       ...(presales ? {
         presales_candidate: true,
         presales_instruction: presales.instruction,
+        presales_stage_instructions: presales.stageInstructions,
+        presales_prompt_version: presales.version,
         strategy_operation_id: request.assistantMessageId,
         retrieval_context: {
           conversation_history: history,

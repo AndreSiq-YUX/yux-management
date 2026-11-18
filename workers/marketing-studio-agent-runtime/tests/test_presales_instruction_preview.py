@@ -53,6 +53,35 @@ def test_preview_and_real_adapter_share_messages_without_persisting_preview():
     assert estimate_workflow_credits(frozen["workflow_spec"], frozen["mode"], frozen["source"]) == 1
 
 
+def test_named_presales_instruction_changes_one_stage_and_preserves_protected_objective():
+    engine, calls = test_live_workflows.LiveWorkflowTest().make_engine([
+        json.dumps({"analysis": "Revisar capacidade de entrega.", "recommended_actions": []}),
+        json.dumps({"answer": "Confirmar restrições operacionais.", "supporting_cards": []}),
+    ])
+    frozen = execution([{"key": "finance", "objective": "Avalie o orçamento."}])
+    baseline = preview_workflow(engine, frozen)
+    scope = {**frozen, "presales_stage_instructions": {"finance": "Considere a capacidade de entrega."},
+             "presales_prompt_version": 7}
+    compared = preview_workflow(engine, scope)
+    assert not calls
+    assert not engine.store.tables
+    first, last = compared["requests"]
+    assert first["stage"] == "finance"
+    assert first["stageInstructionApplied"]
+    assert first["versions"]["organization"] == 7
+    assert first["providerFingerprint"] != baseline["requests"][0]["providerFingerprint"]
+    assert last["providerFingerprint"] == baseline["requests"][1]["providerFingerprint"]
+    system, context = first["request"]["messages"]
+    assert system["content"].index("Avalie o orçamento.") < system["content"].index("Considere a capacidade de entrega.")
+    assert "Considere a capacidade de entrega." not in context["content"]
+
+    engine.execute(**scope)
+    assert first["providerPayload"] == {key: value for key, value in calls[0].items() if key != "session_id"}
+    traces = [item["safe_context"] for item in engine.store.list("agent_context_snapshots") if item["context_kind"] == "runtime"]
+    assert {trace["stage"]: trace["stage_instruction_applied"] for trace in traces} == {"finance": True, "synthesizer": False}
+    assert all(trace["organization_prompt_version"] == 7 for trace in traces)
+
+
 def test_mission_portfolio_excludes_other_contracts_and_accounts():
     def product(record_id, org, contract, label):
         return {"id": record_id, "organization_id": org, "contract_id": contract,

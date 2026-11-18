@@ -5,7 +5,7 @@ import json
 import logging
 import os
 import re
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -201,6 +201,10 @@ class IngestEventRequest(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+PromptStageKey = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]{0,79}$")]
+PromptInstruction = Annotated[str, Field(min_length=1, max_length=4_000)]
+
+
 class ExecuteWorkflowRequest(BaseModel):
     message: str
     profile_key: str = "growth_strategist"
@@ -216,6 +220,8 @@ class ExecuteWorkflowRequest(BaseModel):
     autonomy_policies: list[dict[str, Any]] | None = None
     presales_candidate: bool = False
     presales_instruction: str | None = Field(default=None, min_length=1, max_length=4_000)
+    presales_stage_instructions: dict[PromptStageKey, PromptInstruction] | None = Field(default=None, max_length=24)
+    presales_prompt_version: int | None = Field(default=None, ge=1)
     strategy_operation_id: UUID | None = None
     # Accepted for backward compatibility but ignored: credits are always
     # estimated server-side (see workflow.estimate_workflow_credits).
@@ -229,6 +235,10 @@ class PreviewStrategistRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8_000)
     mode: str | None = None
     candidate_instruction: str | None = Field(default=None, min_length=1, max_length=4_000)
+    candidate_stage: PromptStageKey | None = None
+    published_instruction: PromptInstruction | None = None
+    published_stage_instructions: dict[PromptStageKey, PromptInstruction] = Field(default_factory=dict, max_length=24)
+    published_prompt_version: int | None = Field(default=None, ge=1)
     commercial_catalog: dict[str, Any] | None = None
 
 
@@ -523,6 +533,9 @@ def create_app(
             audience=workflow_audience,
         )
         execution = request.model_dump(exclude={"estimated_credits", "strategy_operation_id"})
+        for field in ("presales_stage_instructions", "presales_prompt_version"):
+            if execution[field] is None:
+                execution.pop(field)
         selected_engine = workflow_engine(execution)
         execution["workflow_spec"] = selected_engine.resolve_workflow_spec(
             request.mode, request.source, request.workflow_spec,
@@ -611,15 +624,25 @@ def create_app(
             profile_key="growth_strategist", audience="internal_operator",
         )
         execution = {
-            **request.model_dump(exclude={"candidate_instruction", "commercial_catalog"}),
+            "organization_id": request.organization_id, "client_id": request.client_id,
+            "contract_id": request.contract_id, "message": request.message, "mode": request.mode,
             "source": "strategy_admin",
             "profile_key": "growth_strategist",
         }
         selected = build_strategy_workflow_engine(runtime_store, context=execution, offline_preview=True)
-        baseline = preview_workflow(selected, execution)
-        candidate = preview_workflow(selected, {
-            **execution, "presales_candidate": True, "presales_instruction": request.candidate_instruction,
+        published = {
+            "presales_candidate": bool(request.published_instruction or request.published_stage_instructions or request.candidate_stage),
+            "presales_instruction": request.published_instruction,
+            "presales_stage_instructions": request.published_stage_instructions,
+            "presales_prompt_version": request.published_prompt_version,
             "retrieval_context": {"commercial_catalog": request.commercial_catalog},
+        }
+        baseline = preview_workflow(selected, {**execution, **published} if published["presales_candidate"] else execution)
+        scoped_edit = {request.candidate_stage: request.candidate_instruction} if request.candidate_stage and request.candidate_instruction else {}
+        candidate = preview_workflow(selected, {
+            **execution, **published, "presales_candidate": True,
+            "presales_instruction": request.published_instruction if request.candidate_stage else (request.candidate_instruction or request.published_instruction),
+            "presales_stage_instructions": {**request.published_stage_instructions, **scoped_edit},
         })
         return {"baseline": baseline, "candidate": candidate}
 

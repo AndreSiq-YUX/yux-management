@@ -72,7 +72,7 @@ it('creates and reviews real drafts through conversation without a sender, with 
           {role:'agent',content:'Confira o plano de preparação, sem envio.'},
           {role:'user',content:revisionMessage},
         ])
-        expect(request.currentBrief?.constraints).toMatchObject(brief.constraints)
+        expect(request.currentBrief).toMatchObject({ constraints: brief.constraints })
         return {schemaVersion:1,kind:'brief_confirmation',reply:'Ajustei o público e mantive a oferta de massas congeladas.',
           understood:{},questions:[],readiness:{status:'ready_for_brief_confirmation',knownFacts:[],assumptions:[],missing:[]},
           brief:{...brief,constraints:{...brief.constraints,icp:revisedIcp}},suggestedActions:[],sources:[],
@@ -95,7 +95,7 @@ it('creates and reviews real drafts through conversation without a sender, with 
     const planJob = jobs.find(job=>job.name==='action-engine.planMission')!
     const planResult = await within(() => handleActionEnginePlanMission(pool as never,env,planJob.data,queue,{invokePlan:async(_env,input)=>{
       expect(input.allowed_source_ids).toContain(sourceId)
-      expect(input.mission.parameters).toMatchObject({icp:revisedIcp,offer:'Massas congeladas'})
+      expect(input).toMatchObject({mission:{parameters:{icp:revisedIcp,offer:'Massas congeladas'}}})
       const proposal = crmPreparationProposal(missionId,sourceId)
       proposal.plan.resolvedParameters.icp = revisedIcp
       return proposal

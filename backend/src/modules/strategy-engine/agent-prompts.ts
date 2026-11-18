@@ -8,7 +8,8 @@ import { getMission, type Queryable } from '../action-engine/repository.js'
 import { buildMissionPlanningCatalog, buildMissionPlanningContext, buildMissionPlanRequest, getMissionPlanningLimits } from '../action-engine/mission-plan-request.js'
 import { toMissionPlanWire } from '../action-engine/planner.js'
 import { strategyAdminChatRequestSchema } from './admin-chat.js'
-import { changePromptVersion, listPromptVersions, presalesPilotEnabled } from './prompt-versions.js'
+import { changePromptVersion, listPromptVersions, presalesPilotEnabled, promptInstructionSchema, promptSettings,
+  stageKeySchema, strategistModeSchema } from './prompt-versions.js'
 import { listPresalesLeads, loadCommercialCatalog } from './presales-context.js'
 
 const inventory = [
@@ -32,7 +33,8 @@ const previewRequest = tenantSchema.and(z.discriminatedUnion('flow', [
     flow: z.literal('strategist'),
     message: scenarioMessage,
     mode: strategyAdminChatRequestSchema.shape.mode,
-    candidateInstruction: z.string().trim().min(1).max(4_000).optional(),
+    candidateInstruction: promptInstructionSchema.optional(),
+    candidateStage: stageKeySchema.optional(),
   }),
   z.object({
     flow: z.literal('mission-intake'),
@@ -48,8 +50,9 @@ const versionChange = z.object({
 }).and(z.discriminatedUnion('operation', [
   z.object({
     operation: z.literal('publish'),
-    instruction: z.string().trim().min(1).max(4000),
-    message: z.string().trim().min(1).max(8000),
+    instruction: promptInstructionSchema,
+    message: scenarioMessage,
+    stage: stageKeySchema.optional(),
     contractId: z.uuid().optional(),
     mode: strategyAdminChatRequestSchema.shape.mode,
   }),
@@ -57,7 +60,34 @@ const versionChange = z.object({
 ]))
 
 type StrategistPreview = {
-  candidate: { requests: Array<{ fingerprint: string; providerFingerprint?: string }> }
+  candidate: { requests: Array<{ stage?: string; stageInstructionApplied?: boolean; fingerprint: string; providerFingerprint?: string }> }
+}
+
+async function strategistPreview(app: FastifyInstance, input: {
+  organizationId: string
+  clientId: string | null
+  contractId?: string
+  message: string
+  mode: z.infer<typeof strategistModeSchema>
+  candidateInstruction?: string
+  candidateStage?: string
+  version?: Awaited<ReturnType<typeof listPromptVersions>>[number]
+}) {
+  const published = promptSettings(input.version, input.mode)
+  const preview = await invokeAgentRuntime<StrategistPreview>(app.config, '/instructions/preview/strategist', {
+    organization_id: input.organizationId,
+    client_id: input.clientId,
+    contract_id: input.contractId,
+    message: input.message,
+    mode: input.mode,
+    candidate_instruction: input.candidateInstruction,
+    candidate_stage: input.candidateStage,
+    published_instruction: published.instruction,
+    published_stage_instructions: published.stageInstructions,
+    published_prompt_version: published.active ? input.version?.version : undefined,
+    commercial_catalog: await loadCommercialCatalog(app.pg, input.organizationId),
+  })
+  return { ...preview, publishedVersion: input.version?.version ?? 0 }
 }
 
 export async function loadAgentPromptScope(pool: Queryable, organizationId: string) {
@@ -112,7 +142,7 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
 
   app.get('/agent-prompts/opportunities', async (request, reply) => {
     requireAdminRole(request)
-    const parsed = tenantSchema.safeParse(request.query)
+    const parsed = tenantSchema.extend({ mode: strategistModeSchema.optional() }).safeParse(request.query)
     if (!parsed.success) throw new ApiError(400, 'invalid_presales_opportunity_scope')
     const { organizationId, contractId } = parsed.data
     const [scope, versions] = await Promise.all([
@@ -122,7 +152,7 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
     if (contractId && !scope.contracts.some(contract => contract.id === contractId)) {
       throw new ApiError(409, 'agent_prompt_contract_out_of_scope')
     }
-    const enabled = Boolean(versions[0]?.instruction)
+    const enabled = promptSettings(versions[0], parsed.data.mode).active
     reply.header('Cache-Control', 'no-store')
     return { contracts: scope.contracts, enabled, leads: enabled ? await listPresalesLeads(app.pg, organizationId, contractId) : [] }
   })
@@ -163,20 +193,24 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
     if (input.contractId && !scope.contracts.some(contract => contract.id === input.contractId)) {
       throw new ApiError(409, 'agent_prompt_contract_out_of_scope')
     }
-    const result = await invokeAgentRuntime<StrategistPreview>(app.config, '/instructions/preview/strategist', {
-      organization_id: input.organizationId,
-      client_id: scope.client_id,
-      contract_id: input.contractId,
-      message: input.message,
-      mode: input.mode,
-      candidate_instruction: input.instruction,
-      commercial_catalog: await loadCommercialCatalog(app.pg, input.organizationId),
+    const [version] = await listPromptVersions(app.pg, input.organizationId, 1)
+    if ((version?.version ?? 0) !== input.expectedVersion) throw new ApiError(409, 'agent_prompt_version_conflict')
+    const result = await strategistPreview(app, {
+      ...input, clientId: scope.client_id, version,
+      candidateInstruction: input.instruction, candidateStage: input.stage,
     })
+    if (input.stage) {
+      const matches = result.candidate.requests.filter(request => request.stage === input.stage)
+      if (matches.length !== 1 || !matches[0].stageInstructionApplied) {
+        throw new ApiError(409, 'agent_prompt_stage_not_simulated')
+      }
+    }
     const fingerprints = result.candidate.requests.map(stage => stage.providerFingerprint ?? stage.fingerprint)
     if (!fingerprints.length || fingerprints.some(hash => !/^[0-9a-f]{64}$/.test(hash))) {
       throw new ApiError(409, 'agent_prompt_simulation_required')
     }
-    return changePromptVersion(app.pg, { ...shared, instruction: input.instruction, fingerprints })
+    return changePromptVersion(app.pg, { ...shared, instruction: input.instruction, fingerprints,
+      target: input.stage ? { mode: input.mode, stage: input.stage } : undefined })
   })
 
   app.get('/agent-prompts/missions', async (request, reply) => {
@@ -223,15 +257,8 @@ export async function registerAgentPromptRoutes(app: FastifyInstance) {
       return invokeAgentRuntime(app.config, '/instructions/preview/mission-supervisor', { ...wire })
     }
     if (input.flow === 'strategist') {
-      return invokeAgentRuntime(app.config, '/instructions/preview/strategist', {
-        organization_id: input.organizationId,
-        client_id: scope.client_id,
-        contract_id: input.contractId,
-        message: input.message,
-        mode: input.mode,
-        candidate_instruction: input.candidateInstruction,
-        commercial_catalog: await loadCommercialCatalog(app.pg, input.organizationId),
-      })
+      const [version] = await listPromptVersions(app.pg, input.organizationId, 1)
+      return strategistPreview(app, { ...input, clientId: scope.client_id, version })
     }
     const { request: turn } = await buildMissionTurnRequest(app.pg, app.config, {
       actorId: actor.userId,

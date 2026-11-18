@@ -67,10 +67,10 @@ export function StrategyAdminChatPanel({
   const [organizationId, setOrganizationId] = useState(selectedSession?.organizationId || organizations[0]?.id || '')
   const [contractId, setContractId] = useState(selectedSession?.contractId || '')
   const [leadId, setLeadId] = useState(selectedSession?.leadId || '')
-  const [loadedCommercialScope, setCommercialScope] = useState<(CommercialScope & { key: string }) | null>(null)
-  const scopeKey = `${organizationId}/${contractId}`
-  const commercialScope = loadedCommercialScope?.key === scopeKey ? loadedCommercialScope : null
   const [mode, setMode] = useState<StrategyAdminChatMode>(selectedSession?.mode || 'initial_analysis')
+  const [loadedCommercialScope, setCommercialScope] = useState<(CommercialScope & { key: string }) | null>(null)
+  const scopeKey = `${organizationId}/${contractId}/${mode}`
+  const commercialScope = loadedCommercialScope?.key === scopeKey ? loadedCommercialScope : null
   const [messages, setMessages] = useState<StrategyChatMessage[]>([])
   const [input, setInput] = useState(promptPresets[0].prompt)
   const [loadingMessages, setLoadingMessages] = useState(false)
@@ -91,13 +91,13 @@ export function StrategyAdminChatPanel({
   useEffect(() => {
     if (!organizationId) return
     const controller = new AbortController()
-    const params = new URLSearchParams({ organizationId })
+    const params = new URLSearchParams({ organizationId, mode })
     if (contractId) params.set('contractId', contractId)
     apiRequest<CommercialScope>(`/strategy-engine/agent-prompts/opportunities?${params}`, { signal: controller.signal })
       .then(data => { if (!controller.signal.aborted) setCommercialScope({ ...data, key: scopeKey }) })
       .catch(() => { if (!controller.signal.aborted) setCommercialScope(null) })
     return () => controller.abort()
-  }, [organizationId, contractId, scopeKey])
+  }, [organizationId, contractId, mode, scopeKey])
 
   useEffect(() => {
     let active = true
@@ -142,6 +142,10 @@ export function StrategyAdminChatPanel({
     event.preventDefault()
     const trimmed = input.trim()
     if (!trimmed || sending) return
+    if (!selectedSessionId && leadId && !commercialScope) {
+      setError('Aguarde a consulta da oportunidade antes de enviar.')
+      return
+    }
     setSending(true)
     setError(null)
     pendingRequest.current?.abort()
@@ -154,7 +158,7 @@ export function StrategyAdminChatPanel({
         mode,
         organizationId: organizationId || undefined,
         contractId: contractId || undefined,
-        leadId: leadId || undefined,
+        leadId: (selectedSessionId || commercialScope?.enabled) ? leadId || undefined : undefined,
       })
       setSelectedSessionId(response.session.id)
       setMessages(current => [...current, response.userMessage, response.assistantMessage])
