@@ -145,6 +145,19 @@ python scripts/compare_agent_pilots.py check-release --release-manifest .\pilot-
 
 O relatório identifica as pendências de cada escopo. Código 2 indica pendência para a fase escolhida. A conferência é local. Os responsáveis precisam verificar as referências no ambiente autorizado antes de ativar a subconta. Para geração paga, a autorização de serviço, modelo e teto de gasto continua obrigatória.
 
+`supervisedActivationScopes` lista as entradas que passaram na conferência documental, no formato consumido pelas duas listas específicas do Dokploy. Para conferir uma alteração antes de aplicá-la, registre em `pilot-activation.json` o mesmo `environment` e `revision` do aceite, mais `current` com os valores verificados no Dokploy e `proposed` com os valores pretendidos. Em cada bloco, inclua somente estas quatro listas. Represente um valor ausente com `""`.
+
+- `STRATEGY_PRESALES_PILOT_SCOPES`
+- `STRATEGY_PRESALES_PILOT_ORGANIZATION_IDS`
+- `ACTION_ENGINE_PROMPT_PILOT_SCOPES`
+- `ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS`
+
+```powershell
+python scripts/compare_agent_pilots.py check-release --release-manifest .\pilot-release.json --activation-config .\pilot-activation.json --output .\pilot-activation-check.json
+```
+
+A conferência compara as listas atuais e propostas. Ela aponta alterações fora do escopo do aceite, entradas sem aprovação e IDs que ainda liberariam a subconta inteira pela lista antiga. Inclua no registro de aceite todos os escopos que deseja manter para a subconta no fluxo em revisão. O comando só grava o relatório local. Guarde-o junto às evidências.
+
 Durante a operação supervisionada, registre em `decisions` as decisões revisadas de cada escopo. Use `id` único da decisão, `reference` para a revisão, `scopeFingerprint`, `mode` igual a `draft`, `decision` igual a `accepted` ou `rejected`, `case` igual a `standard` ou `insufficient_information` e `criticalViolation` como booleano. Uma falha crítica sinaliza a suspensão do piloto correspondente. Para decidir sobre expansão, confira os dois pilotos com o mesmo lote da avaliação cega, incluindo os desempates quando necessários.
 
 ```powershell

@@ -404,6 +404,76 @@ def test_release_command_records_blockers_and_requires_distinct_decisions(tmp_pa
     release = json.loads(report_path.read_text(encoding="utf-8"))
     assert release["scopes"][0]["supervisedBlockers"] == ["separate_approval_records_required"]
     assert all(row["supervisedBlockers"] == [] for row in release["scopes"][1:])
+    blocked = release["scopes"][0]
+    assert f"{blocked['organizationId']}:{blocked['contractId']}:mission-intake-client" not in release["supervisedActivationScopes"][
+        "ACTION_ENGINE_PROMPT_PILOT_SCOPES"]
+
+
+def test_activation_config_accepts_only_reviewed_scope_and_preserves_other_accounts(tmp_path, monkeypatch):
+    tool = pilot_comparison
+    _, batch = pilot_capture()
+    manifest = release_manifest(batch)
+    scope, *_ = manifest["scopes"]
+    yux = next(item for item in manifest["scopes"] if item["flow"] == "presales")
+    expected_mission = f"{scope['organizationId']}:{scope['contractId']}:mission-intake-client"
+    expected_presales = f"{yux['organizationId']}:{yux['contractId']}"
+    outside_org = "10000000-0000-4000-8000-000000000003"
+    outside_mission = f"{outside_org}:{scope['contractId']}:mission-planning"
+    current = dict.fromkeys(tool.PILOT_FLAG_NAMES, "")
+    current["ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS"] = f"{scope['organizationId']}, {outside_org}"
+    current["ACTION_ENGINE_PROMPT_PILOT_SCOPES"] = outside_mission
+    proposed = {**current, "ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS": outside_org,
+                "ACTION_ENGINE_PROMPT_PILOT_SCOPES": f"{outside_mission},{expected_mission}",
+                "STRATEGY_PRESALES_PILOT_SCOPES": expected_presales}
+    config = {"environment": manifest["environment"], "revision": manifest["revision"], "current": current, "proposed": proposed}
+    manifest_path, config_path, report_path = (tmp_path / filename for filename in ("release.json", "flags.json", "check.json"))
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    command = ["compare_agent_pilots", "check-release", "--release-manifest", str(manifest_path),
+               "--activation-config", str(config_path), "--output"]
+    monkeypatch.setattr(sys, "argv", [*command, str(report_path)])
+    assert tool.main() == 0
+    release = json.loads(report_path.read_text(encoding="utf-8"))
+    assert release["activationConfig"] == {"blockers": {}}
+    assert release["supervisedActivationScopes"]["STRATEGY_PRESALES_PILOT_SCOPES"] == [expected_presales]
+    assert expected_mission in release["supervisedActivationScopes"]["ACTION_ENGINE_PROMPT_PILOT_SCOPES"]
+
+    config["proposed"]["ACTION_ENGINE_PROMPT_PILOT_SCOPES"] = f"{scope['organizationId']}:{yux['contractId']}:mission-planning"
+    config["proposed"]["ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS"] = scope["organizationId"]
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    rejected_path = tmp_path / "rejected.json"
+    monkeypatch.setattr(sys, "argv", [*command, str(rejected_path)])
+    assert tool.main() == 2
+    assert json.loads(rejected_path.read_text(encoding="utf-8"))["activationConfig"]["blockers"] == {
+        "ACTION_ENGINE_PROMPT_PILOT_SCOPES": ["scope_without_current_approval", "scope_outside_release_changed"],
+        "ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS": ["legacy_organization_activation_too_broad", "organization_outside_release_changed"],
+    }
+    with pytest.raises(ValueError, match="activation_environment_or_revision_mismatch"):
+        tool.check_activation_config(release, {**config, "environment": "outro-ambiente"})
+    with pytest.raises(ValueError, match="four_pilot_flag_values_required"):
+        tool.check_activation_config(release, {**config, "proposed": {}})
+
+
+def test_critical_pilot_violation_excludes_all_its_flags_from_activation():
+    tool = pilot_comparison
+    _, batch = pilot_capture()
+    manifest = release_manifest(batch)
+    scope = next(item for item in manifest["scopes"] if item["flow"] == "presales")
+    scope["decisions"] = [{"id": "critical-review", "reference": "fixture:review", "mode": "draft", "decision": "rejected",
+                           "case": "standard", "criticalViolation": True, "scopeFingerprint": scope["journey"]["scopeFingerprint"]}]
+    manifest["scopes"] = [scope]
+    report = tool.check_release(manifest, batch["corpusHash"])
+    assert all(not entries for entries in report["supervisedActivationScopes"].values())
+
+    flags = dict.fromkeys(tool.PILOT_FLAG_NAMES, "")
+    flags["ACTION_ENGINE_PROMPT_PILOT_SCOPES"] = f"{scope['organizationId']}:{scope['contractId']}:mission-intake-client"
+    flags["STRATEGY_PRESALES_PILOT_ORGANIZATION_IDS"] = scope["organizationId"]
+    config = {"environment": manifest["environment"], "revision": manifest["revision"], "current": flags, "proposed": flags}
+    assert tool.check_activation_config(report, config)["blockers"] == {
+        "ACTION_ENGINE_PROMPT_PILOT_SCOPES": ["scope_without_current_approval"],
+        "STRATEGY_PRESALES_PILOT_ORGANIZATION_IDS": ["legacy_organization_activation_too_broad"],
+    }
+    assert tool.check_activation_config(report, {**config, "proposed": dict.fromkeys(tool.PILOT_FLAG_NAMES, "")})["blockers"] == {}
 
 
 def test_expansion_uses_both_pilot_observations_and_quality_for_the_approved_candidate(tmp_path, monkeypatch):

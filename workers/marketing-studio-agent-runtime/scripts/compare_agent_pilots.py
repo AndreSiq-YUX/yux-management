@@ -32,6 +32,18 @@ RELEASE_FLOWS = {
     "villeman_massas": {"mission_intake", "mission_supervisor"},
     "yux_captacao": set(RELEASE_AUDIENCES),
 }
+PRESALES_SCOPE_FLAG = "STRATEGY_PRESALES_PILOT_SCOPES"
+MISSION_SCOPE_FLAG = "ACTION_ENGINE_PROMPT_PILOT_SCOPES"
+PILOT_FLAGS = {
+    PRESALES_SCOPE_FLAG: "STRATEGY_PRESALES_PILOT_ORGANIZATION_IDS",
+    MISSION_SCOPE_FLAG: "ACTION_ENGINE_PROMPT_PILOT_ORGANIZATION_IDS",
+}
+PILOT_FLAG_NAMES = set(PILOT_FLAGS) | set(PILOT_FLAGS.values())
+MISSION_SCOPE_SUFFIXES = {
+    ("mission_intake", "internal_operator"): "mission-intake-internal",
+    ("mission_intake", "client_user"): "mission-intake-client",
+    ("mission_supervisor", "client_user"): "mission-planning",
+}
 
 
 def digest(value):
@@ -402,6 +414,58 @@ def scoped_record(record, fingerprint):
             and recorded_text(record.get("reference")))
 
 
+def activation_entry(scope):
+    account_contract = f"{scope['organizationId']}:{scope['contractId']}"
+    if scope["flow"] == "presales":
+        return PRESALES_SCOPE_FLAG, account_contract
+    suffix = MISSION_SCOPE_SUFFIXES[(scope["flow"], scope["audience"])]
+    return MISSION_SCOPE_FLAG, f"{account_contract}:{suffix}"
+
+
+def approved_activation_scopes(report):
+    approved = {flag: [] for flag in PILOT_FLAGS}
+    for scope in report:
+        if not scope["supervisedBlockers"]:
+            flag, entry = activation_entry(scope)
+            approved[flag].append(entry)
+    return {flag: sorted(entries) for flag, entries in approved.items()}
+
+
+def activation_config_values(values):
+    require(isinstance(values, dict) and values.keys() == PILOT_FLAG_NAMES
+            and all(isinstance(value, str) for value in values.values()), "four_pilot_flag_values_required")
+    return {flag: {entry.strip().lower() for entry in value.split(",") if entry.strip()} for flag, value in values.items()}
+
+
+def check_activation_config(release, config):
+    require(isinstance(config, dict) and config.get("environment") == release["environment"]
+            and config.get("revision") == release["revision"], "activation_environment_or_revision_mismatch")
+    current = activation_config_values(config.get("current"))
+    proposed = activation_config_values(config.get("proposed"))
+    organizations = {flag: set() for flag in PILOT_FLAGS}
+    for scope in release["scopes"]:
+        flag, _ = activation_entry(scope)
+        organizations[flag].add(scope["organizationId"])
+        if release["observation"][scope["pilot"]]["criticalViolation"]:
+            for affected in PILOT_FLAGS:
+                organizations[affected].add(scope["organizationId"])
+
+    blockers = {}
+    for flag, legacy in PILOT_FLAGS.items():
+        target = organizations[flag]
+        approved = set(release["supervisedActivationScopes"][flag])
+        scoped = {entry for entry in proposed[flag] if entry.split(":", 1)[0] in target}
+        if scoped - approved:
+            blockers.setdefault(flag, []).append("scope_without_current_approval")
+        if any(entry.split(":", 1)[0] not in target for entry in current[flag] ^ proposed[flag]):
+            blockers.setdefault(flag, []).append("scope_outside_release_changed")
+        if proposed[legacy] & target:
+            blockers.setdefault(legacy, []).append("legacy_organization_activation_too_broad")
+        if (current[legacy] ^ proposed[legacy]) - target:
+            blockers.setdefault(legacy, []).append("organization_outside_release_changed")
+    return {"blockers": blockers}
+
+
 def check_release(manifest, corpus_hash, quality=None):
     require(isinstance(manifest, dict) and manifest.get("schemaVersion") == 1 and recorded_text(manifest.get("environment"))
             and isinstance(manifest.get("revision"), str) and re.fullmatch(r"[0-9a-f]{40}", manifest["revision"]),
@@ -477,7 +541,8 @@ def check_release(manifest, corpus_hash, quality=None):
         if sample[pilot] < 10 or pilot not in insufficient:
             expansion_blockers.append(f"{pilot}_observation_incomplete")
     return {"schemaVersion": 1, "environment": manifest["environment"], "revision": manifest["revision"], "scopes": report,
-            "observation": observation, "expansionBlockers": expansion_blockers}
+            "observation": observation, "expansionBlockers": expansion_blockers,
+            "supervisedActivationScopes": approved_activation_scopes(report)}
 
 
 def main():
@@ -489,9 +554,12 @@ def main():
     parser.add_argument("--adjudications", type=Path)
     parser.add_argument("--runtime-receipts", type=Path)
     parser.add_argument("--release-manifest", type=Path)
+    parser.add_argument("--activation-config", type=Path)
     parser.add_argument("--phase", choices=("supervised", "expansion"), default="supervised")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    if args.activation_config and args.action != "check-release":
+        parser.error("--activation-config requires check-release")
     cases, corpus_hash = load_cohort()
     scoring = args.action == "score" or (args.action == "check-release" and args.phase == "expansion")
     if scoring and (not args.capture or not args.review_a or not args.review_b):
@@ -510,6 +578,9 @@ def main():
             parser.error("--release-manifest is required")
         result = check_release(json.loads(args.release_manifest.read_text(encoding="utf-8")), corpus_hash,
                                quality if scoring else None)
+        if args.activation_config:
+            config = json.loads(args.activation_config.read_text(encoding="utf-8"))
+            result["activationConfig"] = check_activation_config(result, config)
     else:
         if not args.capture:
             parser.error("--capture is required")
@@ -531,7 +602,7 @@ def main():
     if args.action == "check-release":
         blockers = result["expansionBlockers"] if args.phase == "expansion" else any(
             scope["supervisedBlockers"] for scope in result["scopes"])
-        if blockers:
+        if blockers or result.get("activationConfig", {}).get("blockers"):
             return 2
     return 0
 
