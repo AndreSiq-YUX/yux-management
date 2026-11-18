@@ -98,7 +98,7 @@ Para repetir as duas jornadas no Chrome, crie um banco PostgreSQL descartável c
 npm --prefix frontend exec -- playwright test --config frontend/playwright.agent-pilots.config.ts
 ```
 
-O teste aplica migrações, cadastra dados sintéticos e inicia os serviços locais. O runtime compõe as prévias com recuperação lexical real. As respostas da geração e do supervisor são simuladas na interface HTTP do runtime. O navegador usa a sessão do Admin YUX para percorrer as duas subcontas, importar a recomendação no CRM e revisar o plano na área de Missões do portal. O teste verifica o preço vigente, o vínculo com a recomendação, a fonte da missão e a ausência de ações disparadas antes da aprovação.
+O teste aplica migrações, cadastra dados sintéticos e inicia os serviços locais. O runtime compõe as prévias com recuperação lexical e executa os fluxos de geração, planejamento e recuperação com respostas simuladas no transporte do provedor, inclusive para a busca vetorial. O navegador usa a sessão do Admin YUX para importar a recomendação no CRM e revisar o plano na área de Missões do portal. O teste verifica o preço vigente, o vínculo com a recomendação, a fonte publicada, a ausência de ações disparadas antes da aprovação e os registros de uso por turno e etapa no Admin.
 
 ## Comparação cega e aceite dos pilotos
 

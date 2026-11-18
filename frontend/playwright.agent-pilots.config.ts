@@ -23,8 +23,8 @@ export default defineConfig({
   },
   webServer: [
     {
-      name: 'preview-runtime',
-      command: 'python -m uvicorn yux_agent_runtime.api:app --host 127.0.0.1 --port 4189',
+      name: 'pilot-runtime',
+      command: 'python -m uvicorn pilot_browser_runtime:app --app-dir tests --host 127.0.0.1 --port 4189',
       cwd: path.resolve(frontendDirectory, '../workers/marketing-studio-agent-runtime'),
       env: { DATABASE_URL: runtimeDatabase.href, YUX_AGENT_RUNTIME_TOKEN: 'agent-pilot-browser-fixture', OPENROUTER_API_KEY: '', OPENAI_API_KEY: '' },
       url: 'http://127.0.0.1:4189/health', timeout: 120_000, stderr: 'pipe',

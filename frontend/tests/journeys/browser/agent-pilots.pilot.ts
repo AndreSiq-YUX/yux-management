@@ -80,7 +80,7 @@ test('compares pilot prompts, imports a CRM draft and prepares a scoped mission'
   })
 
   const revision = `Ajuste para ${data.revisedAudience}. Preserve a oferta de massas congeladas.`
-  const plannedMissionId = await test.step('confirm a revised briefing in the portal workspace and inspect the plan', async () => {
+  const { missionId: plannedMissionId, conversationId } = await test.step('confirm a revised briefing in the portal workspace and inspect the plan', async () => {
     await page.goto(`/client-workspaces/${data.missionOrg}/missoes`)
     await page.getByRole('button', { name: 'Conversar com o agente' }).click()
     const composer = page.getByRole('textbox', { name: 'Mensagem para o agente de missões' })
@@ -102,7 +102,36 @@ test('compares pilot prompts, imports a CRM draft and prepares a scoped mission'
 
     const anotherAccount = await page.request.get(`http://127.0.0.1:4188/api/action-engine/mission-conversations/${conversation.id}?organizationId=${data.presalesOrg}`)
     expect(anotherAccount.status()).toBe(404)
-    return missionId as string
+    return { missionId: missionId as string, conversationId: conversation.id as string }
+  })
+
+  await test.step('review actual runtime measurements in the admin', async () => {
+    await page.goto('/admin/strategy-engine?tab=agent-prompts')
+    await page.getByLabel('Fluxo', { exact: true }).selectOption('mission-intake')
+    await page.getByLabel('Subconta', { exact: true }).selectOption(data.missionOrg)
+    await page.getByLabel('Contrato', { exact: true }).selectOption(data.missionContract)
+    await page.getByLabel('Público', { exact: true }).selectOption('internal_operator')
+    await page.getByLabel('Conversa da missão', { exact: true }).selectOption(conversationId)
+    const turns = await readUsageThroughUi(page, 'mission-turn-history', 'Consultar turnos')
+    expect(turns.turns).toHaveLength(2)
+    for (const turn of turns.turns) {
+      expect(turn.provider).toMatchObject({ attempts: 2, totalUsd: 0.003, inputTokens: 48, outputTokens: 25, reasoningTokens: 3 })
+      expect(turn.credits).toMatchObject({ state: 'settled', reserved: 1, charged: 1, released: 0 })
+    }
+    const conversationHistory = page.getByRole('region', { name: 'Consumo das conversas de missão' })
+    await expect(conversationHistory.getByRole('heading', { name: 'Créditos comerciais' })).toHaveCount(2)
+
+    await page.getByLabel('Fluxo', { exact: true }).selectOption('mission-supervisor')
+    await page.getByLabel('Missão', { exact: true }).selectOption(plannedMissionId)
+    const history = await readUsageThroughUi(page, 'planning-history', 'Consultar execuções')
+    const stages = ['planner', 'funnel_nurture.crm_architect', 'funnel_nurture.copywriter',
+      'funnel_nurture.automation_architect', 'funnel_nurture.brand_compliance_guardian']
+    expect(history.executions).toEqual([expect.objectContaining({
+      state: 'completed', totalUsd: 0.01, reconciledBrl: null,
+      stages: stages.map(name => ({ name, attempts: 1, inputTokens: 40, outputTokens: 25, reasoningTokens: 3, confirmedUsd: 0.002 })),
+    })])
+    await page.getByText('Consumo medido por etapa', { exact: true }).click()
+    await expect(page.getByRole('rowheader', { name: 'Revisão de marca da nutrição' })).toBeVisible()
   })
 
   const evidence = await request.get(`${control}/evidence`, { headers: controlHeaders })
@@ -143,4 +172,13 @@ async function postThroughUi(page: Page, path: string, button: string) {
   const result = await response
   expect(result.status(), await result.text()).toBe(202)
   return result
+}
+
+async function readUsageThroughUi(page: Page, resource: string, button: string) {
+  const response = page.waitForResponse(result => result.request().method() === 'GET'
+    && new URL(result.url()).pathname === `/api/strategy-engine/agent-prompts/${resource}`)
+  await page.getByRole('button', { name: button, exact: true }).click()
+  const result = await response
+  expect(result.ok(), await result.text()).toBe(true)
+  return result.json()
 }

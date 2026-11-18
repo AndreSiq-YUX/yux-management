@@ -3,11 +3,9 @@ import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { createJobProcessor } from '../../src/jobs/processor.js'
 import type { MissionPlanRequestWire } from '../../src/modules/action-engine/generated/mission-wire.js'
-import { hashCanonical } from '../../src/modules/action-engine/repository.js'
 import type { AppJobQueue } from '../../src/server.js'
 import { fixtureIds, fixtureUsers } from '../integration/support/fixtures.js'
 import { createIntegrationRig } from '../integration/support/rig.js'
-import { crmPreparationProposal } from '../support/crm-preparation-fixture.js'
 
 const database = new URL(process.env.YUX_INTEGRATION_DATABASE_URL ?? 'postgresql://invalid/invalid')
 assert(database.hostname === '127.0.0.1' && /^\/yux_test_agent_pilot_browser(?:_\w+)?$/.test(database.pathname),
@@ -15,7 +13,7 @@ assert(database.hostname === '127.0.0.1' && /^\/yux_test_agent_pilot_browser(?:_
 
 const { organizationA: missionOrg, contractA: missionContract, organizationB: presalesOrg, contractB: presalesContract } = fixtureIds
 const runtime = 'http://127.0.0.1:4191'
-const previewRuntime = 'http://127.0.0.1:4189'
+const generationRuntime = 'http://127.0.0.1:4189'
 const token = 'agent-pilot-browser-fixture'
 process.env.YUX_AGENT_RUNTIME_URL = runtime
 process.env.YUX_AGENT_RUNTIME_TOKEN = token
@@ -56,6 +54,8 @@ await rig.sql('UPDATE public.organizations SET name=CASE WHEN id=$1 THEN $3 ELSE
 await rig.sql('DELETE FROM public.action_missions WHERE id=$1 AND create_idempotency_key=$2', [fixtureIds.missionA, 'integration-mission-a'])
 await rig.sql(`INSERT INTO public.contract_modules(contract_id,module_key,enabled) VALUES ($1,'action_engine',TRUE)
   ON CONFLICT(contract_id,module_key) DO UPDATE SET enabled=TRUE`, [missionContract])
+await rig.sql(`INSERT INTO public.ai_credit_wallets(organization_id,client_id,contract_id,current_balance)
+  VALUES ($1,$2,$3,10) ON CONFLICT(contract_id) DO UPDATE SET current_balance=10`, [missionOrg, fixtureIds.clientA, missionContract])
 await rig.sql(`INSERT INTO public.crm_instances(organization_id,contract_id,status)
   VALUES ($1,$2,'active'),($3,$4,'draft') ON CONFLICT(contract_id) DO UPDATE SET status=EXCLUDED.status`,
   [presalesOrg, presalesContract, missionOrg, missionContract])
@@ -97,10 +97,6 @@ const published = await rig.request('client_admin_A', 'POST', `${strategyPath}/$
 assert.equal(published.statusCode, 200, JSON.stringify(published.body))
 const primary = await rig.request('client_admin_A', 'POST', `${strategyPath}/${created.body.id}/primary`, { expectedVersion: published.body.version })
 assert.equal(primary.statusCode, 200, JSON.stringify(primary.body))
-const { rows: [source] } = await rig.sql(`SELECT revision_number::text AS version,
-  private.company_strategy_projection_v1(content,'internal_operator')::text AS content
-  FROM public.company_strategy_revisions WHERE id=$1`, [sourceId])
-
 const presalesTurns: string[] = []
 const missionTurns: string[] = []
 const plannedMissions: string[] = []
@@ -129,12 +125,7 @@ const listener = createServer(async (req, res) => {
     }
     let body = ''
     for await (const chunk of req) body += chunk.toString()
-    if (req.method === 'POST' && req.url?.startsWith('/instructions/preview/')) {
-      const preview = await fetch(new URL(req.url, previewRuntime), { method: 'POST', body, headers: {
-        authorization: `Bearer ${token}`, 'content-type': 'application/json',
-      } })
-      return respond(preview.status, await preview.json())
-    }
+    if (req.method !== 'POST' || !req.url) return respond(404, { error: 'fixture_route_not_found' })
     const input = JSON.parse(body)
     if (req.url === '/workflows/execute') {
       assert.equal(input.organization_id, presalesOrg)
@@ -143,52 +134,33 @@ const listener = createServer(async (req, res) => {
       const context = input.retrieval_context
       assert.equal(context.opportunity.id, leadId)
       assert.equal(context.commercial_catalog.offers.length, 1)
-      const subsequent = context.conversation_history.length > 0
-      if (subsequent) assert(context.conversation_history.some((turn: { content: string }) => turn.content === budget))
       presalesTurns.push(input.message)
-      const recommendation = subsequent
-        ? { decision: 'recommend', rationale: 'Priorize o acompanhamento das oportunidades dentro do orçamento.',
-          packageId: context.commercial_catalog.offers[0].packageId, itemKeys: ['base'] }
-        : { decision: 'defer', rationale: 'Confirme o gargalo comercial.', missingInformation: ['Aquisição ou acompanhamento?'] }
-      return respond(200, { synthesis: { answer: recommendation.rationale, recommendation } })
-    }
-    if (req.url === '/missions/conversations/turn') {
+    } else if (req.url === '/missions/conversations/turn') {
       assert.equal(input.organization_id, missionOrg)
       assert.equal(input.contract_id, missionContract)
-      const subsequent = missionTurns.length > 0
-      if (subsequent) {
-        assert(input.transcript.some((turn: { content: string }) => turn.content === objective))
-        assert.equal(input.currentBrief.constraints.offer, 'Massas congeladas')
-      }
       missionTurns.push(input.user_message)
-      return respond(200, { schemaVersion: 1, kind: 'brief_confirmation',
-        reply: subsequent ? 'Ajustei o público e preservei a oferta de massas congeladas.' : 'Confira a preparação para cozinhas industriais.',
-        understood: {}, questions: [], readiness: { status: 'ready_for_brief_confirmation', knownFacts: [], assumptions: [], missing: [] },
-        brief: { title: 'Preparar captação de cozinhas industriais', objective, requestedOutcome: 'crm_drafts_prepared',
-          scopeHints: ['crm', 'automations'], constraints: { icp: subsequent ? revisedAudience : 'Cozinhas industriais', offer: 'Massas congeladas' },
-          acceptanceCriteria: [], packKeys: ['crm_preparation'], mode: 'prepare', deadlineAt: null,
-          maxTotalCostBrl: null, maxHumanHours: null, maxExternalContacts: 0 },
-        suggestedActions: [], sources: [], retrievedSources: [{ ref: `customer:strategy:${sourceId}`,
-          id: sourceId, kind: 'company_strategy', version: source.version, title: sourceTitle, visibility: 'internal', displayMode: 'named',
-          contentHash: hashCanonical({ id: sourceId, version: source.version, content: source.content }) }],
-        retrievalTraceId: randomUUID(), contextHash: 'a'.repeat(64), usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-      })
-    }
-    if (req.url === '/missions/plan') {
+    } else if (req.url === '/missions/plan') {
       const planInput: MissionPlanRequestWire = input
       assert.equal(planInput.organization_id, missionOrg)
       assert.equal(planInput.contract_id, missionContract)
       assert(planInput.allowed_source_ids?.includes(sourceId))
-      const { id, parameters } = planInput.mission
-      assert(typeof id === 'string' && parameters && typeof parameters === 'object')
-      assert.equal(Reflect.get(parameters, 'icp'), revisedAudience)
-      assert.equal(Reflect.get(parameters, 'offer'), 'Massas congeladas')
+      const { id } = planInput.mission
+      assert(typeof id === 'string')
       plannedMissions.push(id)
-      const proposal = crmPreparationProposal(id, sourceId)
-      proposal.plan.resolvedParameters.icp = revisedAudience
-      return respond(200, proposal)
+    } else if (!req.url.startsWith('/instructions/preview/')) {
+      return respond(404, { error: 'fixture_route_not_found' })
     }
-    return respond(404, { error: 'fixture_route_not_found' })
+    const headers = new Headers({ authorization: `Bearer ${token}`, 'content-type': 'application/json' })
+    for (const name of ['x-yux-mission-pilot-usage', 'x-yux-mission-turn-operation']) {
+      const value = req.headers[name]
+      if (typeof value === 'string') headers.set(name, value)
+    }
+    const result = await fetch(new URL(req.url, generationRuntime), { method: 'POST', body, headers })
+    if (!result.headers.get('content-type')?.includes('application/json')) {
+      await result.body?.cancel()
+      return respond(result.status, { error: 'pilot_runtime_response_not_json' })
+    }
+    return respond(result.status, await result.json())
   } catch (error) {
     console.error('[agent-pilot-fixture]', error)
     return respond(500, { error: 'pilot_fixture_failed', message: String(error) })
