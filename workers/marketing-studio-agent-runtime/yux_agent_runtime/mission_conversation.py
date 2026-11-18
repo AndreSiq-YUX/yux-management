@@ -494,6 +494,7 @@ def normalize_mission_conversation_response(
         **parsed,
         "schemaVersion": 1,
         "sources": [source.model_dump() for source in selected],
+        "retrievedSources": [source.model_dump() for source in source_catalog],
         "retrievalTraceId": retrieval_trace_id,
         "contextHash": context_hash,
         "usage": {

@@ -831,7 +831,6 @@ export type Missing = MissionConversationMissingContextWire[]
 export type Status = 'needs_information' | 'needs_configuration' | 'ready_for_brief_confirmation' | 'ready_for_plan'
 export type Reply = string
 export type Retrievaltraceid = string
-export type Schemaversion1 = 1
 export type Bindingfingerprint = string | null
 export type Contenthash1 = string
 export type Displaymode = 'named' | 'generic' | 'hidden'
@@ -846,6 +845,11 @@ export type Title1 = string
 export type Usemode = ('internal_reasoning' | 'quotable') | null
 export type Version2 = string
 export type Visibility = 'internal_only' | 'client_safe' | 'internal' | 'external' | 'both'
+/**
+ * @maxItems 256
+ */
+export type Retrievedsources = MissionSourceRefWire[]
+export type Schemaversion1 = 1
 /**
  * @maxItems 100
  */
@@ -1101,6 +1105,7 @@ export interface MissionConversationTurnResponseWire {
   readiness: MissionContextReadinessWire
   reply: Reply
   retrievalTraceId: Retrievaltraceid
+  retrievedSources?: Retrievedsources
   schemaVersion: Schemaversion1
   sources?: Sources
   strategyProposal?: MissionStrategyProposalWire | null

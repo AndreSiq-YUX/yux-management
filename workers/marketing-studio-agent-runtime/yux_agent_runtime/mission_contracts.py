@@ -278,6 +278,7 @@ class MissionConversationTurnResponseWire(StrictWireModel):
     brief: MissionBriefWire
     suggestedActions: list[MissionSuggestedActionWire] = Field(default_factory=list, max_length=8)
     sources: list[MissionSourceRefWire] = Field(default_factory=list, max_length=100)
+    retrievedSources: list[MissionSourceRefWire] = Field(default_factory=list, max_length=256)
     retrievalTraceId: str = Field(min_length=1)
     contextHash: str = Field(pattern=r"^[a-f0-9]{64}$")
     usage: ModelUsageWire

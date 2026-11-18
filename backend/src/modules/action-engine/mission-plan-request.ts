@@ -6,6 +6,7 @@ import { buildMissionOperationalContext } from './context-builder.js'
 import type { MissionSourceRefWire } from './generated/mission-wire.js'
 import { addCompanyStrategyToMissionPlanning } from './mission-company-strategy.js'
 import { getMissionConversationForMission } from './mission-conversations.js'
+import { missionIntakeSourceScope, resolveMissionTurnHistory } from './mission-conversation-history.js'
 import { composeVerifiedMissionContext, verifyMissionKnowledgeContext } from './mission-source-verifier.js'
 import { CAMPAIGN_LAUNCH_PACK_V1 } from './packs/campaign-launch-v1.js'
 import { CAMPAIGN_OPTIMIZATION_PACK_V1 } from './packs/campaign-optimization-v1.js'
@@ -56,6 +57,10 @@ export async function buildMissionPlanningContext(
     restrictMemoryToContract: true,
   })
   const linkedConversation = await getMissionConversationForMission(pool, missionId, organizationId)
+  const history = linkedConversation?.lastHarnessRunId && linkedConversation.lastContextHash
+    ? await resolveMissionTurnHistory(pool, linkedConversation)
+    : undefined
+  if (history?.reset) throw new Error('mission_source_verification_failed:conversation_history')
   let groundingMetadata: Record<string, unknown> | null = null
   let planningContext = {
     query: operationalContext.query,
@@ -76,22 +81,20 @@ export async function buildMissionPlanningContext(
     groundingMetadata={...RADAR_MISSION_KNOWLEDGE_SCOPE,contractId:mission.contractId}
     const composed=composeVerifiedMissionContext({organizationId,companyContext:linkedConversation?companyContextFromConversation(linkedConversation.contextReadiness):{},operational:operationalContext,knowledge:knowledge.verified,harnessRetrievalTraceId:knowledge.queryId,harnessKnowledgeContextHash:knowledge.contextHash})
     planningContext={...planningContext,companyContext:composed.companyContext,knowledgeItems:composed.knowledgeItems,strategyItems:composed.strategyItems,learningMemoryItems:composed.approvedLearningMemory,liveState:composed.liveState,sourceIds:composed.sourceIds,contextHash:composed.contextHash,harnessRetrievalTraceId:composed.harnessRetrievalTraceId,harnessKnowledgeContextHash:composed.harnessKnowledgeContextHash}
-  } else if (linkedConversation?.lastHarnessRunId && linkedConversation.lastContextHash) {
-    const latestGroundedMessage = [...linkedConversation.messages].reverse().find(message => message.actorType === 'agent' && message.sourceRefs.length)
+  } else if (linkedConversation?.lastHarnessRunId && linkedConversation.lastContextHash && history) {
+    const latestGroundedMessage = [...history.messages].reverse().find(message => message.actorType === 'agent' && message.sourceRefs.length)
     const sourceRefs = (latestGroundedMessage?.sourceRefs ?? []) as unknown as MissionSourceRefWire[]
-    const audience = sourceRefs.some(source => (source.kind.startsWith('knowledge_') || source.kind === 'company_strategy') && source.visibility === 'internal')
-      ? 'internal_operator' as const : 'client_user' as const
+    const sourceScope = missionIntakeSourceScope(linkedConversation, history.audience)
     groundingMetadata = {
-      audience,
-      agentProfileKey: 'growth_strategist',
+      audience: sourceScope.audience,
+      agentProfileKey: sourceScope.agentProfileKey,
       contractId: mission.contractId,
-      moduleKey: 'marketing_studio',
-      workflowKey: 'mission_intake_conversation',
+      moduleKey: sourceScope.moduleKey,
+      workflowKey: sourceScope.workflowKey,
       channel: null,
     }
     const verified = await verifyMissionKnowledgeContext(pool, {
-      organizationId, audience, sourceRefs, agentProfileKey: 'growth_strategist',
-      contractId: mission.contractId, moduleKey: 'marketing_studio', workflowKey: 'mission_intake_conversation',
+      ...sourceScope, contractId: mission.contractId, sourceRefs,
     })
     const allowedSourceIds = [...new Set([
       ...verified.sources.map(source => source.id), ...verified.sourceIds,

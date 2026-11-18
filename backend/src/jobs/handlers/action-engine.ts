@@ -30,6 +30,7 @@ import { decideCampaignOptimization } from '../../modules/action-engine/capabili
 import { invokeMissionConversationTurn } from '../../lib/agent-runtime-client.js'
 import { buildMissionPlanningCatalog, buildMissionPlanningContext, buildMissionPlanRequest, getMissionPlanningLimits } from '../../modules/action-engine/mission-plan-request.js'
 import { buildMissionTurnRequest } from '../../modules/action-engine/mission-turn-request.js'
+import { missionIntakeSourceScope, missionSourceFingerprint, resolveMissionTurnHistory } from '../../modules/action-engine/mission-conversation-history.js'
 import { intakePromptScope, pinMissionPromptVersion } from '../../modules/action-engine/mission-prompt-versions.js'
 import {
   completeAgentConversationTurn,
@@ -74,10 +75,11 @@ export async function handleActionEngineProcessMissionConversation(
   if (!userMessage) throw new Error('mission_conversation_user_message_missing')
   const startedAt = Date.now()
   try {
+    const history = await resolveMissionTurnHistory(pool, conversation, audience)
     const { request, access } = await buildMissionTurnRequest(pool, env, {
       organizationId, contractId: conversation.contractId, actorId: conversation.createdBy,
       conversationId: conversation.id, audience, message: userMessage.content,
-      currentBrief: conversation.currentBrief, messages: conversation.messages,
+      currentBrief: history.currentBrief, messages: history.messages,
     })
     if (request.allowedCapabilityKeys?.includes('crm.pipeline.create_draft')
       && access.enabledModules.includes('automations')) await ensureCrmPreparationPackVersion(pool, conversation.createdBy)
@@ -87,10 +89,13 @@ export async function handleActionEngineProcessMissionConversation(
     if (missionPrompt) request.mission_prompt = missionPrompt
     const operationId = request.client_id && request.contract_id ? userMessage.id : undefined
     const response = await (dependencies.invokeTurn ?? invokeMissionConversationTurn)(env, request, operationId)
-    await verifyMissionKnowledgeContext(pool, {
-      organizationId, audience, sourceRefs: response.sources ?? [], agentProfileKey: 'growth_strategist',
-      contractId: conversation.contractId, moduleKey: 'marketing_studio', workflowKey: 'mission_intake_conversation',
-    })
+    const sourceScope = missionIntakeSourceScope(conversation, audience)
+    const cited = response.sources ?? []
+    const citedFingerprints = new Set(cited.map(missionSourceFingerprint))
+    const inputSources = response.retrievedSources ?? []
+    const remaining = new Map([...history.sources, ...inputSources].map(source => [missionSourceFingerprint(source), source]))
+    for (const fingerprint of citedFingerprints) remaining.delete(fingerprint)
+    await verifyMissionKnowledgeContext(pool, { ...sourceScope, sourceRefs: [...cited, ...remaining.values()] })
     let strategyProposal
     if(response.strategyProposal && canConfigureCompanyStrategy(access.role)) {
       try { strategyProposal=await validateMissionStrategyProposal(pool,{organizationId,actorId:conversation.createdBy,role:access.role},response.strategyProposal) }
@@ -116,6 +121,7 @@ export async function handleActionEngineProcessMissionConversation(
       contextHash: response.contextHash,
       currentBrief: response.brief as unknown as Record<string, unknown>,
       contextReadiness: response.readiness as unknown as Record<string, unknown>,
+      promptContext: { audience, historyAfterSequence: history.historyAfterSequence, inputSources },
       ...(strategyProposal?{strategyProposalAccess:{organizationId,actorId:conversation.createdBy,role:access.role}}:{}),
     })
     return { skipped: false, conversation: updated }

@@ -102,6 +102,7 @@ class MissionConversationWorkflowTest(unittest.TestCase):
         self.assertEqual([item.value for item in response.readiness.assumptions], statements)
         self.assertTrue(all(item.sourceRef is None for item in response.readiness.assumptions))
         self.assertEqual(response.sources, [])
+        self.assertEqual([item.ref for item in response.retrievedSources], ["yux:card-growth"])
 
     def test_mixed_claims_keep_verified_facts_and_preserve_false_and_nested_unsourced_values(self):
         verified = {"key": "method", "value": "Diagnóstico", "sourceRef": "yux:card-growth"}

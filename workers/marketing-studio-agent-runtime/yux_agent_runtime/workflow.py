@@ -652,7 +652,7 @@ class StrategyWorkflowEngine:
             from .mission_conversation import build_mission_source_catalog
             from .mission_contracts import MissionConversationTurnResponseWire
             provider_schema = MissionConversationTurnResponseWire.model_json_schema()
-            server_fields = {"schemaVersion", "sources", "retrievalTraceId", "contextHash", "usage"}
+            server_fields = {"schemaVersion", "sources", "retrievedSources", "retrievalTraceId", "contextHash", "usage"}
             for key in server_fields:
                 provider_schema["properties"].pop(key, None)
             provider_schema["required"] = [

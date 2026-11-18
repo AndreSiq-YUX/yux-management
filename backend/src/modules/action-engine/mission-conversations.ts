@@ -8,6 +8,7 @@ import { CRM_PREPARATION_PACK_V1 } from './packs/crm-preparation-v1.js'
 import { REVENUE_RECOVERY_PACK_V0 } from './packs/revenue-recovery-v0.js'
 import { RADAR_PROSPECTING_PACK_V1,radarProspectingParameters } from './packs/radar-prospecting-v1.js'
 import { createMissionInTransaction, getMission, hashCanonical, transitionMission, type Connectable, type Queryable } from './repository.js'
+import type { MissionConversationTurnContext } from './mission-conversation-history.js'
 import type {
   ActionMission,
   MissionConversation,
@@ -331,6 +332,7 @@ export async function completeAgentConversationTurn(pool: Connectable, input: {
   contextHash: string
   currentBrief: Record<string, unknown>
   contextReadiness: Record<string, unknown>
+  promptContext?: MissionConversationTurnContext
   strategyProposalAccess?: CompanyStrategyAccess
 }): Promise<MissionConversation> {
   return inTransaction(pool, async (client) => {
@@ -355,6 +357,15 @@ export async function completeAgentConversationTurn(pool: Connectable, input: {
       sourceRefs: input.sourceRefs,
       harnessRunId: input.harnessRunId,
     })
+    if (input.promptContext) {
+      const { audience, historyAfterSequence, inputSources } = input.promptContext
+      await client.query(
+        `INSERT INTO private.mission_conversation_turn_context
+           (organization_id, conversation_id, message_sequence, history_after_sequence, audience, input_sources)
+         VALUES ($1,$2,$3,$4,$5,$6::jsonb)`,
+        [input.organizationId, input.conversationId, sequence, historyAfterSequence, audience, JSON.stringify(inputSources)],
+      )
+    }
     if(input.strategyProposalAccess && input.structuredPayload.strategyProposal) {
       const proposal=companyStrategyProposalSchema.parse(input.structuredPayload.strategyProposal)
       await persistMissionStrategyProposalInTransaction(client,input.strategyProposalAccess,{proposalId:proposalId!,conversationId:current.id,messageId:insertedAgentMessage.id,responseHash:hashCanonical(proposal),proposal})

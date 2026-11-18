@@ -52,6 +52,7 @@ class Pool {
     if (sql.includes('FROM public.organizations')) return { rows: [{ client_id: 'client-1' }] as T[] }
     if (sql.includes('harness_run_id = $3')) return { rows: [] as T[] }
     if (sql.includes('AS next_sequence')) return { rows: [{ next_sequence: 2 }] as T[] }
+    if (sql.includes('INSERT INTO private.mission_conversation_turn_context')) return { rows: [] as T[] }
     if (sql.includes('INSERT INTO public.action_mission_conversation_messages')) {
       const message = { ...userMessage(), id: 'message-2', sequence: 2, actor_type: 'agent',
         content: 'Qual é o orçamento?', client_message_id: null, harness_run_id: 'trace-1', created_by: null }
@@ -121,6 +122,9 @@ describe('Mission conversation job handler', () => {
     expect(pool.version).toBe(3)
     expect(pool.status).toBe('awaiting_user')
     expect(pool.messages).toHaveLength(2)
+    expect(pool.calls.findIndex(sql => sql.includes('INSERT INTO private.mission_conversation_turn_context'))).toBeLessThan(
+      pool.calls.findIndex(sql => sql.includes('UPDATE public.action_mission_conversations')),
+    )
   })
 
   it('skips stale or replayed versions before calling Harness', async () => {

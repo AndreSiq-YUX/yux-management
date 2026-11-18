@@ -38,6 +38,12 @@ Um reenvio com a mesma entrada pode recuperar a resposta concluída sem repetir 
 
 Aplique as migrações antes de iniciar os serviços atualizados em homologação. Deixe concluir os turnos em processamento na versão anterior antes de habilitar a execução do piloto. A prévia administrativa usa o caminho de simulação.
 
+## Revogação de fontes em conversas de missão
+
+A migração 0268 registra, em área privada, as referências que entraram em cada turno de missão. Nos turnos seguintes, o worker confere novamente as versões e as permissões. Se uma fonte perde autorização, o próximo turno recompõe o briefing a partir das mensagens do usuário e das fontes vigentes. A conversa pode então voltar a usar as respostas novas. As mensagens antigas continuam disponíveis para auditoria.
+
+Aplique a migração antes de atualizar os serviços e atualize a API e o worker antes do runtime, para que o contrato aceite as referências privadas de entrada. Para turnos anteriores à migração, a verificação usa as referências que já estavam registradas nas respostas. Na homologação, revogue uma fonte sintética após o primeiro turno e confira o briefing recomposto, a recusa de uma resposta reaproveitada e o bloqueio do planejamento que ainda dependa da versão revogada.
+
 ## Contas e fontes a validar
 
 | Piloto | Referência disponível | Evidência operacional pendente |

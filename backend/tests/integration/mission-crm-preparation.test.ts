@@ -11,6 +11,8 @@ import { handleActionEngineProcessMissionConversation, handleActionEnginePlanMis
   handleActionEngineExecute, handleActionEngineCollectMetrics, handleActionEngineEvaluation } from '../../src/jobs/handlers/action-engine.js'
 import { crmPreparationProposal } from '../support/crm-preparation-fixture.js'
 import { createSequenceDraft, publishSequenceDraft } from '../../src/modules/automations/mission-commands.js'
+import { buildMissionPlanningCatalog, buildMissionPlanningContext } from '../../src/modules/action-engine/mission-plan-request.js'
+import { getMission, hashCanonical } from '../../src/modules/action-engine/repository.js'
 
 it('creates and reviews real drafts through conversation without a sender, with retries, tenant isolation and activation gates', async () => {
   const jobs: Array<{name: string; data: Record<string, unknown>}> = []
@@ -47,6 +49,9 @@ it('creates and reviews real drafts through conversation without a sender, with 
       revisionId:strategy.body.draftRevision.id,expectedContentHash:strategy.body.draftRevision.contentHash,idempotencyKey:randomUUID()})
     await rig.request('client_admin_A','POST',`${root}/${strategy.body.id}/primary`,{expectedVersion:published.body.version})
     const sourceId = strategy.body.draftRevision.id
+    const { rows: [source] } = await rig.sql(`SELECT revision_number::text AS version,
+      private.company_strategy_projection_v1(content,'internal_operator')::text AS content
+      FROM public.company_strategy_revisions WHERE id=$1`, [sourceId])
     const brief: MissionConversationTurnResponseWire['brief'] = {title:'Preparar prospecção',objective:'Preparar CRM, funil e e-mails para cozinhas industriais.',requestedOutcome:'crm_drafts_prepared',
       scopeHints:['crm','automations'],constraints:{icp:'Cozinhas industriais',offer:'Massas congeladas'},acceptanceCriteria:[],
       packKeys:['crm_preparation'],mode:'prepare' as const,deadlineAt:null,maxTotalCostBrl:null,maxHumanHours:null,maxExternalContacts:0}
@@ -64,6 +69,9 @@ it('creates and reviews real drafts through conversation without a sender, with 
       expect(request.allowedActionPacks?.map(item=>item.key)).not.toContain('funnel_nurture')
       return {schemaVersion:1,kind:'brief_confirmation',reply:'Confira o plano de preparação, sem envio.',understood:{},questions:[],
         readiness:{status:'ready_for_brief_confirmation',knownFacts:[],assumptions:[],missing:[]},brief,suggestedActions:[],sources:[],
+        retrievedSources:[{ref:`customer:strategy:${sourceId}`,id:sourceId,kind:'company_strategy',version:source.version,
+          title:'Representante de alimentos',visibility:'internal',displayMode:'named',
+          contentHash:hashCanonical({id:sourceId,version:source.version,content:source.content})}],
         retrievalTraceId:randomUUID(),contextHash:'a'.repeat(64),usage:{inputTokens:0,outputTokens:0,totalTokens:0}}
     }}))
     const getChat = () => rig.request('yux_admin','GET',`/api/action-engine/mission-conversations/${conversationId}?organizationId=${org}`)
@@ -106,6 +114,16 @@ it('creates and reviews real drafts through conversation without a sender, with 
     const repeated = await rig.request('yux_admin','POST',`/api/action-engine/mission-conversations/${conversationId}/confirm`,confirmation)
     expect(repeated.body.missionId).toBe(missionId)
     const planJob = jobs.find(job=>job.name==='action-engine.planMission')!
+    await within(async () => {
+      const mission = (await getMission(pool, missionId, org))!
+      const catalog = await buildMissionPlanningCatalog(pool, env, mission)
+      await rig.sql('UPDATE public.company_strategies SET archived_at=NOW() WHERE id=$1', [strategy.body.id])
+      try {
+        await expect(buildMissionPlanningContext(pool, mission, catalog)).rejects.toThrow('mission_source_verification_failed:conversation_history')
+      } finally {
+        await rig.sql('UPDATE public.company_strategies SET archived_at=NULL WHERE id=$1', [strategy.body.id])
+      }
+    })
     const planResult = await within(() => handleActionEnginePlanMission(pool as never,env,planJob.data,queue,{invokePlan:async(_env,input)=>{
       expect(input.mission_prompt).toEqual({version:1,instructions:{'funnel_nurture.crm_architect':planningInstruction}})
       expect(input.allowed_source_ids).toContain(sourceId)

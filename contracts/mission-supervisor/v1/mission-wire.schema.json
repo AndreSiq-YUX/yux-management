@@ -993,6 +993,14 @@
           "title": "Retrievaltraceid",
           "type": "string"
         },
+        "retrievedSources": {
+          "items": {
+            "$ref": "#/$defs/MissionSourceRefWire"
+          },
+          "maxItems": 256,
+          "title": "Retrievedsources",
+          "type": "array"
+        },
         "schemaVersion": {
           "const": 1,
           "title": "Schemaversion",
